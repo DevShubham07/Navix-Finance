@@ -3,6 +3,8 @@ package com.navix.loan.service;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.exception.ResourceNotFoundException;
 import com.navix.common.notification.event.LoanLimitRevisedEvent;
+import com.navix.common.query.FilterSpec;
+import com.navix.common.query.SqlFacets;
 import com.navix.common.notification.event.SanctionedAmountRevisedEvent;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.BorrowerIdentityPort;
@@ -367,21 +369,66 @@ public class CustomerService {
     @Transactional(readOnly = true)
     public CustomerPage page(String q, LocalDate from, LocalDate to, String seg, boolean mine,
             int page, int size, String sort, String dir) {
+        return page(q, from, to, seg, mine, page, size, sort, dir, Map.of());
+    }
+
+    /**
+     * As above, narrowed by the {@code f.<column>} filters in {@code columnFilters} (raw request
+     * params; {@link FilterSpec} drops anything that is not a registered column). The filters are
+     * ANDed after scope in {@link CustomerBookQuery}, so they only narrow what the caller may see.
+     */
+    @Transactional(readOnly = true)
+    public CustomerPage page(String q, LocalDate from, LocalDate to, String seg, boolean mine,
+            int page, int size, String sort, String dir, Map<String, String> columnFilters) {
         rejectDsa();
         CustomerBookQuery.BookFilter filter = bookFilter(q, from, to, seg, mine);
+        FilterSpec spec = columnSpec(columnFilters);
         int safeSize = Math.max(1, Math.min(size, MAX_PAGE_SIZE));
         int safePage = Math.max(1, page);
-        long total = bookQuery.count(filter);
-        List<Long> ids = bookQuery.pageIds(filter, (safePage - 1) * safeSize, safeSize, sort, dir);
+        int offset = (safePage - 1) * safeSize;
+        // The unfiltered path keeps the original query signatures: an empty spec adds no SQL, and this
+        // is the path nearly every request takes.
+        long total = spec.isEmpty() ? bookQuery.count(filter) : bookQuery.count(filter, spec);
+        List<Long> ids = spec.isEmpty()
+                ? bookQuery.pageIds(filter, offset, safeSize, sort, dir)
+                : bookQuery.pageIds(filter, offset, safeSize, sort, dir, spec);
         return new CustomerPage(hydrate(ids), safePage, safeSize, total);
     }
 
     /** Every matching row under the same filter as {@link #page} — the ADMIN "download all" export. */
     @Transactional(readOnly = true)
     public List<CustomerSummary> export(String q, LocalDate from, LocalDate to, String seg, boolean mine) {
+        return export(q, from, to, seg, mine, Map.of());
+    }
+
+    /** As above, under the column filters too — an export must carry exactly what the register shows. */
+    @Transactional(readOnly = true)
+    public List<CustomerSummary> export(String q, LocalDate from, LocalDate to, String seg, boolean mine,
+            Map<String, String> columnFilters) {
         requireAdmin();
         CustomerBookQuery.BookFilter filter = bookFilter(q, from, to, seg, mine);
-        return hydrate(bookQuery.pageIds(filter, 0, EXPORT_CAP));
+        FilterSpec spec = columnSpec(columnFilters);
+        return hydrate(spec.isEmpty()
+                ? bookQuery.pageIds(filter, 0, EXPORT_CAP)
+                : bookQuery.pageIds(filter, 0, EXPORT_CAP, null, null, spec));
+    }
+
+    /**
+     * The distinct values of one column, for its filter checklist. Goes through {@link #bookFilter},
+     * so it carries the caller's {@link #scope()} exactly like the list: a facet must not be an
+     * enumeration oracle for names or stages outside the staffer's own book. {@code columnFilters}
+     * is the OTHER columns' filters; the column's own is dropped so its dropdown does not collapse.
+     */
+    @Transactional(readOnly = true)
+    public SqlFacets.Facet facets(String q, LocalDate from, LocalDate to, boolean mine, String column,
+            Map<String, String> columnFilters) {
+        rejectDsa();
+        CustomerBookQuery.BookFilter filter = bookFilter(q, from, to, null, mine);
+        return bookQuery.facet(filter, columnSpec(columnFilters).without(column), column);
+    }
+
+    private static FilterSpec columnSpec(Map<String, String> columnFilters) {
+        return FilterSpec.parse(columnFilters, CustomerBookQuery.FILTER_COLUMNS);
     }
 
     /**
@@ -692,13 +739,22 @@ public class CustomerService {
     /** The segment-chip counts under the same search / window / scope / "mine" as {@link #page}. */
     @Transactional(readOnly = true)
     public CustomerSummaryCounts summary(String q, LocalDate from, LocalDate to, boolean mine) {
+        return summary(q, from, to, mine, Map.of());
+    }
+
+    /** As above; the chips also follow the column filters (all but {@code stage} — see the query). */
+    @Transactional(readOnly = true)
+    public CustomerSummaryCounts summary(String q, LocalDate from, LocalDate to, boolean mine,
+            Map<String, String> columnFilters) {
         rejectDsa();
         CustomerBookQuery.BookFilter filter = bookFilter(q, from, to, null, mine);
+        FilterSpec spec = columnSpec(columnFilters);
         Map<String, Long> bySegment = new HashMap<>();
         long all = 0;
         long unallocated = 0;
         long reloan = 0;
-        for (CustomerBookQuery.SegmentCount c : bookQuery.segmentCounts(filter)) {
+        for (CustomerBookQuery.SegmentCount c : spec.isEmpty()
+                ? bookQuery.segmentCounts(filter) : bookQuery.segmentCounts(filter, spec)) {
             bySegment.merge(c.segment(), c.count(), Long::sum);
             all += c.count();
             unallocated += c.unallocated();

@@ -471,6 +471,9 @@ table.data td strong { color: var(--navy); }
    `max()` guarantees a usable register however generous a page's offset estimate is. */
 .staff-register-scroll { max-height: max(16rem, calc(100dvh - var(--register-offset, 20rem))); overflow: auto; }
 @media (max-height: 700px) { .staff-register-scroll { max-height: none; } }
+/* The filter chip strip's rendered height (a single non-wrapping row). Registers that mount
+   `FilterBar` add it to their `--register-offset`: calc(<hand-tuned> + var(--filter-bar)). */
+:root { --filter-bar: 2.75rem; }
 
 /* The header cells pin to the top of that scrollport. `thead .staff-sticky-*` already carry
    `z-index: 3` (above the `z-index: 2` body cells), so they move to 4 to stay above the rest of

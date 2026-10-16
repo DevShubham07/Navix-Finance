@@ -10,14 +10,18 @@ import { pageTitleFor } from "@/components/staff/staff-nav";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { collectionsApi, paiseToINR, type SettlementView, type SettlementStatusName } from "@/lib/api/applications";
 import { formatDateTime } from "@/lib/utils";
-import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
+import { PaginationBar } from "@/components/staff/pipeline/pagination";
+import { type FilterColumn } from "@/components/staff/column-filter";
+import { istDay } from "@/lib/staff/column-filter-match";
+import { useRegisterQuery } from "@/lib/staff/register-query";
+import { useClientRegister } from "@/lib/staff/use-client-register";
+import { Th, thBag, describeRegister } from "@/lib/staff/register-th";
 import { EmptyState, ErrorState, InfoTooltip, Skeleton, StatusBadge, toast } from "@/components/ui";
 import {
   SETTLEMENT_SEGMENTS,
   SETTLEMENT_SEGMENT_LABEL,
   isOwnSettlementProposal,
   settlementSegmentCounts,
-  settlementsInSegment,
   type SettlementSegment,
 } from "@/lib/collections/settlement-segments";
 
@@ -25,6 +29,17 @@ const STATUS_LABEL: Record<SettlementStatusName, string> = {
   PROPOSED: "Pending",
   APPROVED: "Approved",
   REJECTED: "Rejected",
+};
+
+/** Sortable + filterable columns. `createdAt` heads the Settlement cell because that cell's
+ *  readable content IS the proposal's date and proposer — the two uuids in it are identifiers, not
+ *  something anyone narrows a register by. */
+const SORT_KEYS = ["createdAt", "settlementAmountPaise", "status"] as const;
+
+const COLUMN_LABEL: Record<string, string> = {
+  createdAt: "Settlement",
+  settlementAmountPaise: "Amount",
+  status: "Status",
 };
 
 /** Active-chip tone, matching the status badge's meaning (the base `.cal-preset.on` is navy). */
@@ -75,12 +90,49 @@ export default function CollectionsSettlementsPage() {
   const rows = React.useMemo(() => q.data ?? [], [q.data]);
   const [segment, setSegment] = React.useState<SettlementSegment>("ALL");
   const counts = React.useMemo(() => settlementSegmentCounts(rows), [rows]);
-  const visible = React.useMemo(() => settlementsInSegment(rows, segment), [rows, segment]);
-  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(visible);
+
+  const rq = useRegisterQuery({
+    registerId: "settlements",
+    staffId: myId,
+    sortKeys: SORT_KEYS,
+    filterKeys: SORT_KEYS,
+    defaults: { sort: { key: "createdAt", dir: "desc" } },
+  });
+
+  const filterColumns = React.useMemo<Array<FilterColumn<SettlementView>>>(
+    () => [
+      { key: "createdAt", kind: "date", value: (s) => (s.createdAt ? formatDateTime(s.createdAt) : "—"), date: (s) => istDay(s.createdAt) },
+      // In rupees: the bound is typed next to a rupee column.
+      { key: "settlementAmountPaise", kind: "num", value: (s) => paiseToINR(s.settlementAmountPaise), num: (s) => (s.settlementAmountPaise != null ? s.settlementAmountPaise / 100 : null) },
+      // The checklist reads "Pending", the filter travels as PROPOSED.
+      { key: "status", value: (s) => STATUS_LABEL[s.status] ?? s.status, raw: (s) => s.status },
+    ],
+    [],
+  );
+
+  // The segment chip narrows first and its counts stay over the unfiltered rows, so the chips do
+  // not collapse as you use them. Membership only: `settlementsInSegment` also floated PROPOSED
+  // rows to the top of "All", which a register that now sorts by an explicit column cannot honour —
+  // the Pending chip, with its count, is the way to that same desk.
+  const inActiveSegment = React.useCallback(
+    (s: SettlementView) => segment === "ALL" || s.status === segment,
+    [segment],
+  );
+  const cr = useClientRegister(rows, filterColumns, rq, inActiveSegment);
+  const { pageRows, total, pageCount } = cr;
+  const visible = cr.rows;
+  const th = thBag(rq, cr, filterColumns, COLUMN_LABEL);
+  const page = rq.state.page;
+  const pageSize = rq.state.size;
 
   return (
     <div>
-      <PageHeader title={pageTitleFor("/staff/collections/settlements", role, "Collections · settlements")} subtitle="Approve proposed settlements (separation of duties enforced).">
+      <PageHeader
+        title={pageTitleFor("/staff/collections/settlements", role, "Collections · settlements")}
+        subtitle={["Approve proposed settlements (separation of duties enforced).", describeRegister(th)]
+          .filter(Boolean)
+          .join(" · ")}
+      >
         <ExportMenu
           title="Collections settlements"
           fileBase="dhanboost-settlements"
@@ -95,7 +147,10 @@ export default function CollectionsSettlementsPage() {
             { header: "Created", value: (s) => (s.createdAt ? formatDateTime(s.createdAt) : "") },
             { header: "Decided", value: (s) => (s.approvedAt ? formatDateTime(s.approvedAt) : s.rejectedAt ? formatDateTime(s.rejectedAt) : "") },
           ]}
-          rows={q.data ?? []}
+          // The segment-filtered set the table actually renders, not the raw query result: narrowing
+          // to Rejected and hitting Export used to hand back every settlement of every status.
+          rows={visible}
+          scope="all"
         />
         <button
           onClick={() => q.refetch()}
@@ -118,7 +173,8 @@ export default function CollectionsSettlementsPage() {
               className={`cal-preset${segment === seg ? ` on${SEGMENT_TONE_CLASS[seg] ?? ""}` : ""}`}
               onClick={() => {
                 setSegment(seg);
-                setPage(1);
+                // "What matches has changed" — back to page 1 in one update, filters untouched.
+                if (seg !== segment) rq.apply({});
               }}
             >
               {SETTLEMENT_SEGMENT_LABEL[seg]} ({counts[seg]})
@@ -146,9 +202,9 @@ export default function CollectionsSettlementsPage() {
               <thead>
                 <tr>
                   <th scope="col">S.No.</th>
-                  <th scope="col">Settlement</th>
-                  <th scope="col" className="num">Amount</th>
-                  <th scope="col">Status</th>
+                  <Th th={th} col="createdAt" />
+                  <Th th={th} col="settlementAmountPaise" className="num" />
+                  <Th th={th} col="status" />
                   <th scope="col" className="text-right">Action</th>
                 </tr>
               </thead>
@@ -232,7 +288,14 @@ export default function CollectionsSettlementsPage() {
                 {rows.length === 0 ? (
                   <EmptyState title="No settlements proposed." inTable={5} />
                 ) : visible.length === 0 ? (
-                  <EmptyState title={`No ${SETTLEMENT_SEGMENT_LABEL[segment].toLowerCase()} settlements.`} inTable={5} />
+                  <EmptyState
+                    title={
+                      rq.activeCount > 0
+                        ? "No settlements match the column filters."
+                        : `No ${SETTLEMENT_SEGMENT_LABEL[segment].toLowerCase()} settlements.`
+                    }
+                    inTable={5}
+                  />
                 ) : null}
               </tbody>
             </table>
@@ -240,10 +303,10 @@ export default function CollectionsSettlementsPage() {
           <PaginationBar
             page={page}
             pageCount={pageCount}
-            setPage={setPage}
+            setPage={rq.setPage}
             total={total}
             pageSize={pageSize}
-            setPageSize={setPageSize}
+            setPageSize={rq.setSize}
           />
         </div>
       )}

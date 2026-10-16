@@ -2,6 +2,8 @@ package com.navix.loan.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -9,17 +11,13 @@ import static org.mockito.Mockito.when;
 
 import com.navix.common.storage.DocumentStoragePort;
 import com.navix.loan.domain.LoanStatus;
-import com.navix.loan.domain.PaymentMethod;
-import com.navix.loan.domain.PaymentStatus;
 import com.navix.loan.dto.LoanDtos.TransactionView;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.Loan;
 import com.navix.loan.entity.LoanApplication;
-import com.navix.loan.entity.Payment;
 import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
 import com.navix.loan.repository.LoanRepository;
-import com.navix.loan.repository.PaymentRepository;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -35,7 +33,7 @@ class TransactionServiceTest {
     @Mock
     private LoanRepository loanRepository;
     @Mock
-    private PaymentRepository paymentRepository;
+    private TransactionLedgerQuery ledgerQuery;
     @Mock
     private LoanApplicationRepository applicationRepository;
     @Mock
@@ -47,7 +45,7 @@ class TransactionServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new TransactionService(loanRepository, paymentRepository, applicationRepository, profileRepository, storage);
+        service = new TransactionService(loanRepository, ledgerQuery, applicationRepository, profileRepository, storage);
         // Only the proof-resolution test cares about the return value; a harmless default elsewhere.
         lenient().when(storage.presignDownload("loan/repayment-proof/1.jpg")).thenReturn("https://s3.example/signed?p=1");
     }
@@ -56,10 +54,6 @@ class TransactionServiceTest {
         Loan loan = new Loan();
         loan.setId(2L);
         loan.setCustomerId(7L);
-        loan.setNetDisbursed(882_000L);
-        loan.setDisbursalTxnRef("UTR-OUT-1");
-        loan.setDisbursedOn(LocalDate.of(2026, 5, 20));
-        loan.setStatus(LoanStatus.ACTIVE);
         return loan;
     }
 
@@ -75,146 +69,12 @@ class TransactionServiceTest {
         CustomerProfile p = new CustomerProfile();
         p.setApplicationId(5L);
         p.setFullName("Aman");
-        p.setPan("ABCDE1234F");
-        p.setMobile("9876543210");
         return p;
     }
 
-    private Payment payment1() {
-        Payment pay = new Payment();
-        pay.setId(1L);
-        pay.setLoanId(2L);
-        pay.setAmount(100_000L);
-        pay.setMethod(PaymentMethod.UPI);
-        pay.setStatus(PaymentStatus.VERIFIED);
-        pay.setTxnRef("PAY-IN-1");
-        pay.setPaidOn(LocalDate.of(2026, 6, 20));
-        pay.setProofUrl("loan/repayment-proof/1.jpg");
-        return pay;
-    }
-
-    /**
-     * The ledger windows each half in SQL now, so the fixtures answer the windowed finders and apply
-     * the date bounds themselves — the same rows the old in-memory filter would have kept.
-     */
-    private void stubAll(List<Loan> loans, List<LoanApplication> apps, List<CustomerProfile> profiles, List<Payment> payments) {
-        lenient().when(loanRepository.findAllForRegister(any(), any())).thenAnswer(inv -> {
-            LocalDate from = inv.getArgument(0);
-            LocalDate to = inv.getArgument(1);
-            return loans.stream().filter(l -> inWindow(l.getDisbursedOn(), from, to)).toList();
-        });
-        lenient().when(paymentRepository.findAllForLedger(any(), any())).thenAnswer(inv -> {
-            LocalDate from = inv.getArgument(0);
-            LocalDate to = inv.getArgument(1);
-            return payments.stream().filter(p -> inWindow(p.getPaidOn(), from, to)).toList();
-        });
-        // A direction=OUTGOING/INCOMING query short-circuits the other side entirely (and there is no
-        // profile lookup at all when there are no loans), so these are lenient.
-        lenient().when(loanRepository.findAllById(any())).thenReturn(loans);
-        lenient().when(applicationRepository.findByLoanIdIn(any())).thenReturn(apps);
-        lenient().when(profileRepository.findByApplicationIdIn(any())).thenReturn(profiles);
-    }
-
-    private static boolean inWindow(LocalDate date, LocalDate from, LocalDate to) {
-        if (from == null && to == null) {
-            return true;
-        }
-        return date != null && (from == null || !date.isBefore(from)) && (to == null || !date.isAfter(to));
-    }
-
-    /** Every row of the filter, unpaged — what the assertions below were written against. */
-    private List<TransactionView> all(String q, String direction) {
-        return all(q, direction, null, null);
-    }
-
-    private List<TransactionView> all(String q, String direction, LocalDate from, LocalDate to) {
-        return service.listTransactions(q, direction, from, to, 1, TransactionService.MAX_PAGE_SIZE).rows();
-    }
-
-    @Test
-    void mapsDisbursalsAndRepaymentsWithFullBorrowerPan() {
-        stubAll(List.of(loan2()), List.of(app5()), List.of(profile5()), List.of(payment1()));
-
-        List<TransactionView> txns = all(null, null);
-
-        assertThat(txns).hasSize(2);
-        TransactionView disbursal = txns.stream().filter(t -> "DISBURSAL".equals(t.type())).findFirst().orElseThrow();
-        TransactionView repayment = txns.stream().filter(t -> "REPAYMENT".equals(t.type())).findFirst().orElseThrow();
-
-        assertThat(disbursal.direction()).isEqualTo("OUTGOING");
-        assertThat(disbursal.amountPaise()).isEqualTo(882_000L);
-        assertThat(disbursal.txnRef()).isEqualTo("UTR-OUT-1");
-        assertThat(disbursal.borrowerName()).isEqualTo("Aman");
-        assertThat(disbursal.pan()).isEqualTo("ABCDE1234F"); // staff-only ledger shows the full PAN
-
-        assertThat(repayment.direction()).isEqualTo("INCOMING");
-        assertThat(repayment.amountPaise()).isEqualTo(100_000L);
-        assertThat(repayment.borrowerName()).isEqualTo("Aman");
-        // The borrower-uploaded screenshot resolves to a presigned link wherever the ledger shows a
-        // repayment's transaction id — a disbursal (nothing was ever uploaded against it) gets none.
-        assertThat(repayment.proofUrl()).isEqualTo("https://s3.example/signed?p=1");
-        assertThat(disbursal.proofUrl()).isNull();
-    }
-
-    @Test
-    void directionFilterReturnsOnlyOutgoing() {
-        stubAll(List.of(loan2()), List.of(app5()), List.of(profile5()), List.of(payment1()));
-
-        List<TransactionView> txns = all(null, "OUTGOING");
-
-        assertThat(txns).hasSize(1);
-        assertThat(txns.get(0).type()).isEqualTo("DISBURSAL");
-    }
-
-    @Test
-    void queryFiltersByBorrowerName() {
-        stubAll(List.of(loan2()), List.of(app5()), List.of(profile5()), List.of(payment1()));
-
-        assertThat(all("aman", null)).hasSize(2); // case-insensitive
-        assertThat(all("zzz", null)).isEmpty();
-    }
-
-    @Test
-    void dateRangeFiltersToTheStatementPeriod() {
-        // Disbursal on 2026-05-20, repayment on 2026-06-20.
-        stubAll(List.of(loan2()), List.of(app5()), List.of(profile5()), List.of(payment1()));
-
-        // June only → just the repayment.
-        List<TransactionView> june = all(null, null, LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30));
-        assertThat(june).hasSize(1);
-        assertThat(june.get(0).type()).isEqualTo("REPAYMENT");
-
-        // Inclusive bounds → both days included; an out-of-range window → empty.
-        assertThat(all(null, null, LocalDate.of(2026, 5, 20), LocalDate.of(2026, 6, 20))).hasSize(2);
-        assertThat(all(null, null, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31))).isEmpty();
-    }
-
-    @Test
-    void presignsOnlyRowsThatSurviveTheFilter() {
-        Payment p1 = payment1(); // paidOn 2026-06-20, proof loan/repayment-proof/1.jpg (stubbed in setUp)
-        Payment p2 = new Payment();
-        p2.setId(2L);
-        p2.setLoanId(2L);
-        p2.setAmount(50_000L);
-        p2.setMethod(PaymentMethod.UPI);
-        p2.setStatus(PaymentStatus.VERIFIED);
-        p2.setPaidOn(LocalDate.of(2026, 7, 1));
-        p2.setProofUrl("loan/repayment-proof/2.jpg");
-        Payment p3 = new Payment();
-        p3.setId(3L);
-        p3.setLoanId(2L);
-        p3.setAmount(60_000L);
-        p3.setMethod(PaymentMethod.UPI);
-        p3.setStatus(PaymentStatus.VERIFIED);
-        p3.setPaidOn(LocalDate.of(2026, 8, 1));
-        p3.setProofUrl("loan/repayment-proof/3.jpg");
-        stubAll(List.of(loan2()), List.of(app5()), List.of(profile5()), List.of(p1, p2, p3));
-
-        // Window keeps only p1 (June); p2/p3 (July/August) are excluded before presigning ever runs.
-        List<TransactionView> txns = all(null, "INCOMING", LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30));
-
-        assertThat(txns).hasSize(1);
-        verify(storage, times(1)).presignDownload(any());
+    private static TransactionView row(String id, String proofKey) {
+        return new TransactionView(id, "REPAYMENT", "INCOMING", 2L, 7L, "Aman", "ABCDE1234F", 100_000L,
+                "PAY-IN-1", "VERIFIED", LocalDate.of(2026, 6, 20), proofKey, null);
     }
 
     @Test
@@ -258,93 +118,76 @@ class TransactionServiceTest {
 
     // ------------------------------------------------------------------ paging
     //
-    // The ledger used to load every loan and every payment the company had ever taken, filter them
-    // in memory and return the lot; the page then paginated in the browser. It is now windowed and
-    // paged in the service, with the summary cards' totals still describing the whole filter.
+    // The ledger is one native query now (TransactionLedgerQuery); these pin what the SERVICE owns:
+    // the page clamp, the totals coming from the aggregate (not the page), presigning only the page,
+    // and the column filters reaching the query. The SQL itself is covered against a real Postgres in
+    // TransactionLedgerQueryIntegrationTest.
 
     @Test
-    void pagesTheLedgerWhileTotallingTheWholeFilter() {
-        stubAll(List.of(loan2()), List.of(app5()), List.of(profile5()), List.of(payment1()));
+    void totalsAndCountComeFromTheAggregateNotFromThePage() {
+        when(ledgerQuery.totals(any(), any())).thenReturn(new TransactionLedgerQuery.Totals(60, 500_000L, 200_000L, 250_000L));
+        when(ledgerQuery.page(any(), any(), eq(0), eq(1), any(), any())).thenReturn(List.of(row("P-1", null)));
 
         var first = service.listTransactions(null, null, null, null, 1, 1);
 
         assertThat(first.rows()).hasSize(1);
-        assertThat(first.page()).isEqualTo(1);
-        assertThat(first.size()).isEqualTo(1);
-        assertThat(first.total()).isEqualTo(2);              // both rows match the (empty) filter
-        assertThat(first.totalInPaise()).isEqualTo(100_000L); // the repayment
-        assertThat(first.totalOutPaise()).isEqualTo(882_000L); // the disbursal
-
-        var second = service.listTransactions(null, null, null, null, 2, 1);
-        assertThat(second.rows()).hasSize(1);
-        // Totals describe the period, so they are identical on every page.
-        assertThat(second.totalInPaise()).isEqualTo(first.totalInPaise());
-        assertThat(second.totalOutPaise()).isEqualTo(first.totalOutPaise());
-        assertThat(second.rows().get(0).id()).isNotEqualTo(first.rows().get(0).id());
-    }
-
-    @Test
-    void rejectedRepaymentsAreNotTransactionsAndPendingOnesAreNotYetInflow() {
-        Payment verified = payment1();                       // ₹1,000 VERIFIED
-        Payment rejected = payment1();
-        rejected.setId(2L);
-        rejected.setAmount(500_000L);
-        rejected.setStatus(PaymentStatus.REJECTED);          // proof did not match a transfer
-        Payment pending = payment1();
-        pending.setId(3L);
-        pending.setAmount(250_000L);
-        pending.setStatus(PaymentStatus.PENDING_VERIFICATION);
-        stubAll(List.of(loan2()), List.of(app5()), List.of(profile5()), List.of(verified, rejected, pending));
-
-        var page = service.listTransactions(null, null, null, null, 1, 25);
-
-        assertThat(page.rows()).extracting(TransactionView::id).containsExactlyInAnyOrder("D-2", "P-1", "P-3");
-        assertThat(page.total()).isEqualTo(3);
-        assertThat(page.totalInPaise()).isEqualTo(100_000L);   // verified only
-        assertThat(page.pendingInPaise()).isEqualTo(250_000L); // listed, not counted in
-        assertThat(page.totalOutPaise()).isEqualTo(882_000L);
-    }
-
-    @Test
-    void pushesTheStatementPeriodIntoBothRepositories() {
-        stubAll(List.of(loan2()), List.of(app5()), List.of(profile5()), List.of(payment1()));
-        LocalDate from = LocalDate.of(2026, 6, 1);
-        LocalDate to = LocalDate.of(2026, 6, 30);
-
-        service.listTransactions(null, null, from, to, 1, 25);
-
-        verify(loanRepository).findAllForRegister(from, to);
-        verify(paymentRepository).findAllForLedger(from, to);
+        assertThat(first.total()).isEqualTo(60);
+        assertThat(first.totalInPaise()).isEqualTo(500_000L);
+        assertThat(first.totalOutPaise()).isEqualTo(200_000L);
+        assertThat(first.pendingInPaise()).isEqualTo(250_000L);
     }
 
     @Test
     void presignsOnlyThePagesProofs() {
-        Payment p1 = payment1();
-        Payment p2 = new Payment();
-        p2.setId(2L);
-        p2.setLoanId(2L);
-        p2.setAmount(50_000L);
-        p2.setMethod(PaymentMethod.UPI);
-        p2.setStatus(PaymentStatus.VERIFIED);
-        p2.setPaidOn(LocalDate.of(2026, 6, 21));
-        p2.setProofUrl("loan/repayment-proof/2.jpg");
-        stubAll(List.of(loan2()), List.of(app5()), List.of(profile5()), List.of(p1, p2));
+        when(ledgerQuery.totals(any(), any())).thenReturn(new TransactionLedgerQuery.Totals(2, 0, 0, 0));
+        when(ledgerQuery.page(any(), any(), anyInt(), anyInt(), any(), any()))
+                .thenReturn(List.of(row("P-1", "loan/repayment-proof/1.jpg"), row("P-2", null)));
 
-        var page = service.listTransactions(null, "INCOMING", null, null, 1, 1);
+        var page = service.listTransactions(null, "INCOMING", null, null, 1, 25);
 
-        assertThat(page.rows()).hasSize(1);
-        assertThat(page.total()).isEqualTo(2);
-        // Two repayments matched, but only the one on the page cost a presign.
+        assertThat(page.rows().get(0).proofUrl()).isEqualTo("https://s3.example/signed?p=1");
+        assertThat(page.rows().get(1).proofUrl()).isNull();
         verify(storage, times(1)).presignDownload(any());
     }
 
     @Test
     void clampsPageAndSize() {
-        stubAll(List.of(loan2()), List.of(app5()), List.of(profile5()), List.of(payment1()));
+        when(ledgerQuery.totals(any(), any())).thenReturn(new TransactionLedgerQuery.Totals(0, 0, 0, 0));
+        when(ledgerQuery.page(any(), any(), anyInt(), anyInt(), any(), any())).thenReturn(List.of());
 
         var page = service.listTransactions(null, null, null, null, 0, 5_000);
 
         assertThat(page.page()).isEqualTo(1);
         assertThat(page.size()).isEqualTo(TransactionService.MAX_PAGE_SIZE);
+        verify(ledgerQuery).page(any(), any(), eq(0), eq(TransactionService.MAX_PAGE_SIZE), any(), any());
+    }
+
+    @Test
+    void passesThePeriodDirectionSearchAndColumnFiltersToTheQuery() {
+        when(ledgerQuery.totals(any(), any())).thenReturn(new TransactionLedgerQuery.Totals(0, 0, 0, 0));
+        when(ledgerQuery.page(any(), any(), anyInt(), anyInt(), any(), any())).thenReturn(List.of());
+        LocalDate from = LocalDate.of(2026, 6, 1);
+        LocalDate to = LocalDate.of(2026, 6, 30);
+
+        service.page("  Aman ", "incoming", from, to, 2, 10, "amount", "asc",
+                Map.of("f.status", "text:eq:VERIFIED", "f.bogus", "text:eq:x"));
+
+        var filter = org.mockito.ArgumentCaptor.forClass(TransactionLedgerQuery.LedgerFilter.class);
+        var spec = org.mockito.ArgumentCaptor.forClass(com.navix.common.query.FilterSpec.class);
+        verify(ledgerQuery).page(filter.capture(), spec.capture(), eq(10), eq(10), eq("amount"), eq("asc"));
+        assertThat(filter.getValue()).isEqualTo(new TransactionLedgerQuery.LedgerFilter("aman", "INCOMING", from, to));
+        // A column the ledger did not register is dropped, never an error.
+        assertThat(spec.getValue().filters()).containsOnlyKeys("status");
+    }
+
+    @Test
+    void facetDropsItsOwnFilter() {
+        when(ledgerQuery.facet(any(), any(), eq("type"))).thenReturn(new com.navix.common.query.SqlFacets.Facet(List.of(), false));
+
+        service.facets(null, null, null, null, "type", Map.of("f.type", "in:REPAYMENT", "f.status", "text:eq:VERIFIED"));
+
+        var spec = org.mockito.ArgumentCaptor.forClass(com.navix.common.query.FilterSpec.class);
+        verify(ledgerQuery).facet(any(), spec.capture(), eq("type"));
+        assertThat(spec.getValue().filters()).containsOnlyKeys("status");
     }
 }

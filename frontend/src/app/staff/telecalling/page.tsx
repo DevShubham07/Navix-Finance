@@ -5,6 +5,7 @@ import * as React from "react";
 import { useMutation, useMutationState, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Bell, UserPlus, Send, AlertTriangle } from "lucide-react";
 import { ConfirmDialog, EmptyState, ErrorState, Skeleton, StatusBadge, toast } from "@/components/ui";
+import { humaniseStatus } from "@/components/ui/status-badge";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { NoAccessNotice, errMessage, useStaffMe, useCan } from "@/components/staff/live-pipeline";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
@@ -12,6 +13,12 @@ import { CustomerOwnerPicker } from "@/components/staff/customer-owner-picker";
 import { customersApi, staffApi, type TelecallingView } from "@/lib/api/applications";
 import { StageSignal } from "@/components/staff/stage-signal";
 import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
+import { ExportMenu } from "@/components/staff/export-menu";
+import type { ExportColumn } from "@/lib/export/exporters";
+import { type FilterColumn } from "@/components/staff/column-filter";
+import { useRegisterQuery, type RegisterQuery } from "@/lib/staff/register-query";
+import { useClientRegister } from "@/lib/staff/use-client-register";
+import { Th, thBag, describeRegister } from "@/lib/staff/register-th";
 import {
   assignedToOthersLabel,
   completenessPercent,
@@ -21,6 +28,39 @@ import {
 } from "@/lib/telecalling/telecalling-queue";
 
 const TELECALLER_ONLY = ["TELECALLER"] as const;
+
+/** Sortable + filterable columns. Identity (application/customer id, mobile, email, PAN) is left
+ *  out on purpose — nobody narrows a queue by one of thousands of phone numbers — and so are the
+ *  three cells with no single scalar behind them: the trust stars, the stage signal and the
+ *  completeness bar (a fraction plus a bar). */
+const SORT_KEYS = ["customerName", "status", "staleDays"] as const;
+
+const COLUMN_LABEL: Record<string, string> = {
+  customerName: "Customer",
+  status: "Status",
+  staleDays: "Stale (days)",
+};
+
+/** Module-level, so its identity is stable across renders and the facets are not rebuilt by a poll. */
+const FILTER_COLUMNS: Array<FilterColumn<TelecallingView>> = [
+  // The cell falls back to "Customer #id" for a nameless row; the filter reads what is on screen.
+  { key: "customerName", kind: "text", value: (r) => r.customerName || `Customer #${r.customerId}` },
+  { key: "status", value: (r) => humaniseStatus(r.status), raw: (r) => r.status },
+  { key: "staleDays", kind: "num", value: (r) => String(r.staleDays), num: (r) => r.staleDays },
+];
+
+const EXPORT_COLUMNS: ExportColumn<TelecallingView>[] = [
+  { header: "Application", value: (r) => r.id },
+  { header: "Customer ID", value: (r) => r.customerId },
+  { header: "Customer", value: (r) => r.customerName ?? "" },
+  { header: "Mobile", value: (r) => r.mobile ?? "" },
+  { header: "Email", value: (r) => r.email ?? "" },
+  { header: "PAN", value: (r) => r.pan ?? "" },
+  { header: "Status", value: (r) => humaniseStatus(r.status) },
+  { header: "Steps completed", value: (r) => r.stepsCompleted },
+  { header: "Steps required", value: (r) => r.stepsRequired },
+  { header: "Stale (days)", value: (r) => r.staleDays },
+];
 
 // Keys so every in-flight call can be read back (useMutationState), not just the latest one.
 const ASSIGN_MUTATION_KEY = ["telecalling-assign-to-me"] as const;
@@ -58,6 +98,17 @@ export default function TelecallingPage() {
     queryKey: ["staff-telecalling"],
     queryFn: () => staffApi.telecalling(),
     refetchInterval: 120_000,
+  });
+
+  // ONE view for the page, shared by both sections: they are two tables over the same rows, not
+  // tabs, and two registers would write the same `sort`/`page`/`f.*` keys into one URL and fight
+  // over them. Built from `me?.id`, so it is never derived from `q.data` — a poll cannot reset it.
+  const rq = useRegisterQuery({
+    registerId: "telecalling",
+    staffId: me?.id != null ? String(me.id) : undefined,
+    sortKeys: SORT_KEYS,
+    filterKeys: SORT_KEYS,
+    defaults: { sort: { key: "staleDays", dir: "desc" } },
   });
 
   const [infoId, setInfoId] = React.useState<number | null>(null);
@@ -108,17 +159,18 @@ export default function TelecallingPage() {
   });
   const reminding = usePendingIds(REMIND_MUTATION_KEY);
 
+  const rows = React.useMemo(() => q.data ?? [], [q.data]);
+  // Stalest-first is now the register's default sort, so these only partition.
+  const unallocated = React.useMemo(() => rows.filter((r) => r.ownerStaffId == null), [rows]);
+  const mine = React.useMemo(
+    () => rows.filter((r) => myId != null && r.ownerStaffId === myId),
+    [rows, myId],
+  );
+
   if (me && !can("leads:manage")) {
     return <NoAccessNotice message="Telecalling access only (TELECALLER / ADMIN)." />;
   }
 
-  const rows = q.data ?? [];
-  const unallocated = rows
-    .filter((r) => r.ownerStaffId == null)
-    .sort((a, b) => b.staleDays - a.staleDays);
-  const mine = rows
-    .filter((r) => myId != null && r.ownerStaffId === myId)
-    .sort((a, b) => b.staleDays - a.staleDays);
   // Neither section lists rows another staffer owns; the operator should still know they exist.
   const assignedToOthers = countAssignedToOthers(rows, myId);
 
@@ -148,6 +200,7 @@ export default function TelecallingPage() {
             title="Unallocated"
             info="Pre-sanction applications with no assigned telecaller. Assign to yourself to start chasing them."
             rows={unallocated}
+            rq={rq}
             assignedToOthers={assignedToOthers}
             onOpen={setInfoId}
             onAssignToMe={myId != null ? (customerId) => assign.mutate(customerId) : undefined}
@@ -161,6 +214,7 @@ export default function TelecallingPage() {
             title="My customers"
             info="Applications currently assigned to you."
             rows={mine}
+            rq={rq}
             assignedToOthers={assignedToOthers}
             onOpen={setInfoId}
             onRemind={(id) => remind.mutate(id)}
@@ -182,6 +236,7 @@ function TelecallingSection({
   title,
   info,
   rows,
+  rq,
   assignedToOthers,
   onOpen,
   onAssignToMe,
@@ -194,6 +249,7 @@ function TelecallingSection({
   title: string;
   info: string;
   rows: TelecallingView[];
+  rq: RegisterQuery;
   /** Rows owned by other staff, hidden from both sections; `null` while the staffer is unknown. */
   assignedToOthers: number | null;
   onOpen: (id: number) => void;
@@ -213,9 +269,20 @@ function TelecallingSection({
   // The ids the confirm dialog is asking about, snapshotted when it opens — so the run sends exactly
   // the count the dialog stated, even if a poll resets the live selection while it is open.
   const [confirmIds, setConfirmIds] = React.useState<number[] | null>(null);
-  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
+  const cr = useClientRegister(rows, FILTER_COLUMNS, rq);
+  const th = thBag(rq, cr, FILTER_COLUMNS, COLUMN_LABEL);
+  // Each section pages itself over its FILTERED, sorted rows. The register's own page number is one
+  // value for the whole view, and two sections of different lengths would clamp it against each
+  // other, so it stays at 1 and is unused here.
+  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(cr.rows);
+  // A different filter or sort is a different list: back to its first page.
+  React.useEffect(() => setPage(1), [rq.state.filters, rq.state.sort, setPage]);
 
-  React.useEffect(() => setSelected(new Set()), [rows.length]);
+  // Cleared when the visible set changes — a filter, or rows arriving/leaving. Selecting happens
+  // over `pageRows` (already filtered), so a tick can never name a row the filter then hides and
+  // the bulk send reach a borrower nobody can see. Keyed on count + filters, not on `rows`
+  // identity, so a poll that changes nothing keeps the operator's ticks.
+  React.useEffect(() => setSelected(new Set()), [cr.total, rq.state.filters]);
 
   const toggle = (id: number) => {
     setSelected((s) => {
@@ -272,7 +339,9 @@ function TelecallingSection({
         <div>
           <div className="flex items-center gap-2">
             <h2 className="font-serif text-lg font-semibold text-navy">{title}</h2>
-            <span className="rounded-full bg-navy-tint px-2.5 py-0.5 text-xs font-semibold text-navy">{rows.length}</span>
+            <span className="rounded-full bg-navy-tint px-2.5 py-0.5 text-xs font-semibold text-navy">
+              {rq.activeCount > 0 ? `${cr.total} of ${rows.length}` : rows.length}
+            </span>
             <span className="hidden text-xs text-muted sm:inline" title={info}>
               {info}
             </span>
@@ -281,6 +350,15 @@ function TelecallingSection({
             <p className="m-0 mt-0.5 text-xs text-muted">{assignedToOthersLabel(assignedToOthers)}</p>
           )}
         </div>
+        <div className="flex items-center gap-2">
+        <ExportMenu
+          title={title}
+          subtitle={["Telecalling queue", describeRegister(th)].filter(Boolean).join(" · ")}
+          fileBase={`dhanboost-telecalling-${title.toLowerCase().replace(/\s+/g, "-")}`}
+          columns={EXPORT_COLUMNS}
+          rows={cr.rows}
+          scope="all"
+        />
         {selected.size > 0 && (
           <button
             type="button"
@@ -292,6 +370,7 @@ function TelecallingSection({
             {bulkBusy ? `Sending… (${bulkDone}/${selected.size})` : `Send to selected (${selected.size})`}
           </button>
         )}
+        </div>
       </header>
 
       {rows.length === 0 ? (
@@ -314,15 +393,15 @@ function TelecallingSection({
                 </th>
                 <th scope="col">Application</th>
                 <th scope="col">Customer ID</th>
-                <th scope="col">Customer</th>
+                <Th th={th} col="customerName" />
                 <th scope="col">Signals</th>
                 <th scope="col">Mobile</th>
                 <th scope="col">Email</th>
                 <th scope="col">PAN</th>
-                <th scope="col">Status</th>
+                <Th th={th} col="status" />
                 <th scope="col">Stage</th>
                 <th scope="col" className="num">Completeness</th>
-                <th scope="col" className="num">Stale (days)</th>
+                <Th th={th} col="staleDays" className="num" />
                 <th scope="col" className="staff-sticky-actions">Actions</th>
               </tr>
             </thead>
@@ -429,6 +508,10 @@ function TelecallingSection({
                   </td>
                 </tr>
               ))}
+              {cr.total === 0 ? (
+                // In-table, so the headers (and the filter that emptied it) stay reachable.
+                <EmptyState title="No applications match the column filters." inTable={14} />
+              ) : null}
             </tbody>
           </table>
           </div>

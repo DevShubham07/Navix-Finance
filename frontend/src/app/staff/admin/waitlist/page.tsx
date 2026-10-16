@@ -6,33 +6,55 @@ import { Download } from "lucide-react";
 import { EmptyState, ErrorState, Input, Skeleton } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { useStaffMe, useCan, NoAccessNotice } from "@/components/staff/live-pipeline";
-import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
+import { PaginationBar } from "@/components/staff/pipeline/pagination";
+import { type FilterColumn } from "@/components/staff/column-filter";
+import { istDay } from "@/lib/staff/column-filter-match";
+import { useRegisterQuery } from "@/lib/staff/register-query";
+import { useClientRegister } from "@/lib/staff/use-client-register";
+import { Th, thBag, describeRegister } from "@/lib/staff/register-th";
 import { adminApi, type WaitlistEntry } from "@/lib/api/applications";
 import { exportCsv } from "@/lib/export/exporters";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { formatDate } from "@/lib/utils";
 
-const fmtDate = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+/** Submitted date and name filter. Mobile, email, PAN and Aadhaar are identity, so they do not. */
+const SORT_KEYS = ["createdAt", "fullName"] as const;
+
+const COLUMN_LABEL: Record<string, string> = { createdAt: "Submitted", fullName: "Name" };
 
 /** Admin · onboarding waitlist — submissions captured while onboarding is paused (full PAN/Aadhaar). ADMIN only. */
 export default function AdminWaitlistPage() {
-  const myRole = useStaffMe().data?.role;
+  const me = useStaffMe().data;
+  const myRole = me?.role;
   const can = useCan();
-  const [search, setSearch] = React.useState("");
-  // Seed from `?q=` after mount (reading it during render would break hydration).
-  React.useEffect(() => {
-    setSearch(new URLSearchParams(window.location.search).get("q") ?? "");
-  }, []);
-  const q = useDebouncedValue(search.trim(), 300);
-  React.useEffect(() => {
-    const url = new URL(window.location.href);
-    if (q) url.searchParams.set("q", q);
-    else url.searchParams.delete("q");
-    window.history.replaceState(null, "", url);
-  }, [q]);
+
+  const rq = useRegisterQuery({
+    registerId: "waitlist",
+    staffId: me?.id,
+    sortKeys: SORT_KEYS,
+    filterKeys: SORT_KEYS,
+    defaults: { sort: { key: "createdAt", dir: "desc" } },
+  });
+  // The search stays server-side (it matches PAN/Aadhaar, which the page never filters on), but the
+  // register view now owns the string — and with it the `?q=` URL sync this page used to hand-roll.
+  const q = useDebouncedValue(rq.state.q.trim(), 300);
 
   const list = useQuery({ queryKey: ["admin-waitlist", q], queryFn: () => adminApi.waitlist(q || undefined) });
   const rows = React.useMemo(() => list.data ?? [], [list.data]);
-  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
+
+  const filterColumns = React.useMemo<Array<FilterColumn<WaitlistEntry>>>(
+    () => [
+      { key: "createdAt", kind: "date", value: (r) => formatDate(r.createdAt), date: (r) => istDay(r.createdAt) },
+      { key: "fullName", kind: "text", value: (r) => r.fullName },
+    ],
+    [],
+  );
+
+  const cr = useClientRegister(rows, filterColumns, rq);
+  const { pageRows, total, pageCount } = cr;
+  const th = thBag(rq, cr, filterColumns, COLUMN_LABEL);
+  const page = rq.state.page;
+  const pageSize = rq.state.size;
 
   if (myRole && !can("waitlist:view")) {
     return <NoAccessNotice message="Admin access only." />;
@@ -49,18 +71,23 @@ export default function AdminWaitlistPage() {
         { header: "PAN", value: (r) => r.pan },
         { header: "Aadhaar", value: (r) => r.aadhaar },
       ],
-      rows,
+      cr.rows,
     );
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Onboarding waitlist" subtitle="Details left by borrowers while new onboarding is paused.">
-        <button type="button" className="btn btn-outline" onClick={download} disabled={rows.length === 0}>
+      <PageHeader
+        title="Onboarding waitlist"
+        subtitle={["Details left by borrowers while new onboarding is paused.", describeRegister(th)]
+          .filter(Boolean)
+          .join(" · ")}
+      >
+        <button type="button" className="btn btn-outline" onClick={download} disabled={cr.rows.length === 0}>
           <Download size={16} /> Export CSV
         </button>
       </PageHeader>
 
-      <Input label="Search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Name, mobile, email, PAN or Aadhaar" />
+      <Input label="Search" value={rq.state.q} onChange={(e) => rq.setQ(e.target.value)} placeholder="Name, mobile, email, PAN or Aadhaar" />
 
       {list.isLoading ? (
         <Skeleton className="h-40 w-full" />
@@ -71,8 +98,8 @@ export default function AdminWaitlistPage() {
           <table className="staff-data-table">
             <thead>
               <tr>
-                <th>Submitted</th>
-                <th>Name</th>
+                <Th th={th} col="createdAt" />
+                <Th th={th} col="fullName" />
                 <th>Mobile</th>
                 <th>Email</th>
                 <th>PAN</th>
@@ -80,12 +107,16 @@ export default function AdminWaitlistPage() {
               </tr>
             </thead>
             <tbody>
-              {pageRows.length === 0 ? (
-                <EmptyState title="No submissions yet." inTable={6} />
+              {total === 0 ? (
+                // In-table so the headers survive an emptying filter and it can still be cleared.
+                <EmptyState
+                  title={rq.activeCount > 0 && rows.length > 0 ? "No submissions match the column filters." : "No submissions yet."}
+                  inTable={6}
+                />
               ) : (
                 pageRows.map((r) => (
                   <tr key={r.id}>
-                    <td>{fmtDate(r.createdAt)}</td>
+                    <td>{formatDate(r.createdAt)}</td>
                     <td>{r.fullName}</td>
                     <td>{r.mobile}</td>
                     <td>{r.email}</td>
@@ -96,7 +127,7 @@ export default function AdminWaitlistPage() {
               )}
             </tbody>
           </table>
-          <PaginationBar page={page} pageCount={pageCount} setPage={setPage} total={total} pageSize={pageSize} setPageSize={setPageSize} />
+          <PaginationBar page={page} pageCount={pageCount} setPage={rq.setPage} total={total} pageSize={pageSize} setPageSize={rq.setSize} />
         </div>
       )}
     </div>

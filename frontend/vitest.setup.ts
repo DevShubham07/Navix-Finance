@@ -26,6 +26,23 @@ import "@testing-library/jest-dom/vitest";
  */
 afterEach(cleanup);
 
+/**
+ * Clear browser storage between tests, for the same reason.
+ *
+ * Registers remember the operator's last view (search, sort, column filters) per staff id under
+ * `navix-register-view:…`, so without this one test's filter is the next test's starting state —
+ * and it fails somewhere unrelated, as an element that "should be there" quietly filtered out.
+ * Here rather than per-file so a new register's test file cannot forget.
+ */
+afterEach(() => {
+  try {
+    localStorage.clear();
+    sessionStorage.clear();
+  } catch {
+    // A test may have replaced storage with a throwing stub; that is its business, not ours.
+  }
+});
+
 if (!window.matchMedia) {
   window.matchMedia = ((query: string) => ({
     matches: false,

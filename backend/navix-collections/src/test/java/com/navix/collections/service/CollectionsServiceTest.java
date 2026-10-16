@@ -59,6 +59,9 @@ class CollectionsServiceTest {
     @Mock
     private com.navix.common.loan.CustomerTrustDirectory customerTrustDirectory;
 
+    @Mock
+    private CollectionsWorklistQuery worklistQuery;
+
     private CollectionsService service;
 
     private final UUID caseId = UUID.randomUUID();
@@ -67,7 +70,7 @@ class CollectionsServiceTest {
     void setUp() {
         service = new CollectionsService(caseRepository, interactionRepository,
                 loanDirectory, staffDirectory, new DpdCalculator(), applicationActorDirectory,
-                customerTrustDirectory, event -> {});
+                customerTrustDirectory, event -> {}, worklistQuery);
         // Default actor is a Collection Head (allowed to assign); tests override where needed.
         ActorContext.set(new CurrentActor("100", "Head", "COLLECTION_HEAD"));
     }

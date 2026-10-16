@@ -105,26 +105,6 @@ public interface LoanApplicationRepository
     Set<Long> findCustomerIdsWithStatusNotIn(@Param("customerIds") Collection<Long> customerIds,
                                              @Param("statuses") Collection<ApplicationStatus> statuses);
 
-    /**
-     * Ids of the ADMIN "All applications" register matching {@code needle} (a lower-cased, LIKE-escaped
-     * {@code %...%} pattern; {@code "%"} matches every row) over application id, customer id, status
-     * and the profile's name / PAN / mobile / email — newest first. Ids only, so paging the register
-     * never loads every row.
-     */
-    @Query(value = """
-            select a.id from loan_application a
-            left join customer_profile p on p.application_id = a.id
-            where cast(a.id as text) like :needle escape '\\'
-               or cast(a.customer_id as text) like :needle escape '\\'
-               or lower(replace(a.status, '_', ' ')) like :needle escape '\\'
-               or lower(p.full_name) like :needle escape '\\'
-               or lower(p.pan) like :needle escape '\\'
-               or p.mobile like :needle escape '\\'
-               or lower(p.email) like :needle escape '\\'
-            order by a.id desc
-            """, nativeQuery = true)
-    List<Long> findAdminRegisterIds(@Param("needle") String needle);
-
     /** Which of these applications' borrowers accepted the signup terms (the register's "agreement"). */
     @Query(value = "select p.application_id from customer_profile p "
             + "where p.application_id in (:ids) and p.terms_accepted_at is not null", nativeQuery = true)

@@ -15,6 +15,10 @@ import com.navix.common.loan.ApplicationActorDirectory.HandledBy;
 import com.navix.common.loan.LoanDirectory;
 import com.navix.common.loan.LoanSummary;
 import com.navix.common.notification.event.CollectionCaseOpenedEvent;
+import com.navix.common.query.ColumnFilter;
+import com.navix.common.query.FilterColumns;
+import com.navix.common.query.FilterSpec;
+import com.navix.common.query.SqlFacets;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
 import com.navix.common.staff.StaffDirectory;
@@ -28,6 +32,10 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -79,6 +87,7 @@ public class CollectionsService {
     private final ApplicationActorDirectory applicationActorDirectory;
     private final com.navix.common.loan.CustomerTrustDirectory customerTrustDirectory;
     private final ApplicationEventPublisher eventPublisher;
+    private final CollectionsWorklistQuery worklistQuery;
 
     /**
      * Open (or fetch) the single collection case for a real loan, and move that
@@ -217,6 +226,243 @@ public class CollectionsService {
         if (loans.isEmpty()) {
             return List.of();
         }
+        return enrichRows(loans, scopeOfficerId());
+    }
+
+    /** One page of the worklist, with the total across every page under the same filters. */
+    public record WorklistPage(List<WorklistRow> rows, int page, int size, long total) {
+    }
+
+    /** A request is capped here; the export loops pages of this size rather than asking for the book. */
+    public static final int MAX_PAGE_SIZE = 200;
+
+    /**
+     * Columns whose value is DERIVED, so they cannot be filtered in SQL: {@code outstanding} is
+     * compute-on-read ({@code RepaymentService.outstandingAsOf}) and a SQL twin would be a second
+     * source of truth for what a borrower owes; the two names come out of the event trail. The
+     * {@code sql} strings are placeholders for {@link FilterColumns}' validation and are NEVER emitted
+     * — this registry is only handed to {@link FilterSpec#parse}, and matched in Java by
+     * {@link #matchesDerived}. Outstanding is rupees on the wire and paise stored (scale 100).
+     */
+    private static final FilterColumns DERIVED_COLUMNS = FilterColumns.builder()
+            .scaled("outstandingPaise", "derived_outstanding", 100, ColumnFilter.Kind.NUM)
+            .column("creditDecidedByName", "derived_credit_decided_by", ColumnFilter.Kind.IN)
+            .column("disbursedByName", "derived_disbursed_by", ColumnFilter.Kind.IN)
+            .build();
+
+    /** Sorts that need the derived value, so they run in Java over the filtered ids. */
+    private static final java.util.Set<String> JAVA_SORTS =
+            java.util.Set.of("outstandingPaise", "creditDecidedByName", "disbursedByName");
+
+    /**
+     * One page of the worklist: filtering, sorting and paging on STORED columns run in SQL
+     * ({@link CollectionsWorklistQuery}); only the ids on the page are enriched. When a derived column
+     * is filtered or sorted, the stored filters still narrow in SQL first, the derived value is then
+     * computed for just those ids and the survivors are paged in Java — the cost of the old
+     * whole-list read, but only for a request that actually asked for a derived filter/sort.
+     *
+     * <p>Scope is applied inside the SQL (an executive sees only their own cases) and the column
+     * filters are ANDed after it, so a filter can only narrow. {@code params} is the raw request map;
+     * {@link FilterSpec} drops anything that is not a registered column.
+     */
+    @Transactional(readOnly = true)
+    public WorklistPage worklistPage(String q, LocalDate from, LocalDate to, String bucket, LocalDate asOf,
+            int page, int size, String sort, String dir, Map<String, String> params) {
+        requireCollectionsStaff();
+        CollectionsWorklistQuery.WorklistFilter filter = worklistFilter(q, from, to, bucket, asOf);
+        FilterSpec sqlSpec = FilterSpec.parse(params, CollectionsWorklistQuery.FILTER_COLUMNS);
+        FilterSpec derived = FilterSpec.parse(params, DERIVED_COLUMNS);
+        int safeSize = Math.max(1, Math.min(size, MAX_PAGE_SIZE));
+        int safePage = Math.max(1, page);
+        int offset = (safePage - 1) * safeSize;
+
+        boolean javaSort = sort != null && JAVA_SORTS.contains(sort);
+        if (derived.isEmpty() && !javaSort) {
+            long total = worklistQuery.count(filter, sqlSpec);
+            List<Long> ids = worklistQuery.pageIds(filter, sqlSpec, offset, safeSize, sort, dir);
+            return new WorklistPage(rowsFor(ids), safePage, safeSize, total);
+        }
+
+        List<Long> ids = worklistQuery.allIds(filter, sqlSpec, javaSort ? null : sort, dir);
+        boolean needLoans = derived.get("outstandingPaise") != null || "outstandingPaise".equals(sort);
+        boolean needHandled = derived.get("creditDecidedByName") != null || derived.get("disbursedByName") != null
+                || "creditDecidedByName".equals(sort) || "disbursedByName".equals(sort);
+        Map<Long, LoanSummary> loans = needLoans ? loanDirectory.findLoans(ids) : Map.of();
+        Map<Long, HandledBy> handled = needHandled ? applicationActorDirectory.byLoanId(ids) : Map.of();
+
+        List<Long> kept = new ArrayList<>();
+        for (Long id : ids) {
+            if (matchesDerived(derived, loans.get(id), handled.getOrDefault(id, HandledBy.NONE))) {
+                kept.add(id);
+            }
+        }
+        if (javaSort) {
+            kept.sort(derivedComparator(sort, "asc".equalsIgnoreCase(dir), loans, handled)); // stable: SQL order breaks ties
+        }
+        int fromIdx = Math.min(offset, kept.size());
+        List<Long> pageIds = kept.subList(fromIdx, Math.min(fromIdx + safeSize, kept.size()));
+        return new WorklistPage(rowsFor(pageIds), safePage, safeSize, kept.size());
+    }
+
+    /** One bucket card: how many loans, and the derived balance across them. */
+    public record BucketSummary(String bucket, long n, long outstandingPaise) {
+    }
+
+    /**
+     * The bucket cards: a row per DPD bucket over the caller's whole scoped collectible set. They
+     * deliberately ignore search, window, bucket and column filters — they are the page's navigation and
+     * would collapse as it is used. The count is a grouped read of stored columns; the balance is the
+     * DERIVED outstanding (compute-on-read), summed in Java over the bucket's ids exactly as the old
+     * whole-list path did, so the cards mean what they always meant.
+     */
+    @Transactional(readOnly = true)
+    public List<BucketSummary> worklistSummary(LocalDate asOf) {
+        requireCollectionsStaff();
+        Map<Long, String> bucketById = worklistQuery.bucketsInScope(worklistFilter(null, null, null, null, asOf));
+        Map<Long, LoanSummary> loans = bucketById.isEmpty() ? Map.of() : loanDirectory.findLoans(bucketById.keySet());
+        Map<String, long[]> acc = new LinkedHashMap<>();
+        for (com.navix.collections.domain.DpdBucket b : com.navix.collections.domain.DpdBucket.values()) {
+            acc.put(b.name(), new long[2]);
+        }
+        bucketById.forEach((id, bucket) -> {
+            long[] slot = acc.get(bucket);
+            slot[0]++;
+            LoanSummary l = loans.get(id);
+            slot[1] += l == null || l.outstandingPaise() == null ? 0 : l.outstandingPaise();
+        });
+        return acc.entrySet().stream().map(e -> new BucketSummary(e.getKey(), e.getValue()[0], e.getValue()[1])).toList();
+    }
+
+    /**
+     * The distinct values of one column's checklist, inside the caller's scope and under the OTHER
+     * columns' filters. Stored columns come from SQL ({@link CollectionsWorklistQuery#facet}); the two
+     * handled-by names are derived, so their values are read off the in-scope ids. Identity columns
+     * and money columns are not facetable, so they answer with an empty list (never a dropdown of
+     * borrowers). A SQL facet is not narrowed by an active derived filter — it may offer a value
+     * that then matches nothing, never one from outside the caller's scope.
+     */
+    @Transactional(readOnly = true)
+    public SqlFacets.Facet worklistFacet(String column, String q, LocalDate from, LocalDate to, String bucket,
+            LocalDate asOf, Map<String, String> params) {
+        requireCollectionsStaff();
+        CollectionsWorklistQuery.WorklistFilter filter = worklistFilter(q, from, to, bucket, asOf);
+        FilterSpec sqlSpec = FilterSpec.parse(params, CollectionsWorklistQuery.FILTER_COLUMNS);
+        if (CollectionsWorklistQuery.FILTER_COLUMNS.get(column) != null) {
+            return worklistQuery.facet(filter, sqlSpec.without(column), column);
+        }
+        if (!"creditDecidedByName".equals(column) && !"disbursedByName".equals(column)) {
+            return new SqlFacets.Facet(List.of(), false);
+        }
+        FilterSpec derived = FilterSpec.parse(params, DERIVED_COLUMNS).without(column);
+        List<Long> ids = worklistQuery.allIds(filter, sqlSpec, null, null);
+        Map<Long, LoanSummary> loans = derived.get("outstandingPaise") != null
+                ? loanDirectory.findLoans(ids) : Map.of();
+        Map<Long, HandledBy> handled = applicationActorDirectory.byLoanId(ids);
+        java.util.TreeSet<String> names = new java.util.TreeSet<>();
+        boolean blank = false;
+        for (Long id : ids) {
+            HandledBy h = handled.getOrDefault(id, HandledBy.NONE);
+            if (!matchesDerived(derived, loans.get(id), h)) {
+                continue;
+            }
+            String name = "creditDecidedByName".equals(column) ? h.creditDecidedByName() : h.disbursedByName();
+            if (name == null || name.isEmpty()) {
+                blank = true;
+            } else {
+                names.add(name);
+            }
+        }
+        List<String> values = new ArrayList<>(names);
+        if (blank) {
+            values.add(ColumnFilter.BLANK);
+        }
+        boolean truncated = values.size() > SqlFacets.MAX_VALUES;
+        return new SqlFacets.Facet(truncated ? values.subList(0, SqlFacets.MAX_VALUES) : values, truncated);
+    }
+
+    private CollectionsWorklistQuery.WorklistFilter worklistFilter(String q, LocalDate from, LocalDate to,
+            String bucket, LocalDate asOf) {
+        LocalDate today = LocalDate.now(IST);
+        boolean scoped = OFFICER_ROLE.equals(ActorContext.get().effectiveRole());
+        return new CollectionsWorklistQuery.WorklistFilter(q, from, to, bucket, scoped, scopeOfficerId(),
+                asOf != null ? asOf : today, today);
+    }
+
+    /** Rows for these ids, in the order given; ids the directory no longer resolves are skipped. */
+    private List<WorklistRow> rowsFor(List<Long> ids) {
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, LoanSummary> byId = loanDirectory.findLoans(ids);
+        List<LoanSummary> ordered = ids.stream().map(byId::get).filter(Objects::nonNull).toList();
+        return enrichRows(ordered, null);
+    }
+
+    /** Java twin of the SQL filters, for the derived columns. Every active derived filter must hold. */
+    private static boolean matchesDerived(FilterSpec derived, LoanSummary loan, HandledBy handled) {
+        for (Map.Entry<String, ColumnFilter> e : derived.filters().entrySet()) {
+            boolean ok = switch (e.getKey()) {
+                case "outstandingPaise" -> inPaiseRange((ColumnFilter.Num) e.getValue(), loan == null ? null : loan.outstandingPaise());
+                case "creditDecidedByName" -> inNames((ColumnFilter.In) e.getValue(), handled.creditDecidedByName());
+                case "disbursedByName" -> inNames((ColumnFilter.In) e.getValue(), handled.disbursedByName());
+                default -> true;
+            };
+            if (!ok) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Bounds are rupees; the same display→stored conversion as {@code SqlFilter} (HALF_UP to whole paise). */
+    private static boolean inPaiseRange(ColumnFilter.Num num, Long paise) {
+        if (paise == null) {
+            return false;
+        }
+        if (num.min() != null && paise < num.min().multiply(BigDecimal.valueOf(100)).setScale(0, RoundingMode.HALF_UP).longValueExact()) {
+            return false;
+        }
+        return num.max() == null
+                || paise <= num.max().multiply(BigDecimal.valueOf(100)).setScale(0, RoundingMode.HALF_UP).longValueExact();
+    }
+
+    private static boolean inNames(ColumnFilter.In in, String name) {
+        return in.values().contains(name == null || name.isEmpty() ? ColumnFilter.BLANK : name);
+    }
+
+    private static Comparator<Long> derivedComparator(String sort, boolean asc, Map<Long, LoanSummary> loans,
+            Map<Long, HandledBy> handled) {
+        // Nulls last in either direction, as the SQL sorts do.
+        Comparator<Long> byValue = switch (sort) {
+            case "outstandingPaise" -> Comparator.comparing(
+                    (Long id) -> loans.get(id) == null ? null : loans.get(id).outstandingPaise(),
+                    asc ? Comparator.nullsLast(Comparator.<Long>naturalOrder())
+                        : Comparator.nullsLast(Comparator.<Long>reverseOrder()));
+            default -> Comparator.comparing(
+                    (Long id) -> {
+                        HandledBy h = handled.getOrDefault(id, HandledBy.NONE);
+                        String n = "creditDecidedByName".equals(sort) ? h.creditDecidedByName() : h.disbursedByName();
+                        return n == null || n.isEmpty() ? null : n.toLowerCase(java.util.Locale.ROOT);
+                    },
+                    asc ? Comparator.nullsLast(Comparator.<String>naturalOrder())
+                        : Comparator.nullsLast(Comparator.<String>reverseOrder()));
+        };
+        return byValue;
+    }
+
+    /**
+     * Turns loan snapshots into worklist rows in the order given: four batched reads (cases, officer
+     * names, handled-by, trust) however many loans, never a lookup per row. Shared by the whole
+     * worklist and by {@link #worklistPage}, which hands it only the ids on the page — so a page
+     * costs a page, not the book.
+     *
+     * @param scopeOfficer when non-null, rows whose case is not assigned to this officer are dropped
+     *     (the whole-worklist path scopes here; the SQL page path already scoped in the query)
+     */
+    private List<WorklistRow> enrichRows(List<LoanSummary> loans, Long scopeOfficer) {
+        if (loans.isEmpty()) {
+            return List.of();
+        }
         List<Long> loanIds = loans.stream().map(LoanSummary::loanId).filter(Objects::nonNull).toList();
 
         Map<Long, CollectionCase> caseByLoanId = new LinkedHashMap<>();
@@ -229,7 +475,7 @@ public class CollectionsService {
         Map<Long, com.navix.common.loan.TrustSignals> trustByCustomer = customerTrustDirectory.forCustomers(
                 loans.stream().map(LoanSummary::customerId).filter(Objects::nonNull).distinct().toList());
 
-        Long me = scopeOfficerId();
+        Long me = scopeOfficer;
         return loans.stream().filter(loan -> {
             if (me == null) return true;
             CollectionCase c = caseByLoanId.get(loan.loanId());

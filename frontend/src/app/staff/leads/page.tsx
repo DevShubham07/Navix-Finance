@@ -1,8 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useSearchParams } from "next/navigation";
-import { keepPreviousData, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Phone, Star } from "lucide-react";
 import { EmptyState, ErrorState, Input, Select, Skeleton, StatusBadge, toast } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
@@ -22,6 +21,11 @@ import {
   type DispositionInput,
 } from "@/lib/api/applications";
 import { PaginationBar } from "@/components/staff/pipeline/pagination";
+import { useRegisterQuery } from "@/lib/staff/register-query";
+import { useServerRegister } from "@/lib/staff/use-server-register";
+import { retryUnlessClientError } from "@/lib/staff/admin-all-applications";
+import { type FilterColumn } from "@/components/staff/column-filter";
+import { Th, thBag } from "@/lib/staff/register-th";
 import { LEAD_RUPEE_ERROR, parseLeadRupees } from "@/lib/leads/lead-money-input";
 import {
   leadOutcomePatch,
@@ -43,6 +47,36 @@ const CALL_STATUSES: LeadCallStatus[] = [
 const SOURCES: LeadSource[] = ["DSA", "REFERRAL", "WALK_IN", "OTHER"];
 
 /**
+ * What each header offers — the server's `LeadBookQuery.FILTER_COLUMNS`. Name, mobile and city are
+ * text-only (identity-ish: never a dropdown of tens of thousands of them); source and status are
+ * small enums, so checklists; ★ is a number in stars. The server answers in id order only, so none
+ * of them sorts. Outcome and S.No. are plain headers: the shown outcome overlays a derived CONFIRMED
+ * the stored column cannot filter on, so a filter there would disagree with the cell.
+ */
+const FILTER_COLUMNS: Array<FilterColumn<LeadView>> = [
+  { key: "name", kind: "text", sortable: false, value: (r) => r.name },
+  { key: "mobile", kind: "text", sortable: false, value: (r) => r.mobile },
+  { key: "source", facet: true, sortable: false, value: (r) => r.source?.replace(/_/g, " ") ?? "—", raw: (r) => r.source ?? "" },
+  { key: "callStatus", facet: true, sortable: false, value: (r) => r.callStatus.replace(/_/g, " "), raw: (r) => r.callStatus },
+  { key: "rating", kind: "num", sortable: false, value: (r) => (r.qualityRating ? `${r.qualityRating}★` : "—"), num: (r) => r.qualityRating },
+  { key: "city", kind: "text", sortable: false, value: (r) => r.city ?? "" },
+];
+const FILTER_KEYS = FILTER_COLUMNS.map((c) => c.key);
+const COLUMN_LABEL: Record<string, string> = {
+  name: "Name",
+  mobile: "Mobile",
+  source: "Source",
+  callStatus: "Status",
+  rating: "★",
+  city: "City",
+};
+/** The server's RAW values → the words on screen. A filter travels as the raw value, never the label. */
+const FACET_LABELS: Record<string, Record<string, string>> = {
+  source: Object.fromEntries(SOURCES.map((s) => [s, s.replace(/_/g, " ")])),
+  callStatus: Object.fromEntries(CALL_STATUSES.map((s) => [s, s.replace(/_/g, " ")])),
+};
+
+/**
  * Telecaller work queue — create DSA-style leads and update call disposition (status + ★ + remarks).
  */
 export default function StaffLeadsPage() {
@@ -62,52 +96,59 @@ function StaffLeadsPageInner() {
   // never use.
   const canManage = myRole != null && can("leads:manage");
   const qc = useQueryClient();
-  // Deep link from the global-search palette (`?q=`), so a lead hit lands on that lead.
-  const [q, setQ] = React.useState(useSearchParams().get("q") ?? "");
+  // Search, page and page size live in the register view, which also reads the global-search
+  // deep link (`?q=`) and keeps the view in the URL. No `staffId`: a remembered view could restore a
+  // `q` after the SearchBar below has already mounted with its draft, leaving box and query apart.
+  // Column filters run on the SERVER (`useServerRegister` below): this table is tens of thousands of
+  // leads and the page holds 25, so a client-side filter would narrow only what is on screen and read
+  // as "no match".
+  const rq = useRegisterQuery({
+    registerId: "leads",
+    sortKeys: ["createdAt"],
+    filterKeys: FILTER_KEYS,
+    defaults: { sort: { key: "createdAt", dir: "desc" } },
+  });
+  const q = rq.state.q;
   // Bumped to remount the SearchBar, whose draft text is its own state, when the empty state's
   // "Clear" resets the search from outside it.
   const [searchKey, setSearchKey] = React.useState(0);
-  const [callStatus, setCallStatus] = React.useState<LeadCallStatus | "">("");
   const [selectedId, setSelectedId] = React.useState<number | null>(null);
   // Server paging — the lead table grows without limit and was being fetched whole to show 25 rows.
-  const [page, setPage] = React.useState(1);
-  const [pageSize, setPageSize] = React.useState(25);
+  const page = rq.state.page;
+  const pageSize = rq.state.size;
 
-  const list = useQuery({
-    queryKey: ["leads", q, callStatus, page, pageSize],
-    queryFn: () =>
-      leadsApi.list({
-        q: q || undefined,
-        callStatus: callStatus || undefined,
-        page,
-        size: pageSize,
-      }),
-    // Paging changes the key; without this the table blanks to "Loading…" on every Next/Prev.
-    placeholderData: keepPreviousData,
+  // Search, column filters and paging are all in `rq.queryParams`/`rq.state`; the key prefix is the
+  // `["leads"]` every mutation below invalidates. No facet is fetched on mount — a header's panel
+  // opening calls `cr.requestFacet`.
+  const cr = useServerRegister<LeadView>(rq, {
+    key: ["leads"],
+    fetchPage: (params, pg, size) => leadsApi.page({ extra: params, page: pg, size }),
+    fetchFacet: (column, params) => leadsApi.facet(column, params),
+    labels: FACET_LABELS,
+    // Not before the role gate has answered; and a 403 is final, so no retries.
     enabled: canManage,
+    retry: retryUnlessClientError,
   });
+  const th = thBag(rq, cr, FILTER_COLUMNS, COLUMN_LABEL, cr.requestFacet);
 
   // Signed-in state could not be confirmed (no session, or the lookup failed), so the list never
   // runs. Saying so beats an empty table that reads as "no leads".
   const sessionUnknown = myRole == null && !me.isPending;
-  const filtered = q !== "" || callStatus !== "";
+  const filtered = rq.activeCount > 0;
   const clearFilters = () => {
-    setQ("");
-    setCallStatus("");
-    setPage(1);
+    rq.clearAll();
     setSearchKey((k) => k + 1);
   };
 
-  // Unchanged: every mutation below still invalidates the whole `["leads"]` prefix, which now also
-  // covers the page/size suffixes.
+  // Every mutation below invalidates the whole `["leads"]` prefix: the pages and the facets.
   const invalidate = () => qc.invalidateQueries({ queryKey: ["leads"] });
 
-  const rows = list.data?.rows ?? [];
+  const rows = cr.pageRows;
   const selected = rows.find((r) => r.id === selectedId) ?? null;
   // `total` is every lead matching the filter, counted by the server — not `rows.length`, which is
-  // now just this page.
-  const total = list.data?.total ?? 0;
-  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  // just this page.
+  const total = cr.total;
+  const pageCount = cr.pageCount;
 
   if (myRole && !can("leads:manage")) {
     return <NoAccessNotice message="Telecaller or Admin access required." />;
@@ -121,12 +162,12 @@ function StaffLeadsPageInner() {
       >
         <button
           type="button"
-          onClick={() => list.refetch()}
+          onClick={() => cr.refetch()}
           className="btn btn-sm btn-outline"
           // `refetch` ignores `enabled`, so Refresh waits on the same leads:manage answer as the list.
-          disabled={list.isFetching || !canManage}
+          disabled={cr.isPlaceholderData || !canManage}
         >
-          {list.isFetching ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+          {cr.isPlaceholderData ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
           Refresh
         </button>
       </PageHeader>
@@ -137,36 +178,14 @@ function StaffLeadsPageInner() {
         <SearchBar
           key={searchKey}
           initialValue={q}
-          onSearch={(t) => {
-            setQ(t);
-            setPage(1);
-          }}
+          onSearch={rq.setQ}
           placeholder="Name or mobile"
           ariaLabel="Search"
         />
-        <Select
-          label="Call status"
-          className="!mb-0"
-          value={callStatus}
-          onChange={(e) => {
-            setCallStatus(e.target.value as LeadCallStatus | "");
-            // A new filter means a new result set; page 3 of the old one is not a position in it.
-            // Reset here, in the same update, rather than in an effect after render — the effect
-            // let one request go out for the new filter at the old page first.
-            setPage(1);
-          }}
-        >
-          <option value="">All</option>
-          {CALL_STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {s.replace(/_/g, " ")}
-            </option>
-          ))}
-        </Select>
       </div>
 
-      {list.isError && (
-        <ErrorState error={list.error} onRetry={() => void list.refetch()} className="mt-3 py-4" />
+      {cr.isError && (
+        <ErrorState error={cr.error} onRetry={() => cr.refetch()} className="mt-3 py-4" />
       )}
       {sessionUnknown && (
         <ErrorState
@@ -185,7 +204,7 @@ function StaffLeadsPageInner() {
           {/* `staff-register-scroll` bounds the scroller so the sticky `thead` has something to
               stick to; PaginationBar sits after it so it no longer scrolls away with the rows.
               Offset clears the shell header, PageHeader, the collapsed New-lead card and the
-              search/call-status filter row. */}
+              search row. */}
           <div className="staff-table-scroll staff-register-scroll" style={{ "--register-offset": "28rem" } as React.CSSProperties}>
           {/* `staff-table-fit`: eight columns beside a 320px panel fit without the wide-register
               84rem floor, which forced a sideways scroll at every common laptop width. */}
@@ -194,24 +213,24 @@ function StaffLeadsPageInner() {
             <thead>
               <tr>
                 <th scope="col">S.No.</th>
-                <th scope="col">Name</th>
-                <th scope="col">Mobile</th>
-                <th scope="col">Source</th>
-                <th scope="col">Status</th>
+                <Th th={th} col="name" />
+                <Th th={th} col="mobile" />
+                <Th th={th} col="source" />
+                <Th th={th} col="callStatus" />
                 <th scope="col">Outcome</th>
-                <th scope="col">★</th>
-                <th scope="col">City</th>
+                <Th th={th} col="rating" />
+                <Th th={th} col="city" />
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 &&
-                (list.isLoading || (myRole == null && me.isPending) ? (
+                (cr.isLoading || (myRole == null && me.isPending) ? (
                   <tr>
                     <td colSpan={8}>
                       <Skeleton variant="table" rows={8} cols={8} />
                     </td>
                   </tr>
-                ) : list.isError || sessionUnknown ? null : filtered ? (
+                ) : cr.isError || sessionUnknown ? null : filtered ? (
                   // "Nothing exists yet" and "your search matched nothing" are different facts; the
                   // first used to show for both, telling a telecaller with a typo there were no leads.
                   <EmptyState
@@ -272,13 +291,10 @@ function StaffLeadsPageInner() {
           <PaginationBar
             page={page}
             pageCount={pageCount}
-            setPage={setPage}
+            setPage={rq.setPage}
             total={total}
             pageSize={pageSize}
-            setPageSize={(size) => {
-              setPageSize(size);
-              setPage(1);
-            }}
+            setPageSize={rq.setSize}
           />
         </div>
 

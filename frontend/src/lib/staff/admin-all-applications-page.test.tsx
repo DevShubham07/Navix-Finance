@@ -11,7 +11,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApplicationApiError, staffApi, type AdminApplicationView } from "@/lib/api/applications";
 import { formatDateTime } from "@/lib/utils";
 import AdminAllApplicationsPage from "@/app/staff/admin/all-applications/page";
-import { filterAdminApplications } from "@/lib/staff/admin-all-applications";
+
+// The register owns the URL (useRegisterQuery), so the router must exist; replace() writes through to
+// the location so the view round-trips as it does in the app.
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    replace: (url: string) => window.history.replaceState({}, "", url),
+    push: vi.fn(), refresh: vi.fn(), back: vi.fn(), forward: vi.fn(), prefetch: vi.fn(),
+  }),
+  usePathname: () => "/staff/admin/all-applications",
+  useSearchParams: () => new URLSearchParams(window.location.search),
+}));
 
 function app(overrides: Partial<AdminApplicationView> = {}): AdminApplicationView {
   return {
@@ -62,10 +72,19 @@ function mockSession(session: { id: string; name: string; role: string } | null)
   vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify({ session })));
 }
 
-/** A stand-in for the server-paged register, filtering ROWS the way the backend does. */
+/**
+ * A stand-in for the server: it does the narrowing the backend does (search over name / id / status
+ * label, then completeness) on the request it is sent, so the page is tested on what it ASKS for and
+ * how it renders the answer, not on any filtering of its own.
+ */
 function fakeServer() {
   return vi.spyOn(staffApi, "listAllApplicationsPage").mockImplementation(async (p) => {
-    const rows = filterAdminApplications(ROWS, p.completeness ?? "ALL", p.q ?? "");
+    const needle = (p.q ?? p.filters?.q ?? "").trim().toLowerCase();
+    const rows = ROWS.filter((a) => {
+      if (p.completeness === "COMPLETE" && !a.complete) return false;
+      if (p.completeness === "INCOMPLETE" && a.complete) return false;
+      return !needle || [a.id, a.customerId, a.fullName, a.status].some((v) => String(v ?? "").toLowerCase().includes(needle));
+    });
     return { rows: rows.slice((p.page - 1) * p.size, p.page * p.size), page: p.page, size: p.size, total: rows.length, allCount: ROWS.length };
   });
 }
@@ -80,6 +99,7 @@ function renderPage() {
 }
 
 afterEach(() => {
+  window.history.replaceState({}, "", "/");
   localStorage.clear();
   vi.restoreAllMocks();
 });
@@ -120,6 +140,21 @@ describe("AdminAllApplicationsPage", () => {
 
     expect(await screen.findByText(/Not allowed/)).toBeInTheDocument();
     expect(list).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends the view to the server and does not fetch any facet until a panel opens", async () => {
+    mockSession({ id: "1", name: "Admin", role: "ADMIN" });
+    const list = fakeServer();
+    const facet = vi.spyOn(staffApi, "allApplicationsFacet").mockResolvedValue({ values: ["DRAFT"], truncated: false });
+    renderPage();
+
+    await screen.findByText("Asha Rao");
+    expect(list.mock.calls[0][0]).toMatchObject({ page: 1, completeness: "ALL" });
+    expect(facet).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: /^Filter Status/ }));
+    await waitFor(() => expect(facet).toHaveBeenCalledTimes(1));
+    expect(facet.mock.calls[0][0]).toBe("status");
   });
 
   it("shows when each application entered its stage", async () => {

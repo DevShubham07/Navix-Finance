@@ -1,20 +1,17 @@
 package com.navix.loan.service;
 
+import com.navix.common.query.FilterSpec;
+import com.navix.common.query.SqlFacets;
 import com.navix.common.storage.DocumentStoragePort;
-import com.navix.loan.domain.PaymentStatus;
 import com.navix.loan.dto.LoanDtos.TransactionView;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.Loan;
 import com.navix.loan.entity.LoanApplication;
-import com.navix.loan.entity.Payment;
 import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
 import com.navix.loan.repository.LoanRepository;
-import com.navix.loan.repository.PaymentRepository;
 import java.time.LocalDate;
-import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -25,12 +22,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * The accountant's company-wide transactions ledger. Synthesized on read from existing data — no
- * dedicated table:
+ * dedicated table (the union lives in {@link TransactionLedgerQuery}):
  *
  * <ul>
  *   <li><b>OUTGOING</b> DISBURSAL rows from every {@link Loan} ({@code net_disbursed}, on
  *       {@code disbursed_on}, referenced by {@code disbursal_txn_ref}).</li>
- *   <li><b>INCOMING</b> REPAYMENT rows from every {@link Payment}.</li>
+ *   <li><b>INCOMING</b> REPAYMENT rows from every payment that was not rejected.</li>
  * </ul>
  *
  * Borrower name/PAN are resolved loan → application → {@link CustomerProfile}. The full PAN is
@@ -43,7 +40,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class TransactionService {
 
     private final LoanRepository loanRepository;
-    private final PaymentRepository paymentRepository;
+    private final TransactionLedgerQuery ledgerQuery;
     private final LoanApplicationRepository applicationRepository;
     private final CustomerProfileRepository profileRepository;
     private final DocumentStoragePort storage;
@@ -64,119 +61,65 @@ public class TransactionService {
     }
 
     /**
-     * One page of the transactions ledger: OUTGOING disbursals + INCOMING repayments, newest first,
-     * filtered by direction, an optional inclusive {@code from}/{@code to} statement period and a
-     * free-text {@code q} (borrower name / mobile / loan id).
+     * One page of the transactions ledger: OUTGOING disbursals + INCOMING repayments, newest first
+     * unless a sort is asked for, filtered by direction, an optional inclusive {@code from}/{@code to}
+     * statement period, a free-text {@code q} (borrower name / mobile / loan id) and the
+     * {@code f.<column>} filters in {@code columnFilters} (raw request params; {@link FilterSpec} drops
+     * anything that is not a registered column).
      *
-     * <p>The period is applied in SQL on both halves ({@code loan.disbursed_on} and
-     * {@code payment.paid_on}) rather than by loading every loan and every payment the company has
-     * ever had and filtering in memory, and only the returned page's proofs are presigned. A row with
-     * no date is excluded once either bound is set, as before.
+     * <p>All of it — the period, the filters, the count, the card sums and the page — is one native
+     * statement family in {@link TransactionLedgerQuery}, so a filtered page costs the page, not the
+     * whole period read through two repositories and merged here. Borrower name/PAN arrive on the row
+     * (the ledger filters on them, so they are joined in SQL); only the returned page's proofs are
+     * presigned. The caller gates on ACCOUNTANT/ADMIN before this is reached; the filter is ANDed
+     * after the period/direction/search clauses inside the query, so it can only narrow.
      */
     @Transactional(readOnly = true)
-    public TransactionPage listTransactions(String q, String direction, LocalDate from, LocalDate to,
-                                            int page, int size) {
+    public TransactionPage page(String q, String direction, LocalDate from, LocalDate to,
+                                int page, int size, String sort, String dir, Map<String, String> columnFilters) {
         int safeSize = Math.max(1, Math.min(size, MAX_PAGE_SIZE));
         int safePage = Math.max(1, page);
-        String dir = direction != null ? direction.trim().toUpperCase() : null;
-
-        // Each half is windowed in SQL on its own date column. A bound also drops null-date rows,
-        // which is what the old in-memory `date() == null` removal did.
-        List<Loan> disbursals = "INCOMING".equals(dir) ? List.of() : loanRepository.findAllForRegister(from, to);
-        List<Payment> repayments = "OUTGOING".equals(dir) ? List.of() : paymentRepository.findAllForLedger(from, to);
-        // A repayment the accountant rejected never moved any money (the proof did not match a
-        // transfer), so it is not a transaction: it stays on the loan's own Repayment tab, not here.
-        repayments = repayments.stream().filter(p -> p.getStatus() != PaymentStatus.REJECTED).toList();
-        if (from != null || to != null) {
-            disbursals = disbursals.stream().filter(l -> l.getDisbursedOn() != null).toList();
-            repayments = repayments.stream().filter(p -> p.getPaidOn() != null).toList();
-        }
-
-        // Every loan either half references: the disbursals themselves, plus the loans the in-window
-        // repayments belong to (which may have been disbursed before the period started).
-        Map<Long, Loan> loanById = new HashMap<>();
-        for (Loan l : disbursals) {
-            loanById.put(l.getId(), l);
-        }
-        List<Long> missing = repayments.stream()
-                .map(Payment::getLoanId)
-                .filter(id -> id != null && !loanById.containsKey(id))
-                .distinct()
-                .toList();
-        if (!missing.isEmpty()) {
-            for (Loan l : loanRepository.findAllById(missing)) {
-                loanById.put(l.getId(), l);
-            }
-        }
-
-        // loanId -> the borrower's profile (loan → application → customer_profile).
-        Map<Long, CustomerProfile> profileByLoanId = profilesByLoanId(loanById.keySet());
-
-        List<TransactionView> out = new ArrayList<>();
-
-        // Outgoing: each loan is one disbursal.
-        for (Loan loan : disbursals) {
-            CustomerProfile p = profileByLoanId.get(loan.getId());
-            out.add(new TransactionView(
-                    "D-" + loan.getId(), "DISBURSAL", "OUTGOING",
-                    loan.getId(), loan.getCustomerId(),
-                    p != null ? p.getFullName() : null,
-                    p != null ? p.getPan() : null,
-                    loan.getNetDisbursed() != null ? loan.getNetDisbursed() : 0L,
-                    loan.getDisbursalTxnRef(),
-                    loan.getStatus() != null ? loan.getStatus().name() : null,
-                    loan.getDisbursedOn(), null, loan.getDueDate()));
-        }
-
-        // Incoming: each payment is one repayment.
-        // proofUrl carries the raw S3 key here — presigning happens once, for the page, below.
-        for (Payment pay : repayments) {
-            Loan loan = loanById.get(pay.getLoanId());
-            CustomerProfile p = profileByLoanId.get(pay.getLoanId());
-            out.add(new TransactionView(
-                    "P-" + pay.getId(), "REPAYMENT", "INCOMING",
-                    pay.getLoanId(),
-                    loan != null ? loan.getCustomerId() : null,
-                    p != null ? p.getFullName() : null,
-                    p != null ? p.getPan() : null,
-                    pay.getAmount() != null ? pay.getAmount() : 0L,
-                    pay.getTxnRef(),
-                    pay.getStatus() != null ? pay.getStatus().name() : null,
-                    pay.getPaidOn(), pay.getProofUrl(), loan != null ? loan.getDueDate() : null));
-        }
-
-        if (q != null && !q.isBlank()) {
-            String needle = q.trim().toLowerCase();
-            out.removeIf(t -> !matches(t, needle, profileByLoanId));
-        }
+        TransactionLedgerQuery.LedgerFilter filter = ledgerFilter(q, direction, from, to);
+        FilterSpec spec = FilterSpec.parse(columnFilters, TransactionLedgerQuery.FILTER_COLUMNS);
 
         // Totals describe the whole filter, not the page — the cards above the table are the
         // period's money movement, and they must not change as the reviewer pages through it.
-        long totalIn = 0L;
-        long totalOut = 0L;
-        long pendingIn = 0L;
-        for (TransactionView t : out) {
-            if ("INCOMING".equals(t.direction())) {
-                // Only confirmed money is inflow; a pending claim may still be rejected.
-                if (PaymentStatus.VERIFIED.name().equals(t.status())) totalIn += t.amountPaise();
-                else pendingIn += t.amountPaise();
-            } else {
-                totalOut += t.amountPaise();
-            }
-        }
-
-        // Most recent first; rows without a date sort to the end.
-        out.sort(Comparator.comparing(TransactionView::date,
-                Comparator.nullsLast(Comparator.<LocalDate>reverseOrder())));
+        TransactionLedgerQuery.Totals totals = ledgerQuery.totals(filter, spec);
 
         // Presign only the page's proofs — the expensive part, done once per row actually returned
         // instead of once per payment in the table.
-        List<TransactionView> pageRows = out.stream()
-                .skip((long) (safePage - 1) * safeSize)
-                .limit(safeSize)
+        List<TransactionView> pageRows = ledgerQuery
+                .page(filter, spec, (safePage - 1) * safeSize, safeSize, sort, dir).stream()
                 .map(t -> withProof(t, presignedProof(t.proofUrl())))
                 .toList();
-        return new TransactionPage(pageRows, safePage, safeSize, out.size(), totalIn, totalOut, pendingIn);
+        return new TransactionPage(pageRows, safePage, safeSize, totals.count(),
+                totals.inPaise(), totals.outPaise(), totals.pendingInPaise());
+    }
+
+    /** The unsorted, unfiltered-by-column form: the original {@code GET /transactions}. */
+    @Transactional(readOnly = true)
+    public TransactionPage listTransactions(String q, String direction, LocalDate from, LocalDate to,
+                                            int page, int size) {
+        return page(q, direction, from, to, page, size, null, null, Map.of());
+    }
+
+    /**
+     * The distinct values of one faceted column, inside the same period/direction/search the list
+     * uses. {@code columnFilters} are the OTHER columns' filters; the column's own is dropped so its
+     * dropdown does not collapse. Identity columns are not facetable (see {@code FILTER_COLUMNS}).
+     */
+    @Transactional(readOnly = true)
+    public SqlFacets.Facet facets(String q, String direction, LocalDate from, LocalDate to, String column,
+                                  Map<String, String> columnFilters) {
+        FilterSpec spec = FilterSpec.parse(columnFilters, TransactionLedgerQuery.FILTER_COLUMNS).without(column);
+        return ledgerQuery.facet(ledgerFilter(q, direction, from, to), spec, column);
+    }
+
+    private static TransactionLedgerQuery.LedgerFilter ledgerFilter(String q, String direction, LocalDate from, LocalDate to) {
+        return new TransactionLedgerQuery.LedgerFilter(
+                q == null ? null : q.trim().toLowerCase(),
+                direction == null ? null : direction.trim().toUpperCase(),
+                from, to);
     }
 
     /**
@@ -232,17 +175,5 @@ public class TransactionService {
         return new TransactionView(t.id(), t.type(), t.direction(), t.loanId(), t.customerId(),
                 t.borrowerName(), t.pan(), t.amountPaise(), t.txnRef(), t.status(), t.date(), presignedUrl,
                 t.repaymentDate());
-    }
-
-    /** Match the search needle against borrower name, mobile, or loan id. */
-    private boolean matches(TransactionView t, String needle, Map<Long, CustomerProfile> profileByLoanId) {
-        if (t.borrowerName() != null && t.borrowerName().toLowerCase().contains(needle)) {
-            return true;
-        }
-        if (t.loanId() != null && String.valueOf(t.loanId()).contains(needle)) {
-            return true;
-        }
-        CustomerProfile p = t.loanId() != null ? profileByLoanId.get(t.loanId()) : null;
-        return p != null && p.getMobile() != null && p.getMobile().contains(needle);
     }
 }

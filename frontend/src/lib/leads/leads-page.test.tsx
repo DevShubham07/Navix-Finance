@@ -64,19 +64,34 @@ function renderPage() {
   );
 }
 
-/** The side panel's "Call status" select (the first one is the list filter). */
+/** The side panel's "Call status" select — the only one on the page now that the list filters from its header. */
 function panelCallStatus() {
-  return screen.getAllByLabelText("Call status")[1] as HTMLSelectElement;
+  return screen.getByLabelText("Call status") as HTMLSelectElement;
+}
+
+/** Open a column's filter panel from its header. */
+function openFilter(column: string) {
+  fireEvent.click(screen.getByRole("button", { name: `Filter ${column}` }));
+}
+
+/** Filter the Name column to "contains <term>" through the header panel. */
+function filterNameContains(term: string) {
+  openFilter("Name");
+  fireEvent.change(screen.getByLabelText("Name contains"), { target: { value: term } });
+  fireEvent.click(screen.getByRole("button", { name: "Apply" }));
 }
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  // Every header's panel asks for its facet when it opens (text columns get an empty one); the tests
+  // that care re-spy with real values.
+  vi.spyOn(leadsApi, "facet").mockResolvedValue({ values: [], truncated: false });
 });
 
 describe("list query and the role gate", () => {
   it("does not ask for leads when the staffer lacks leads:manage", async () => {
     signInAs("ACCOUNTANT");
-    const list = vi.spyOn(leadsApi, "list").mockResolvedValue(pageOf([]));
+    const list = vi.spyOn(leadsApi, "page").mockResolvedValue(pageOf([]));
     renderPage();
     expect(await screen.findByText("Telecaller or Admin access required.")).toBeInTheDocument();
     expect(list).not.toHaveBeenCalled();
@@ -84,7 +99,7 @@ describe("list query and the role gate", () => {
 
   it("asks for leads once the role resolves to one that holds leads:manage", async () => {
     signInAs("TELECALLER");
-    const list = vi.spyOn(leadsApi, "list").mockResolvedValue(pageOf([lead()]));
+    const list = vi.spyOn(leadsApi, "page").mockResolvedValue(pageOf([lead()]));
     renderPage();
     expect(await screen.findByText("Asha Verma")).toBeInTheDocument();
     expect(list).toHaveBeenCalledTimes(1);
@@ -94,45 +109,95 @@ describe("list query and the role gate", () => {
 describe("empty states", () => {
   it("says nothing exists only when no search or filter is applied", async () => {
     signInAs("TELECALLER");
-    vi.spyOn(leadsApi, "list").mockResolvedValue(pageOf([]));
+    vi.spyOn(leadsApi, "page").mockResolvedValue(pageOf([]));
     renderPage();
     expect(await screen.findByText("No leads yet — add one above.")).toBeInTheDocument();
   });
 
   it("says the filter matched nothing, and clears it on request", async () => {
     signInAs("TELECALLER");
-    const list = vi.spyOn(leadsApi, "list").mockResolvedValue(pageOf([]));
+    const list = vi.spyOn(leadsApi, "page").mockResolvedValue(pageOf([]));
     renderPage();
     await screen.findByText("No leads yet — add one above.");
 
-    fireEvent.change(screen.getAllByLabelText("Call status")[0], { target: { value: "CALLBACK" } });
+    filterNameContains("zzz");
     expect(await screen.findByText("No leads match your search or filter")).toBeInTheDocument();
     expect(screen.queryByText("No leads yet — add one above.")).not.toBeInTheDocument();
-    // Reset in the change handler: the first request for the new filter is already on page 1.
-    expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ callStatus: "CALLBACK", page: 1 }));
+    // Reset in the same update as the filter: the first request for it is already on page 1.
+    expect(list).toHaveBeenLastCalledWith(
+      expect.objectContaining({ page: 1, extra: expect.objectContaining({ "f.name": "text:contains:zzz" }) }),
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Clear search and filter" }));
     expect(await screen.findByText("No leads yet — add one above.")).toBeInTheDocument();
-    expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ callStatus: undefined, q: undefined }));
+    const lastExtra = list.mock.calls.at(-1)![0].extra ?? {};
+    expect(lastExtra["f.name"]).toBeUndefined();
+    expect(lastExtra.q).toBeUndefined();
   });
 });
 
-describe("call-status filter", () => {
+describe("server-side column filters", () => {
+  it("asks no facet until a panel opens, then offers raw values under their labels and sends the raw value", async () => {
+    signInAs("TELECALLER");
+    const list = vi.spyOn(leadsApi, "page").mockResolvedValue(pageOf([lead()]));
+    const facet = vi
+      .spyOn(leadsApi, "facet")
+      .mockResolvedValue({ values: ["DSA", "WALK_IN", "__NULL__"], truncated: false });
+    renderPage();
+    await screen.findByText("Asha Verma");
+    expect(facet).not.toHaveBeenCalled();
+
+    openFilter("Source");
+    await waitFor(() => expect(facet).toHaveBeenCalledWith("source", expect.not.objectContaining({ "f.source": expect.anything() })));
+    // The checklist reads like the screen ("WALK IN"), but what is sent is the stored value.
+    // Everything starts ticked once the facet lands (Excel semantics), so clear the lot and tick
+    // back only this one — clicking it directly would UNtick it.
+    await screen.findByLabelText("WALK IN");
+    fireEvent.click(screen.getByLabelText("(Select All)"));
+    fireEvent.click(screen.getByLabelText("WALK IN"));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    await waitFor(() =>
+      expect(list).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page: 1, extra: expect.objectContaining({ "f.source": "in:WALK_IN" }) }),
+      ),
+    );
+  });
+
+  it("filters the star rating by number, in stars", async () => {
+    signInAs("TELECALLER");
+    const list = vi.spyOn(leadsApi, "page").mockResolvedValue(pageOf([lead()]));
+    renderPage();
+    await screen.findByText("Asha Verma");
+
+    openFilter("★");
+    fireEvent.change(screen.getByPlaceholderText("No minimum"), { target: { value: "2" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    await waitFor(() =>
+      expect(list).toHaveBeenLastCalledWith(
+        expect.objectContaining({ extra: expect.objectContaining({ "f.rating": "num:2.." }) }),
+      ),
+    );
+  });
+
   it("never asks for the new filter at the old page", async () => {
     signInAs("TELECALLER");
     const rows = Array.from({ length: 25 }, (_, i) => lead({ id: 100 + i, name: `Lead ${i}` }));
-    const list = vi.spyOn(leadsApi, "list").mockResolvedValue({ rows, page: 1, size: 25, total: 60 });
+    const list = vi.spyOn(leadsApi, "page").mockResolvedValue({ rows, page: 1, size: 25, total: 60 });
     renderPage();
     await screen.findByText("Lead 0");
 
     fireEvent.click(screen.getByRole("button", { name: /Next/ }));
     await waitFor(() => expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 })));
 
-    fireEvent.change(screen.getAllByLabelText("Call status")[0], { target: { value: "CALLBACK" } });
+    filterNameContains("lead");
     await waitFor(() =>
-      expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ callStatus: "CALLBACK", page: 1 })),
+      expect(list).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page: 1, extra: expect.objectContaining({ "f.name": "text:contains:lead" }) }),
+      ),
     );
-    const stale = list.mock.calls.filter(([p]) => p?.callStatus === "CALLBACK" && p.page !== 1);
+    const stale = list.mock.calls.filter(([p]) => p?.extra?.["f.name"] && p.page !== 1);
     expect(stale).toEqual([]);
   });
 });
@@ -140,7 +205,7 @@ describe("call-status filter", () => {
 describe("row selection", () => {
   it("selects a row from the keyboard with Enter or Space", async () => {
     signInAs("TELECALLER");
-    vi.spyOn(leadsApi, "list").mockResolvedValue(
+    vi.spyOn(leadsApi, "page").mockResolvedValue(
       pageOf([lead(), lead({ id: 12, name: "Bilal Khan", mobile: "9123456780" })]),
     );
     renderPage();
@@ -161,7 +226,7 @@ describe("row selection", () => {
 describe("disposition panel", () => {
   async function openPanel(view: LeadView = lead()) {
     signInAs("TELECALLER");
-    vi.spyOn(leadsApi, "list").mockResolvedValue(pageOf([view]));
+    vi.spyOn(leadsApi, "page").mockResolvedValue(pageOf([view]));
     renderPage();
     fireEvent.click(await screen.findByText(view.name));
     await screen.findByRole("heading", { name: view.name });
@@ -216,9 +281,8 @@ describe("disposition panel", () => {
   it("toasts a failure when the lead leaves the filtered list before its error can show", async () => {
     signInAs("TELECALLER");
     const view = lead();
-    const list = vi.spyOn(leadsApi, "list").mockResolvedValue(pageOf([view]));
+    const list = vi.spyOn(leadsApi, "page").mockResolvedValue(pageOf([view]));
     renderPage();
-    fireEvent.change(screen.getAllByLabelText("Call status")[0], { target: { value: "NOT_CALLED" } });
     fireEvent.click(await screen.findByText(view.name));
     await screen.findByRole("heading", { name: view.name });
 
@@ -241,7 +305,7 @@ describe("disposition panel", () => {
 
   it("toasts a failure that lands after another lead was picked mid-Save, not on the new lead", async () => {
     signInAs("TELECALLER");
-    vi.spyOn(leadsApi, "list").mockResolvedValue(
+    vi.spyOn(leadsApi, "page").mockResolvedValue(
       pageOf([lead(), lead({ id: 12, name: "Bilal Khan", mobile: "9123456780" })]),
     );
     renderPage();
@@ -269,7 +333,7 @@ describe("disposition panel", () => {
 
   it("raises nothing when a lead whose Save succeeded is left", async () => {
     signInAs("TELECALLER");
-    vi.spyOn(leadsApi, "list").mockResolvedValue(
+    vi.spyOn(leadsApi, "page").mockResolvedValue(
       pageOf([lead(), lead({ id: 12, name: "Bilal Khan", mobile: "9123456780" })]),
     );
     renderPage();
@@ -307,7 +371,7 @@ describe("disposition panel", () => {
 describe("new-lead rupee boxes", () => {
   async function openForm() {
     signInAs("TELECALLER");
-    vi.spyOn(leadsApi, "list").mockResolvedValue(pageOf([]));
+    vi.spyOn(leadsApi, "page").mockResolvedValue(pageOf([]));
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: /New lead/ }));
     fireEvent.change(screen.getByLabelText(/^Name/), { target: { value: "Chitra Rao" } });

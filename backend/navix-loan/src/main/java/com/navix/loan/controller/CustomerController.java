@@ -75,9 +75,31 @@ public class CustomerController {
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "25") int size,
             @RequestParam(required = false) String sort,
-            @RequestParam(required = false) String dir) {
+            @RequestParam(required = false) String dir,
+            @RequestParam java.util.Map<String, String> all) {
         requireStaff();
-        return ApiResponse.ok(customerService.page(q, from, to, seg, mine, page, size, sort, dir));
+        return ApiResponse.ok(customerService.page(q, from, to, seg, mine, page, size, sort, dir, all));
+    }
+
+    /**
+     * The distinct values of one filterable column ({@code col}), for its checklist. Takes the OTHER
+     * columns' {@code f.*} filters and ignores {@code col}'s own, so choosing a value does not hide
+     * the alternatives. Runs inside the caller's scope (see {@link CustomerService#facets}).
+     */
+    @GetMapping("/facets")
+    public ApiResponse<com.navix.common.query.SqlFacets.Facet> facets(
+            @RequestParam("column") String col,
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false)
+            @org.springframework.format.annotation.DateTimeFormat(
+                    iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate from,
+            @RequestParam(required = false)
+            @org.springframework.format.annotation.DateTimeFormat(
+                    iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate to,
+            @RequestParam(defaultValue = "false") boolean mine,
+            @RequestParam java.util.Map<String, String> all) {
+        requireStaff();
+        return ApiResponse.ok(customerService.facets(q, from, to, mine, col, all));
     }
 
     /** The segment-chip counts over the whole (scoped, filtered) book. */
@@ -90,9 +112,10 @@ public class CustomerController {
             @RequestParam(required = false)
             @org.springframework.format.annotation.DateTimeFormat(
                     iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate to,
-            @RequestParam(defaultValue = "false") boolean mine) {
+            @RequestParam(defaultValue = "false") boolean mine,
+            @RequestParam java.util.Map<String, String> all) {
         requireStaff();
-        return ApiResponse.ok(customerService.summary(q, from, to, mine));
+        return ApiResponse.ok(customerService.summary(q, from, to, mine, all));
     }
 
     /**
@@ -140,9 +163,10 @@ public class CustomerController {
             @org.springframework.format.annotation.DateTimeFormat(
                     iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate to,
             @RequestParam(required = false) String seg,
-            @RequestParam(defaultValue = "false") boolean mine) {
+            @RequestParam(defaultValue = "false") boolean mine,
+            @RequestParam java.util.Map<String, String> all) {
         requireStaff();
-        return ApiResponse.ok(customerService.export(q, from, to, seg, mine));
+        return ApiResponse.ok(customerService.export(q, from, to, seg, mine, all));
     }
 
     /** One customer's full history: profile + applications + loans + payments. */

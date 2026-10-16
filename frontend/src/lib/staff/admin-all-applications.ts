@@ -1,42 +1,13 @@
 /**
  * Pure helpers for the ADMIN "All applications" register (`/staff/admin/all-applications`).
  *
- * The register pages server-side (`GET /api/applications/all/page`); this filter is the browser twin
- * of that search, applied to the full register (`GET /api/applications/all`) for "Download all".
+ * Search, column filters and completeness all run on the server (`GET /api/applications/all/page`);
+ * the browser holds no copy of that filter, so it cannot drift from it.
  */
 
-import { ApplicationApiError, statusLabel, type AdminApplicationView } from "@/lib/api/applications";
+import { ApplicationApiError } from "@/lib/api/applications";
 
 export type CompletenessFilter = "ALL" | "COMPLETE" | "INCOMPLETE";
-
-/**
- * The rows that pass the completeness filter and the free-text search.
- *
- * The search is case-insensitive and trimmed, and matches anywhere in the application id, customer
- * id, name, PAN, mobile, email or the human status label ("Kyc Pending"). A blank search matches
- * every row the completeness filter keeps. Returns a new array; the input is never mutated.
- */
-export function filterAdminApplications(
-  all: readonly AdminApplicationView[],
-  completeness: CompletenessFilter,
-  query: string,
-): AdminApplicationView[] {
-  const needle = query.trim().toLowerCase();
-  return all.filter((a) => {
-    if (completeness === "COMPLETE" && !a.complete) return false;
-    if (completeness === "INCOMPLETE" && a.complete) return false;
-    if (!needle) return true;
-    return [a.id, a.customerId, a.fullName, a.pan, a.mobile, a.email, statusLabel(a.status)]
-      .filter((v) => v != null)
-      .map((v) => String(v).toLowerCase())
-      .some((s) => s.includes(needle));
-  });
-}
-
-/** True when either control narrows the register — what decides whether "Clear" is offered. */
-export function isAdminApplicationsFilterActive(completeness: CompletenessFilter, query: string): boolean {
-  return completeness !== "ALL" || query.trim() !== "";
-}
 
 /**
  * React Query `retry` for a request whose 4xx answer is final: a refusal (403 FORBIDDEN_ROLE), a

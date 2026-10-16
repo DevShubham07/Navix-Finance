@@ -2,7 +2,13 @@ package com.navix.loan.service;
 
 import com.navix.common.exception.BusinessException;
 import com.navix.common.security.ActorContext;
+import com.navix.common.query.ColumnFilter.Kind;
+import com.navix.common.query.FilterColumns;
+import com.navix.common.query.FilterSpec;
+import com.navix.common.query.SqlFacets;
+import com.navix.common.query.SqlFilter;
 import com.navix.common.security.CurrentActor;
+import com.navix.common.util.LikeEscape;
 import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.dto.AdminApplicationDtos.AdminApplicationPage;
 import com.navix.loan.dto.AdminApplicationDtos.AdminApplicationView;
@@ -29,6 +35,8 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -53,6 +61,7 @@ public class AdminApplicationService {
     private final BureauStateService bureauStateService;
     private final com.navix.common.staff.StaffDirectory staffDirectory;
     private final CustomerTrustSignalsService trustSignals;
+    private final NamedParameterJdbcTemplate jdbc;
 
     /** Statuses that mean the application has reached (or passed) SANCTIONED — everything else is
      *  "still pre-sanction" and belongs in the telecalling queue (work item 10). */
@@ -72,20 +81,44 @@ public class AdminApplicationService {
 
     static final int MAX_PAGE_SIZE = 100;
 
+    /** The register's row source; the facets query reads the same one, so a dropdown can only offer what the table can show. */
+    private static final String REGISTER_FROM =
+            "loan_application a left join customer_profile p on p.application_id = a.id";
+
+    /**
+     * Columns the register's header panels may filter — SQL written as literals here, never built from a
+     * request (see {@link FilterColumns}). Only stored columns: completeness is derived and stays a
+     * separate param. Money is paise in the column and rupees on screen, hence the display scale of 100
+     * on the bound, not arithmetic on the column. Identity columns (PAN, account, mobile) are TEXT only —
+     * a checklist of thousands of them would be useless and a small enumeration oracle.
+     */
+    static final FilterColumns COLUMNS = FilterColumns.builder()
+            .column("status", "a.status", Kind.IN)
+            .scaled("amount", "a.amount_requested", 100, Kind.NUM)
+            .column("creditScore", "p.bureau_score", Kind.NUM)
+            .column("risk", "p.risk_category", Kind.IN)
+            .column("name", "p.full_name", Kind.TEXT)
+            .column("pan", "p.pan", Kind.TEXT)
+            .column("account", "p.salary_account_number", Kind.TEXT)
+            .column("ifsc", "p.salary_ifsc", Kind.TEXT)
+            .column("mobile", "p.mobile", Kind.TEXT)
+            .build();
+
     /**
      * One page of {@link #listAll()}: search ({@code q} over app id, customer id, status, name, PAN,
-     * mobile, email) and paging run in SQL, and only the page on screen is enriched. A completeness
-     * filter ({@code COMPLETE}/{@code INCOMPLETE}) is computed over the search matches first — it is
-     * derived from verification evidence, not a column. ADMIN only.
+     * mobile, email) and the column filters run in SQL and return every matching id; the completeness
+     * filter ({@code COMPLETE}/{@code INCOMPLETE}) then runs over those ids, because it is derived
+     * from verification evidence, not a column; only then is the survivor list paged, so only the page
+     * on screen is enriched. {@code total} is that same list's size, so the count can never disagree
+     * with the pages. ADMIN only; the register has no further scope.
      */
     @Transactional(readOnly = true)
-    public AdminApplicationPage page(String q, String completeness, int page, int size) {
+    public AdminApplicationPage page(String q, String completeness, Map<String, String> filterParams,
+            int page, int size) {
         requireAdmin();
         int safeSize = Math.max(1, Math.min(size, MAX_PAGE_SIZE));
         int safePage = Math.max(1, page);
-        String needle = q == null || q.isBlank() ? "%"
-                : "%" + q.trim().toLowerCase().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
-        List<Long> ids = applicationRepository.findAdminRegisterIds(needle);
+        List<Long> ids = matchingIds(q, FilterSpec.parse(filterParams, COLUMNS));
         String mode = completeness == null ? "ALL" : completeness.trim().toUpperCase();
         if ("COMPLETE".equals(mode) || "INCOMPLETE".equals(mode)) {
             ids = completeAmong(ids, "COMPLETE".equals(mode));
@@ -97,6 +130,35 @@ public class AdminApplicationService {
                 .collect(Collectors.toMap(LoanApplication::getId, a -> a));
         List<LoanApplication> apps = pageIds.stream().map(byId::get).filter(Objects::nonNull).toList();
         return new AdminApplicationPage(enrich(apps), safePage, safeSize, total, applicationRepository.count());
+    }
+
+    /** Ids matching the search and the column filters, newest first. Every operand is a bound parameter. */
+    private List<Long> matchingIds(String q, FilterSpec spec) {
+        MapSqlParameterSource params = new MapSqlParameterSource("needle", q == null || q.isBlank() ? "%"
+                : "%" + LikeEscape.escapeLike(q.trim().toLowerCase()) + "%");
+        String sql = "select a.id from " + REGISTER_FROM + " where ("
+                + "cast(a.id as text) like :needle escape '\\'"
+                + " or cast(a.customer_id as text) like :needle escape '\\'"
+                + " or lower(replace(a.status, '_', ' ')) like :needle escape '\\'"
+                + " or lower(p.full_name) like :needle escape '\\'"
+                + " or lower(p.pan) like :needle escape '\\'"
+                + " or p.mobile like :needle escape '\\'"
+                + " or lower(p.email) like :needle escape '\\')"
+                + SqlFilter.and(spec, COLUMNS, params)
+                + " order by a.id desc";
+        return jdbc.queryForList(sql, params, Long.class);
+    }
+
+    /**
+     * The values a column's dropdown can offer, given every OTHER column's filter. ADMIN only, and the
+     * register has no scope narrower than that (every application is visible to an admin), so the facet
+     * runs unscoped — {@code SqlFacets} still gets the full register as its source.
+     */
+    @Transactional(readOnly = true)
+    public SqlFacets.Facet facet(String column, Map<String, String> filterParams) {
+        requireAdmin();
+        return SqlFacets.facet(jdbc, null, REGISTER_FROM, null, FilterSpec.parse(filterParams, COLUMNS),
+                COLUMNS, column, new MapSqlParameterSource());
     }
 
     /** The ids (order kept) whose completeness equals {@code wantComplete} — same rule as {@link #enrich}. */

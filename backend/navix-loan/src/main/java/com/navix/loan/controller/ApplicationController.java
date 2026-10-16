@@ -188,8 +188,18 @@ public class ApplicationController {
             @RequestParam(required = false) String q,
             @RequestParam(required = false) String completeness,
             @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "25") int size) {
-        return ApiResponse.ok(adminApplications.page(q, completeness, page, size));
+            @RequestParam(defaultValue = "25") int size,
+            // The whole query string: the column filters arrive as f.<column>; FilterSpec keeps only the
+            // columns the register declared and drops the rest.
+            @RequestParam java.util.Map<String, String> params) {
+        return ApiResponse.ok(adminApplications.page(q, completeness, params, page, size));
+    }
+
+    /** ADMIN — the distinct values of one column, narrowed by every other column's {@code f.*} filter. */
+    @GetMapping("/all/facets")
+    public ApiResponse<com.navix.common.query.SqlFacets.Facet> allFacet(
+            @RequestParam String column, @RequestParam java.util.Map<String, String> params) {
+        return ApiResponse.ok(adminApplications.facet(column, params));
     }
 
     /** ADMIN — the rejection register (self-employed, past delinquency, manual), newest first. */

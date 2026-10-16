@@ -12,6 +12,14 @@ import { customersApi, staffApi, type CustomerDetail, type TelecallingView } fro
 // `vi.mock` calls below are hoisted above every import, so the page sees the mocked modules.
 import TelecallingPage from "@/app/staff/telecalling/page";
 
+// The page's register view mirrors itself into the URL, so it needs a router to exist; none of
+// these tests are about the URL.
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: vi.fn(), push: vi.fn(), refresh: vi.fn(), back: vi.fn(), forward: vi.fn(), prefetch: vi.fn() }),
+  usePathname: () => "/staff/telecalling",
+  useSearchParams: () => new URLSearchParams(),
+}));
+
 // Neither is under test here; both fetch on their own.
 vi.mock("@/components/staff/application-detail-dialog", () => ({ ApplicationDetailDialog: () => null }));
 vi.mock("@/components/staff/customer-owner-picker", () => ({ CustomerOwnerPicker: () => null }));

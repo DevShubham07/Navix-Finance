@@ -144,7 +144,7 @@ public class MetricQueries {
         String needle = q == null ? "" : q.trim();
         p.addValue("segment", seg);
         p.addValue("q", needle.isEmpty() ? null : needle);
-        p.addValue("qLike", needle.isEmpty() ? null : "%" + escapeLike(needle.toLowerCase(Locale.ROOT)) + "%");
+        p.addValue("qLike", needle.isEmpty() ? null : "%" + com.navix.common.util.LikeEscape.escapeLike(needle.toLowerCase(Locale.ROOT), '!') + "%");
         String filter = " left join customer_profile qp on qp.application_id = f.application_id"
                 + " where (cast(:qLike as text) is null or lower(coalesce(qp.full_name, '')) like :qLike escape '!'"
                 + " or cast(f.application_id as text) = :q)";
@@ -198,10 +198,6 @@ public class MetricQueries {
     private static Agg agg(java.sql.ResultSet rs) throws java.sql.SQLException {
         return new Agg(rs.getLong("n"), rs.getLong("fresh"), rs.getLong("reloan"), rs.getLong("amt"),
                 rs.getLong("fresh_amt"), rs.getLong("reloan_amt"));
-    }
-
-    static String escapeLike(String s) {
-        return s.replace("!", "!!").replace("%", "!%").replace("_", "!_");
     }
 
     /** The previous window of equal length, immediately before {@code from}. */

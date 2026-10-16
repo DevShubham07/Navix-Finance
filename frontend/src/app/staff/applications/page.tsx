@@ -27,6 +27,7 @@ import {
   CollectionPaymentValidationQueue,
 } from "@/components/staff/collection-payments";
 import { CollectionAssignActions } from "@/components/staff/pipeline/collection-actions";
+import { useQueueRegister } from "@/components/staff/pipeline/queue-register";
 import { pageTitleFor } from "@/components/staff/staff-nav";
 import { AdminLogPaymentButton } from "@/components/staff/admin-log-payment";
 import {
@@ -166,6 +167,7 @@ function RoleQueues({ role, meId }: { role: StaffRole; meId: number }) {
         <>
           <StatusQueue
             title="Credit review — accept, reject or park"
+            registerId="queue-credit-review"
             status="CREDIT_EXEC_PENDING"
             filter={(a) => a.assignedExecutiveId === meId}
             actions={(app) => <CreditDecisionActions app={app} compact />}
@@ -173,6 +175,7 @@ function RoleQueues({ role, meId }: { role: StaffRole; meId: number }) {
           />
           <StatusQueue
             title="Sanctioned — borrower completing their journey"
+            registerId="queue-sanctioned"
             status="SANCTIONED"
             filter={(a) => a.assignedExecutiveId === meId}
             info="Credit has decided. The borrower is finishing the post-approval steps; the file reaches the Disbursement Head once they accept the offer."
@@ -184,6 +187,7 @@ function RoleQueues({ role, meId }: { role: StaffRole; meId: number }) {
         <>
           <StatusQueue
             title="Pre-approved — fast-track release"
+            registerId="queue-disbursement-fast-track"
             status="DISBURSEMENT_PENDING"
             filter={(app) => app.fastTrack === true}
             actions={(app) => <DisbursementActions app={app} compact />}
@@ -192,6 +196,7 @@ function RoleQueues({ role, meId }: { role: StaffRole; meId: number }) {
           />
           <StatusQueue
             title="Standard disbursement"
+            registerId="queue-disbursement-pending"
             status="DISBURSEMENT_PENDING"
             filter={(app) => app.fastTrack !== true}
             actions={(app) => <DisbursementActions app={app} compact />}
@@ -200,6 +205,7 @@ function RoleQueues({ role, meId }: { role: StaffRole; meId: number }) {
           />
           <StatusQueue
             title="Disbursement failed — retry"
+            registerId="queue-disbursement-failed"
             status="DISBURSEMENT_FAILED"
             actions={(app) => <DisbursementActions app={app} compact />}
             info="Transfers that were marked failed. Re-release them here once the bank issue is resolved."
@@ -345,6 +351,7 @@ function RepaymentColumn({
   isLoading: boolean;
   emptyText: string;
 }) {
+  const register = useQueueRegister(apps, tone === "error" ? "queue-repayment-overdue" : "queue-repayment-active");
   return (
     <div className="min-w-0">
       <div
@@ -369,7 +376,7 @@ function RepaymentColumn({
         <EmptyState title={emptyText} />
       ) : (
         <QueueTable
-          apps={apps}
+          register={register}
           caption={`Awaiting repayment — ${title}`}
           actions={(a) => (
             <>
@@ -402,7 +409,8 @@ function ClosedPanel() {
     refetchInterval: open ? 8000 : false,
     enabled: open,
   });
-  const apps = q.data ?? [];
+  const apps = React.useMemo(() => q.data ?? [], [q.data]);
+  const register = useQueueRegister(apps, "queue-closed");
 
   return (
     <details
@@ -429,7 +437,7 @@ function ClosedPanel() {
           ) : apps.length === 0 ? (
             <EmptyState title="Nothing in the CLOSED queue." />
           ) : (
-            <QueueTable apps={apps} actions={() => null} caption="Closed (fully repaid)" />
+            <QueueTable register={register} actions={() => null} caption="Closed (fully repaid)" />
           )}
         </div>
       )}

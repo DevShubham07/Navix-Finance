@@ -19,7 +19,7 @@ describe("navGroupsFor", () => {
     const visible = navGroupsFor("ADMIN")[0].items.filter((i) => navVisible(i, "ADMIN", "ADMIN"));
     const hrefs = visible.map((i) => i.href);
     expect(hrefs).toEqual(ADMIN_NAV_ORDER.filter((h) => hrefs.includes(h)));
-    expect(hrefs.slice(0, 3)).toEqual(["/staff/dashboard", "/staff/loans", "/staff/collections/overview"]);
+    expect(hrefs.slice(0, 3)).toEqual(["/staff/dashboard", "/staff/loans", "/staff/collections"]);
     expect(hrefs.at(-1)).toBe("/staff/admin/settings");
     expect(navGroupsFor("CREDIT_HEAD")).toBe(NAV);
   });

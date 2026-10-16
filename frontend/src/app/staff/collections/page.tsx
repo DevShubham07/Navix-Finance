@@ -22,8 +22,13 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, ArrowRight } from "lucide-react";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { SearchBar } from "@/components/staff/search-bar";
-import { useTableSort, SortableTh } from "@/components/staff/sortable-table";
-import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
+import { PaginationBar } from "@/components/staff/pipeline/pagination";
+import { type FilterColumn } from "@/components/staff/column-filter";
+import { FilterBar } from "@/components/staff/filter-bar";
+import { Th, thBag, describeRegister } from "@/lib/staff/register-th";
+import { istDay } from "@/lib/staff/column-filter-match";
+import { useRegisterQuery } from "@/lib/staff/register-query";
+import { useServerRegister } from "@/lib/staff/use-server-register";
 import {
   QueueDateFilter,
   rangeFor,
@@ -43,19 +48,57 @@ import {
   paiseToINR,
   type CollectionHandoverRow,
   type CustomerSummary,
+  type DpdBucket,
   type WorklistRow,
 } from "@/lib/api/applications";
 import { collectionHandoverColumns } from "@/lib/export/collection-handover-columns";
 import { BUCKET_TONE, COLLECTION_BUCKETS, isDpdBucket } from "@/lib/collection-buckets";
-import { gradientCss } from "@/components/staff/dashboard/colors";
+
+const BUCKET_LABEL = Object.fromEntries(COLLECTION_BUCKETS.map((b) => [b.bucket, b.label])) as Record<DpdBucket, string>;
+
+/** The register's scope: one bucket, or every live loan across all of them (the default). */
+type Scope = DpdBucket | "ALL";
+import { TONE_SOLID, gradientCss } from "@/components/staff/dashboard/colors";
 import { worklistDueCue, worklistDueLabel, type WorklistDueCue } from "@/lib/collections/worklist-due";
 import { EmptyState, ErrorState, Skeleton } from "@/components/ui";
 import { StageSignal } from "@/components/staff/stage-signal";
 import { formatDate, formatDateTime } from "@/lib/utils";
 
+/** Sortable + filterable columns. Identity (customer id, loan id, mobile, PAN) is sortable where it
+ *  was but deliberately not filterable — the search box is how you find one borrower. */
+const SORT_KEYS = [
+  "customerId", "borrowerName", "loanId", "principalPaise", "outstandingPaise", "dueDate", "dpd",
+  "bucketLabel", "employer", "salaryPaise", "creditDecidedByName", "disbursedByName", "officerName",
+] as const;
+
+/** Columns offering a filter dropdown — every sortable one except the identity columns. */
+const FILTER_KEYS = [
+  "borrowerName", "principalPaise", "outstandingPaise", "dueDate", "dpd", "bucketLabel", "employer",
+  "salaryPaise", "creditDecidedByName", "disbursedByName", "officerName",
+] as const;
+
+/** Header text per key — read by the headers, the filter panels and the export's "Filtered:" line. */
+const COLUMN_LABEL: Record<string, string> = {
+  customerId: "Customer ID",
+  borrowerName: "Borrower",
+  loanId: "Loan",
+  principalPaise: "Principal",
+  outstandingPaise: "Outstanding",
+  dueDate: "Due",
+  dpd: "DPD",
+  bucketLabel: "Bucket",
+  employer: "Employer",
+  salaryPaise: "Salary",
+  creditDecidedByName: "Credit exec",
+  disbursedByName: "Disbursed by",
+  officerName: "Collections exec",
+};
+
 /** Flattened row: the sort primitive compares top-level keys, and `loan` is a nested object. */
 interface Row {
   loanId: number;
+  bucket: DpdBucket;
+  bucketLabel: string;
   /** The application behind this specific loan — what the quick-view dialog opens on. Null only if
    *  the loan snapshot is missing, in which case the quick-view button is not offered. */
   applicationId: number | null;
@@ -86,6 +129,8 @@ interface Row {
 function toRow(w: WorklistRow): Row {
   return {
     loanId: w.loanId,
+    bucket: w.bucket,
+    bucketLabel: BUCKET_LABEL[w.bucket] ?? w.bucket,
     applicationId: w.loan?.applicationId ?? null,
     customerId: w.loan?.customerId ?? null,
     dpd: w.dpd,
@@ -115,6 +160,11 @@ const dash = (v: string | null | undefined) => (v && v.trim() ? v : "—");
 /** The export-only customer enrichment changes when a profile is edited, not between menu opens. */
 const EXPORT_ENRICHMENT_STALE_MS = 5 * 60_000;
 
+/** "Download all" reads the matching rows in server pages of this size (the server caps a page at 200). */
+const EXPORT_PAGE_SIZE = 200;
+/** A runaway guard, far above any real worklist (200 x 250 = 50,000 loans). */
+const EXPORT_MAX_PAGES = 250;
+
 /** DPD-cell tone per due state: red once late, navy on the day, muted while still ahead. */
 const DUE_CUE_CLASS: Record<WorklistDueCue["kind"], string> = {
   overdue: "num font-semibold text-error-700",
@@ -134,11 +184,26 @@ export default function CollectionsBucketPage() {
   const qc = useQueryClient();
   const search = useSearchParams();
   const raw = search.get("bucket");
-  const bucket = isDpdBucket(raw) ? raw : "UPCOMING";
-  const meta = COLLECTION_BUCKETS.find((item) => item.bucket === bucket)!;
+  // No `?bucket=` (the plain sidebar link) means the whole book — the separate read-only
+  // "DPD buckets (all)" page was merged into this one, so All loans is the landing scope.
+  const bucket: Scope = isDpdBucket(raw) ? raw : "ALL";
+  const meta = { label: bucket === "ALL" ? "All loans" : BUCKET_LABEL[bucket] };
 
-  // Deep link from the global-search palette (`?q=…`).
-  const [query, setQuery] = React.useState(search.get("q") ?? "");
+  const me = useStaffMe().data;
+  const role = me?.role;
+
+  // One owner for search, column filters, sort, page and size — kept in the URL (this is the page's
+  // only register, so it owns it; `?q=` from the global-search palette lands here too) and in the
+  // staffer's remembered view. Filter state lives in this reducer, never in the polled query data.
+  const rq = useRegisterQuery({
+    registerId: "collections",
+    staffId: me?.id,
+    sortKeys: SORT_KEYS,
+    filterKeys: FILTER_KEYS,
+    // Most overdue first: the top of a collections list should be the loan that has run longest.
+    defaults: { sort: { key: "dpd", dir: "desc" } },
+  });
+  const query = rq.state.q;
 
   // The pop-up opens on the Repayment tab. `?open=<loanId>` deep links (notifications, the old
   // `/staff/collections/<loanId>` case URL) open it too, resolving the application from the loan.
@@ -152,64 +217,122 @@ export default function CollectionsBucketPage() {
   const [custom, setCustom] = React.useState<QueueRange>({});
   const range = rangeFor(period, custom);
 
+  // The bucket cards come from their own aggregate, separate from the register: they are a map of the
+  // entire (scoped) book AND this page's navigation, so they ignore search, window and column filters
+  // and must not shrink as the register is used. The balance is the server's derived outstanding, so it
+  // cannot be summed from a page. Under `["collections-worklist"]` so assign / log-payment invalidations
+  // refresh it; the register itself polls at its own, faster interval.
   const q = useQuery({
-    queryKey: ["collections-worklist"],
-    queryFn: collectionsApi.worklist,
-    refetchInterval: 8000,
+    queryKey: ["collections-worklist", "summary"],
+    queryFn: () => collectionsApi.worklistSummary(),
+    refetchInterval: 30_000,
   });
 
-  // The customers behind the worklist — sorted so the set is a stable query key across the 8s poll
-  // and the bucket switcher (the worklist rows re-order; the id set does not).
-  const worklistCustomerIds = React.useMemo(() => {
-    const ids = new Set<number>();
-    for (const w of q.data ?? []) {
-      if (w.loan?.customerId != null) ids.add(w.loan.customerId);
-    }
-    return [...ids].sort((a, b) => a - b);
-  }, [q.data]);
+  // Page-level scope: not part of `rq.queryParams`, so they ride as the register's own server params
+  // AND in the query-key prefix — without them a bucket or window change would be answered by the
+  // previous view's cached page.
+  const scopeParams = React.useMemo(() => {
+    const p: Record<string, string> = {};
+    if (bucket !== "ALL") p.bucket = bucket;
+    if (range.from) p.from = range.from;
+    if (range.to) p.to = range.to;
+    return p;
+  }, [bucket, range.from, range.to]);
 
-  // Export-only enrichment (mobile, bank, credit score, signup/history) the worklist snapshot
-  // doesn't carry, joined in by customerId below. `enabled: false` on purpose: it is read ONLY by
-  // the <ExportMenu> column definitions, and ExportMenu renders nothing for a non-ADMIN — so
-  // fetching it on mount made every collections visitor pay for data almost none of them ever see.
-  // It now loads when the menu is opened (`onOpen`), for exactly the customers on the worklist.
-  //
-  // `onOpen` prefetches through the client rather than calling `refetch()`: `refetch()` ignores
-  // `staleTime`, so every open re-downloaded the same customers. `prefetchQuery` only fetches when
-  // this id set has no data yet or it is older than the staleTime.
-  const exportCustomersQuery = {
-    queryKey: ["collections-export-customers", worklistCustomerIds],
-    queryFn: () => customersApi.byIdsAll(worklistCustomerIds),
-    staleTime: EXPORT_ENRICHMENT_STALE_MS,
-  };
-  const customersQ = useQuery({ ...exportCustomersQuery, enabled: false });
-  const customersById = React.useMemo(() => {
-    const m = new Map<number, CustomerSummary>();
-    for (const c of customersQ.data ?? []) m.set(c.customerId, c);
-    return m;
-  }, [customersQ.data]);
-  const customerFor = (id: number | null) => (id != null ? customersById.get(id) : undefined);
+  // The register: one page of rows, the server's count, and facets fetched only when a column's
+  // filter panel opens (`cr.requestFacet`, never on mount). The 8s poll is React Query's per-key
+  // refetch, so it can only replace the rows of the view it was issued for; filter state is in
+  // `rq`'s reducer and is never read back from this data.
+  // Checklist labels: officer ids show as names (active officers, plus any seen on a page — a former
+  // officer still assigned to a loan), and the blank value reads "Unallocated".
+  const officersQ = useQuery({ queryKey: ["collections-officers"], queryFn: collectionsApi.listOfficers, staleTime: 60_000 });
+  const officerLabels = React.useRef(new Map<string, string>());
+  const facetLabels = React.useCallback(
+    (column: string) => {
+      if (column === "bucketLabel") return new Map(Object.entries(BUCKET_LABEL));
+      if (column !== "officerName") return new Map<string, string>();
+      const m = new Map<string, string>(officerLabels.current);
+      for (const o of officersQ.data ?? []) m.set(String(o.id), o.name);
+      m.set("__NULL__", "Unallocated");
+      return m;
+    },
+    [officersQ.data],
+  );
+  const cr = useServerRegister<WorklistRow>(rq, {
+    // Under `["collections-worklist"]` so the assign / log-payment invalidations refresh the register too.
+    key: ["collections-worklist", "register", bucket, range.from ?? "", range.to ?? ""],
+    fetchPage: (params, pg, size) => collectionsApi.worklistPage({ filters: params, page: pg, size, extra: scopeParams }),
+    fetchFacet: (col, params) => collectionsApi.worklistFacet(col, { ...params, ...scopeParams }),
+    labels: facetLabels,
+    refetchInterval: 8000,
+  });
+  const { total, pageCount } = cr;
+  const pageRows = React.useMemo(() => {
+    const rows = cr.rows.map(toRow);
+    for (const r of rows) if (r.officerId != null && r.officerName) officerLabels.current.set(String(r.officerId), r.officerName);
+    return rows;
+  }, [cr.rows]);
 
-  // The agency-handover half of the export: full identity, both addresses, references and every
-  // verification result, keyed by the loan's own application. Same on-demand rule as above.
-  const worklistApplicationIds = React.useMemo(() => {
-    const ids = new Set<number>();
-    for (const w of q.data ?? []) {
-      if (w.loan?.applicationId != null) ids.add(w.loan.applicationId);
+  // Export-only enrichment (mobile, bank, credit score, signup/history, and the agency-handover
+  // blocks) the worklist snapshot doesn't carry, joined in by customer / application id. It is read
+  // ONLY by the <ExportMenu> columns, which render nothing for a non-ADMIN, so it loads when the menu
+  // opens (`onOpen`, for the page on screen) or when "download all" runs (for every matching row) —
+  // never on mount. Held in a ref because the export reads it AFTER an await, from column closures
+  // captured before it resolved; state would hand those closures the stale, empty maps.
+  const enrichment = React.useRef<{ customers: Map<number, CustomerSummary>; handover: Map<number, CollectionHandoverRow> }>({
+    customers: new Map(),
+    handover: new Map(),
+  });
+  const [enriching, setEnriching] = React.useState(false);
+  const enrich = React.useCallback(
+    async (rows: Row[]) => {
+      const customerIds = [...new Set(rows.map((r) => r.customerId).filter((v): v is number => v != null))].sort((a, b) => a - b);
+      const applicationIds = [...new Set(rows.map((r) => r.applicationId).filter((v): v is number => v != null))].sort((a, b) => a - b);
+      // `fetchQuery` honours `staleTime`, so reopening the menu on the same id set is a cache read.
+      const [customers, handoverRows] = await Promise.all([
+        customerIds.length
+          ? qc.fetchQuery({
+              queryKey: ["collections-export-customers", customerIds],
+              queryFn: () => customersApi.byIdsAll(customerIds),
+              staleTime: EXPORT_ENRICHMENT_STALE_MS,
+            })
+          : Promise.resolve([] as CustomerSummary[]),
+        applicationIds.length
+          ? qc.fetchQuery({
+              queryKey: ["collections-export-handover", applicationIds],
+              queryFn: () => customersApi.collectionHandoverAll(applicationIds),
+              staleTime: EXPORT_ENRICHMENT_STALE_MS,
+            })
+          : Promise.resolve([] as CollectionHandoverRow[]),
+      ]);
+      enrichment.current = {
+        customers: new Map(customers.map((c) => [c.customerId, c])),
+        handover: new Map(handoverRows.map((h) => [h.applicationId, h])),
+      };
+    },
+    [qc],
+  );
+  const customerFor = (id: number | null) => (id != null ? enrichment.current.customers.get(id) : undefined);
+  const handover = React.useMemo(
+    () => collectionHandoverColumns<Row>((id) => (id != null ? enrichment.current.handover.get(id) : undefined)),
+    [],
+  );
+
+  // "Download all": every row matching the CURRENT view (same search, bucket, window, column filters,
+  // sort), fetched page by page from the server — `rows` on this register is one page, so the export
+  // cannot take it from there. Deduped by loan because the register polls: a loan can move between two
+  // page reads.
+  const fetchAllRows = React.useCallback(async (): Promise<Row[]> => {
+    const byLoan = new Map<number, Row>();
+    for (let pg = 1; pg <= EXPORT_MAX_PAGES; pg++) {
+      const res = await collectionsApi.worklistPage({ filters: rq.queryParams, page: pg, size: EXPORT_PAGE_SIZE, extra: scopeParams });
+      for (const w of res.rows) byLoan.set(w.loanId, toRow(w));
+      if (res.rows.length === 0 || byLoan.size >= res.total) break;
     }
-    return [...ids].sort((a, b) => a - b);
-  }, [q.data]);
-  const exportHandoverQuery = {
-    queryKey: ["collections-export-handover", worklistApplicationIds],
-    queryFn: () => customersApi.collectionHandoverAll(worklistApplicationIds),
-    staleTime: EXPORT_ENRICHMENT_STALE_MS,
-  };
-  const handoverQ = useQuery({ ...exportHandoverQuery, enabled: false });
-  const handover = React.useMemo(() => {
-    const m = new Map<number, CollectionHandoverRow>();
-    for (const h of handoverQ.data ?? []) m.set(h.applicationId, h);
-    return collectionHandoverColumns<Row>((id) => (id != null ? m.get(id) : undefined));
-  }, [handoverQ.data]);
+    const all = [...byLoan.values()];
+    await enrich(all);
+    return all;
+  }, [rq.queryParams, scopeParams, enrich]);
 
   // Counts across ALL buckets, from the unfiltered set — the header cards are a map of the whole
   // book, so they must not move when the operator narrows one bucket.
@@ -219,51 +342,86 @@ export default function CollectionsBucketPage() {
     for (const w of q.data ?? []) {
       const slot = c[w.bucket];
       if (slot) {
-        slot.n += 1;
-        slot.outstandingPaise += w.loan?.outstandingPaise ?? 0;
+        slot.n += w.n;
+        slot.outstandingPaise += w.outstandingPaise;
       }
     }
     return c;
   }, [q.data]);
 
-  const filtered = React.useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    const inBucket = (q.data ?? []).filter((w) => w.bucket === bucket).map(toRow);
-    return inBucket.filter((r) => {
-      if (needle) {
-        const hay = [
-          r.customerId != null ? String(r.customerId) : null,
-          r.borrowerName,
-          r.mobile,
-          r.pan,
-          r.employer,
-          r.officerName,
-          String(r.loanId),
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-        if (!hay.includes(needle)) return false;
-      }
-      // The date window filters on the due date — for a collections register "which of these fall
-      // due today" is the question, and a case-opened date is meaningless on rows with no case.
-      if (range.from && (!r.dueDate || r.dueDate < range.from)) return false;
-      if (range.to && (!r.dueDate || r.dueDate > range.to)) return false;
-      return true;
-    });
-  }, [q.data, bucket, query, range.from, range.to]);
+  // Totals for the All loans card — the sum of every bucket, so it never moves with the open scope.
+  const allCount = React.useMemo(
+    () =>
+      Object.values(counts).reduce(
+        (acc, c) => ({ n: acc.n + c.n, outstandingPaise: acc.outstandingPaise + c.outstandingPaise }),
+        { n: 0, outstandingPaise: 0 },
+      ),
+    [counts],
+  );
+
+  // What each column offers. `raw` carries the stored value wherever the cell shows a label, so a
+  // filter never travels as the words on screen; `num` is in RUPEES, not paise, because the person
+  // typing a bound is reading the rupee column beside it.
+  const baseColumns = React.useMemo<Array<FilterColumn<Row>>>(
+    () => [
+      { key: "borrowerName", kind: "text", value: (r) => r.borrowerName ?? "" },
+      { key: "principalPaise", kind: "num", value: (r) => (r.principalPaise != null ? paiseToINR(r.principalPaise) : "—"), num: (r) => (r.principalPaise != null ? r.principalPaise / 100 : null) },
+      { key: "outstandingPaise", kind: "num", value: (r) => (r.outstandingPaise != null ? paiseToINR(r.outstandingPaise) : "—"), num: (r) => (r.outstandingPaise != null ? r.outstandingPaise / 100 : null) },
+      { key: "dueDate", kind: "date", value: (r) => (r.dueDate ? formatDate(r.dueDate) : "—"), date: (r) => istDay(r.dueDate) },
+      // The server's day count (0 while not yet due), not the "due in 3 d" cue the cell can show —
+      // that cue depends on the clock, a bound typed into a filter must not.
+      { key: "dpd", kind: "num", value: (r) => String(r.dpd), num: (r) => r.dpd },
+      // `bucketLabel` renders T0_T7 as "1–7 DPD"; the filter travels as the stored enum.
+      { key: "bucketLabel", facet: true, value: (r) => r.bucketLabel, raw: (r) => r.bucket },
+      { key: "employer", kind: "text", value: (r) => r.employer ?? "" },
+      { key: "salaryPaise", kind: "num", value: (r) => (r.salaryPaise != null ? paiseToINR(r.salaryPaise) : "—"), num: (r) => (r.salaryPaise != null ? r.salaryPaise / 100 : null) },
+      // The worklist carries only the names of the credit exec and the disbursing head, not their
+      // ids, so these key on the name; "no one recorded" is a value people filter for. Both are
+      // DERIVED (read off the event trail), so the server filters them in Java, not SQL.
+      { key: "creditDecidedByName", facet: true, value: (r) => r.creditDecidedByName ?? "Not recorded", raw: (r) => r.creditDecidedByName ?? "" },
+      { key: "disbursedByName", facet: true, value: (r) => r.disbursedByName ?? "Not recorded", raw: (r) => r.disbursedByName ?? "" },
+      {
+        key: "officerName",
+        facet: true,
+        value: (r) => r.officerName ?? "Unallocated",
+        // Keyed on the officer ID (blank = unallocated), so two officers who share a display name stay
+        // apart. The id is also the server's scope column; that is safe because column filters are
+        // ANDed after scope and can only narrow. The checklist SHOWS the name (see `labels`).
+        raw: (r) => (r.officerId != null ? String(r.officerId) : ""),
+      },
+    ],
+    [],
+  );
+
+  // A facet the server had to truncate cannot offer a complete checklist, so it degrades to a text
+  // filter instead of a dropdown that silently omits values.
+  const filterColumns = React.useMemo(
+    () => baseColumns.map((c) => (c.facet && cr.facetTruncated(c.key) && c.key === "bucketLabel"
+      ? { ...c, kind: "text" as const } : c)),
+    [baseColumns, cr],
+  );
+  const th = thBag(rq, cr, filterColumns, COLUMN_LABEL, cr.requestFacet);
+  const page = rq.state.page;
+  const pageSize = rq.state.size;
+
+  // The bucket, the search box and the date window are the register's SERVER-side prefilter, applied
+  // before the column filters. A new bucket or window starts again at page 1 — reset during the
+  // render that first sees it (React discards that render and re-runs it with page 1), because an
+  // effect would let one request through for the new scope at the OLD page. Same shape as the
+  // customers register's scope switch.
+  const urlScope = `${bucket}|${range.from ?? ""}|${range.to ?? ""}`;
+  const [pagedScope, setPagedScope] = React.useState(urlScope);
+  if (pagedScope !== urlScope) {
+    setPagedScope(urlScope);
+    rq.setPage(1);
+  }
 
   // One reading of "now" per render for the DPD cell's days-to-due; the 8s poll re-renders, so it
   // never drifts more than a poll behind. The helper measures it in IST.
   const now = new Date();
 
-  // Most overdue first: the top of a collections list should be the loan that has run longest.
-  const { sorted, sortKey, dir, toggle } = useTableSort<Row>(filtered, "dpd", "desc");
-  const { page, setPage, pageSize, setPageSize, pageCount, pageRows, total } = usePagination(sorted);
-
   // Bulk assign of a collections executive. `collections:manage` is COLLECTION_HEAD + ADMIN — the
   // same pair the per-case assign endpoint already permits, so the button and the server agree.
-  const role = useStaffMe().data?.role;
   const can = useCan();
   const canBulkAssign = role != null && can("collections:manage");
   const [bulkOpen, setBulkOpen] = React.useState(false);
@@ -284,21 +442,52 @@ export default function CollectionsBucketPage() {
     else for (const id of pageLoanIds) if (!selection.selected.has(id)) selection.toggle(id);
   };
 
+  /**
+   * Move to a bucket, keeping every other parameter.
+   *
+   * The cards used to `push("/staff/collections?bucket=X")`, which rebuilds the query string from
+   * nothing: the register's filters, sort and page size went with it, and so did an open `?open=`
+   * / `?tab=` deep link — the register's own effect put ITS params back a tick later, so the URL
+   * briefly described a view nobody was looking at and the pushed history entry kept that wrong
+   * URL forever. Same shape as the loans register's `?seg=` switch.
+   */
+  function goToBucket(next: DpdBucket | "ALL") {
+    const params = new URLSearchParams(search.toString());
+    if (next === "ALL") params.delete("bucket");
+    else params.set("bucket", next);
+    const qs = params.toString();
+    router.push(qs ? `/staff/collections?${qs}` : "/staff/collections");
+  }
+
   return (
     <div>
       <PageHeader
         title={`${pageTitleFor("/staff/collections", role, "Collections")} · ${meta.label}`}
-        subtitle="Every live loan in this bucket — past due, or falling due within the week. DPD is computed on read."
+        subtitle={[
+          "Every live loan in this bucket — past due, or falling due within the week. DPD is computed on read.",
+          describeRegister(th),
+        ]
+          .filter(Boolean)
+          .join(" · ")}
       >
         <ExportMenu<Row>
           title={`Collections — ${meta.label}`}
           fileBase={`collections-${bucket.toLowerCase()}`}
-          rows={sorted}
+          subtitle={describeRegister(th) || undefined}
+          rows={pageRows}
+          // `rows` is ONE server page, so the menu names it "page"; the full matching set comes from
+          // `getAllRows`, which re-asks the server under the same search, bucket, window, column
+          // filters and sort — so "all" carries exactly what the table is filtered to.
+          scope="page"
+          getAllRows={fetchAllRows}
+          allLabel="Download all loans (CSV)"
           onOpen={() => {
-            void qc.prefetchQuery(exportCustomersQuery);
-            void qc.prefetchQuery(exportHandoverQuery);
+            setEnriching(true);
+            enrich(pageRows)
+              .catch(() => undefined) // a failed enrichment just leaves those cells "—"
+              .finally(() => setEnriching(false));
           }}
-          disabled={customersQ.isFetching || handoverQ.isFetching}
+          disabled={enriching}
           // Ordered for the reader outside the company: who, their PAN, where they live — then
           // how to reach them, what they owe, and every check result we hold.
           columns={[
@@ -315,6 +504,7 @@ export default function CollectionsBucketPage() {
             { header: "Disbursed on", value: (r) => (r.disbursedOn ? formatDate(r.disbursedOn) : "—") },
             { header: "Due date", value: (r) => (r.dueDate ? formatDate(r.dueDate) : "—") },
             { header: "DPD", value: (r) => String(r.dpd) },
+            { header: "Bucket", value: (r) => r.bucketLabel },
             { header: "Pre-due", value: (r) => (r.preDue ? "Yes" : "No") },
             { header: "Loan status", value: (r) => dash(r.loanStatus) },
             ...handover.sanction,
@@ -358,16 +548,34 @@ export default function CollectionsBucketPage() {
           ]}
         />
         <button
-          onClick={() => q.refetch()}
+          onClick={() => {
+            cr.refetch();
+            void q.refetch();
+          }}
           className="flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs text-muted hover:bg-grey-100"
         >
-          {q.isFetching ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Refresh
+          {cr.isPlaceholderData || q.isFetching ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Refresh
         </button>
       </PageHeader>
 
       {/* Bucket cards double as the switcher — the old page hid a <select> behind `lg:hidden`, so on
           desktop there was no way to move between buckets from the page itself. */}
-      <div className="mb-4 grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-6">
+      <div className="mb-4 grid grid-cols-2 gap-2 md:grid-cols-4 lg:grid-cols-7">
+        <button
+          type="button"
+          aria-pressed={bucket === "ALL"}
+          onClick={() => goToBucket("ALL")}
+          style={{ background: gradientCss("teal") }}
+          className={`rounded-lg p-3 text-left text-white shadow-sm transition ${
+            bucket === "ALL"
+              ? "ring-2 ring-navy ring-offset-2"
+              : "opacity-60 hover:-translate-y-0.5 hover:opacity-100 hover:shadow-md"
+          }`}
+        >
+          <p className="text-xs font-semibold text-white/90">All loans</p>
+          <p className="font-serif text-2xl font-bold text-white">{allCount.n}</p>
+          <p className="text-xs text-white/90">{paiseToINR(allCount.outstandingPaise)}</p>
+        </button>
         {COLLECTION_BUCKETS.map((item) => {
           const active = item.bucket === bucket;
           const c = counts[item.bucket] ?? { n: 0, outstandingPaise: 0 };
@@ -378,7 +586,7 @@ export default function CollectionsBucketPage() {
               key={item.bucket}
               type="button"
               aria-pressed={active}
-              onClick={() => router.push(`/staff/collections?bucket=${item.bucket}`)}
+              onClick={() => goToBucket(item.bucket)}
               style={{ background: gradientCss(BUCKET_TONE[item.bucket]) }}
               className={`rounded-lg p-3 text-left text-white shadow-sm transition ${
                 active
@@ -397,10 +605,7 @@ export default function CollectionsBucketPage() {
       <div className="mb-3 flex flex-wrap items-end gap-3">
         <SearchBar
           initialValue={query}
-          onSearch={(t) => {
-            setQuery(t);
-            setPage(1);
-          }}
+          onSearch={rq.setQ}
           placeholder="Customer ID, name, mobile, PAN, employer, officer or loan #"
           ariaLabel="Search"
           inputClassName="max-w-xs"
@@ -419,26 +624,26 @@ export default function CollectionsBucketPage() {
         )}
       </div>
 
+      {/* Below the cards / search / date window (navigation and prefilter, which keep their own
+          unfiltered meaning), directly above the table. Clear drops the column filters only. */}
+      <FilterBar th={th} total={total} onClear={() => rq.setFilters({})} />
+
       {/* The panel look lives on this outer wrapper so `PaginationBar` can sit AFTER the scroller,
           not inside it — bounding the scroller (`staff-register-scroll`) would otherwise scroll the
           pagination away with the rows. */}
       <div className="rounded border border-line bg-white shadow-sm">
-        {q.error ? (
-          <ErrorState error={q.error} onRetry={() => void q.refetch()} />
-        ) : q.isLoading ? (
-          <Skeleton variant="table" rows={8} cols={canBulkAssign ? 19 : 18} />
-        ) : total === 0 ? (
-          <EmptyState
-            title={`No loans in ${meta.label}${query.trim() ? ` for “${query.trim()}”` : ""}${
-              period !== "ALL" ? " in the selected date range" : ""
-            }.`}
-          />
+        {cr.error ? (
+          <ErrorState error={cr.error} onRetry={() => cr.refetch()} />
+        ) : cr.isLoading ? (
+          <Skeleton variant="table" rows={8} cols={canBulkAssign ? 20 : 19} />
         ) : (
-          // Offset clears the shell header, PageHeader, the bucket-card row and the search/date/bulk
-          // toolbar above the register.
+          // Offset clears the shell header, PageHeader, the bucket-card row, the search/date/bulk
+          // toolbar and the filter strip (`--filter-bar`) above the register.
           <div
-            className="staff-table-scroll staff-register-scroll"
-            style={{ "--register-offset": "30rem" } as React.CSSProperties}
+            // While a new filter/sort/page is in flight the rows on screen belong to the PREVIOUS view.
+            aria-busy={cr.isPlaceholderData}
+            className={`staff-table-scroll staff-register-scroll${cr.isPlaceholderData ? " opacity-60" : ""}`}
+            style={{ "--register-offset": "calc(30rem + var(--filter-bar))" } as React.CSSProperties}
           >
             <table className="staff-data-table">
               <caption className="sr-only">Collections worklist · {meta.label}</caption>
@@ -457,68 +662,23 @@ export default function CollectionsBucketPage() {
                       />
                     </th>
                   )}
-                  <SortableTh label="Customer ID" sortKey="customerId" active={sortKey} dir={dir} onToggle={toggle} />
-                  <SortableTh
-                    className={canBulkAssign ? undefined : "staff-sticky-identity"}
-                    label="Borrower"
-                    sortKey="borrowerName"
-                    active={sortKey}
-                    dir={dir}
-                    onToggle={toggle}
-                  />
+                  <Th th={th} col="customerId" />
+                  <Th th={th} col="borrowerName" className={canBulkAssign ? undefined : "staff-sticky-identity"} />
                   <th scope="col">Signals</th>
                   <th scope="col">Mobile</th>
                   <th scope="col">PAN</th>
-                  <SortableTh label="Loan" sortKey="loanId" active={sortKey} dir={dir} onToggle={toggle} />
-                  <SortableTh
-                    className="num"
-                    label="Principal"
-                    sortKey="principalPaise"
-                    active={sortKey}
-                    dir={dir}
-                    onToggle={toggle}
-                  />
-                  <SortableTh
-                    className="num"
-                    label="Outstanding"
-                    sortKey="outstandingPaise"
-                    active={sortKey}
-                    dir={dir}
-                    onToggle={toggle}
-                  />
-                  <SortableTh label="Due" sortKey="dueDate" active={sortKey} dir={dir} onToggle={toggle} />
-                  <SortableTh className="num" label="DPD" sortKey="dpd" active={sortKey} dir={dir} onToggle={toggle} />
+                  <Th th={th} col="loanId" />
+                  <Th th={th} col="principalPaise" className="num" />
+                  <Th th={th} col="outstandingPaise" className="num" />
+                  <Th th={th} col="dueDate" />
+                  <Th th={th} col="dpd" className="num" />
+                  <Th th={th} col="bucketLabel" />
                   <th scope="col">Stage</th>
-                  <th scope="col">Employer</th>
-                  <SortableTh
-                    className="num"
-                    label="Salary"
-                    sortKey="salaryPaise"
-                    active={sortKey}
-                    dir={dir}
-                    onToggle={toggle}
-                  />
-                  <SortableTh
-                    label="Credit exec"
-                    sortKey="creditDecidedByName"
-                    active={sortKey}
-                    dir={dir}
-                    onToggle={toggle}
-                  />
-                  <SortableTh
-                    label="Disbursed by"
-                    sortKey="disbursedByName"
-                    active={sortKey}
-                    dir={dir}
-                    onToggle={toggle}
-                  />
-                  <SortableTh
-                    label="Collections exec"
-                    sortKey="officerName"
-                    active={sortKey}
-                    dir={dir}
-                    onToggle={toggle}
-                  />
+                  <Th th={th} col="employer" />
+                  <Th th={th} col="salaryPaise" className="num" />
+                  <Th th={th} col="creditDecidedByName" />
+                  <Th th={th} col="disbursedByName" />
+                  <Th th={th} col="officerName" />
                   <th scope="col" className="staff-sticky-actions text-right">Actions</th>
                 </tr>
               </thead>
@@ -563,6 +723,14 @@ export default function CollectionsBucketPage() {
                     </td>
                     <DpdCell row={r} now={now} />
                     <td>
+                      <span
+                        className="inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold text-white"
+                        style={{ background: TONE_SOLID[BUCKET_TONE[r.bucket]] }}
+                      >
+                        {r.bucketLabel}
+                      </span>
+                    </td>
+                    <td>
                       <StageSignal compact status="ACTIVE" loanStatus={r.loanStatus} dpd={r.dpd} />
                     </td>
                     <td>{dash(r.employer)}</td>
@@ -592,6 +760,20 @@ export default function CollectionsBucketPage() {
                     </td>
                   </tr>
                 ))}
+                {total === 0 ? (
+                  // In-table, not instead of the table: an empty result must still show the headers,
+                  // or there is no way to clear the column filter that emptied it.
+                  <EmptyState
+                    title={
+                      rq.activeCount > 0
+                        ? `No loans in ${meta.label} match the column filters.`
+                        : `No loans in ${meta.label}${query.trim() ? ` for “${query.trim()}”` : ""}${
+                            period !== "ALL" ? " in the selected date range" : ""
+                          }.`
+                    }
+                    inTable={canBulkAssign ? 20 : 19}
+                  />
+                ) : null}
               </tbody>
             </table>
           </div>
@@ -599,9 +781,9 @@ export default function CollectionsBucketPage() {
         {total > 0 && (
           <PaginationBar
             page={page}
-            setPage={setPage}
+            setPage={rq.setPage}
             pageSize={pageSize}
-            setPageSize={setPageSize}
+            setPageSize={rq.setSize}
             pageCount={pageCount}
             total={total}
           />

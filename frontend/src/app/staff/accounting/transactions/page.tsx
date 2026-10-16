@@ -2,13 +2,17 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Loader2, RefreshCw, ArrowDownLeft, ArrowUpRight, ArrowLeft } from "lucide-react";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { SearchBar } from "@/components/staff/search-bar";
-import { PermissionGate, NoAccessNotice, ROLE_LABEL, useStaffMe } from "@/components/staff/live-pipeline";
+import { PermissionGate, NoAccessNotice, ROLE_LABEL, useStaffMe, useCan } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { staffApi, paiseToINR, type TransactionDirection, type TransactionView } from "@/lib/api/applications";
+import { type FilterColumn } from "@/components/staff/column-filter";
+import { Th, thBag, describeRegister } from "@/lib/staff/register-th";
+import { useRegisterQuery } from "@/lib/staff/register-query";
+import { useServerRegister } from "@/lib/staff/use-server-register";
+import { retryUnlessClientError } from "@/lib/staff/admin-all-applications";
 import { PaymentProofLink } from "@/components/ui/payment-proof-link";
 import { EmptyState, ErrorState, Skeleton, StatusBadge } from "@/components/ui";
 import { formatDate } from "@/lib/utils";
@@ -33,6 +37,41 @@ const PERIODS: { key: Period; label: string }[] = [
   { key: "ALL", label: "All time" },
 ];
 
+/**
+ * What each header offers — the server's `TransactionLedgerQuery.FILTER_COLUMNS` / `SORTS`. `amount`
+ * is in RUPEES (the server scales the bound to paise). `status` is a TEXT filter on purpose: the
+ * column holds a loan status on a disbursal row and a payment status on a repayment row, and one
+ * checklist mixing two enums would be meaningless. Borrower / reference / loan are identity columns,
+ * text-only, so there is never a dropdown of names or txn refs; only `type` (two values) is faceted.
+ * Proof and S.No. are plain headers: nothing to sort or filter them by server-side.
+ */
+const FILTER_COLUMNS: Array<FilterColumn<TransactionView>> = [
+  { key: "date", kind: "date", value: (t) => (t.date ? formatDate(t.date) : "—"), date: (t) => t.date },
+  { key: "repaymentDate", kind: "date", value: (t) => (t.repaymentDate ? formatDate(t.repaymentDate) : "—"), date: (t) => t.repaymentDate },
+  { key: "borrower", kind: "text", value: (t) => t.borrowerName ?? "" },
+  { key: "type", facet: true, value: (t) => (t.type === "REPAYMENT" ? "Repayment" : "Disbursal"), raw: (t) => t.type },
+  { key: "amount", kind: "num", value: (t) => paiseToINR(t.amountPaise), num: (t) => t.amountPaise / 100 },
+  { key: "reference", kind: "text", value: (t) => t.txnRef ?? "" },
+  { key: "status", kind: "text", value: (t) => t.status ?? "" },
+  { key: "loan", kind: "text", value: (t) => (t.loanId != null ? String(t.loanId) : "") },
+];
+const KEYS = FILTER_COLUMNS.map((c) => c.key);
+const COLUMN_LABEL: Record<string, string> = {
+  date: "Date",
+  repaymentDate: "Repayment date",
+  borrower: "Borrower",
+  type: "Type",
+  amount: "Amount",
+  reference: "Reference",
+  status: "Status",
+  loan: "Loan",
+};
+/** The server's raw `type` values → the words the Type column shows. */
+const FACET_LABELS: Record<string, Record<string, string>> = {
+  type: { DISBURSAL: "Disbursal", REPAYMENT: "Repayment" },
+};
+/** The server caps a page at 100 (`TransactionService.MAX_PAGE_SIZE`); "Download all" walks it. */
+const EXPORT_CHUNK = 100;
 /** Local-time ISO yyyy-mm-dd for a Date (timezone-safe — never UTC-shifts at day boundaries). */
 function toLocalISO(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -78,71 +117,114 @@ function humanISO(iso: string): string {
  */
 export default function TransactionsPage() {
   const [openLoanId, setOpenLoanId] = React.useState<number | null>(null);
-  const role = useStaffMe().data?.role;
+  const me = useStaffMe().data;
+  const role = me?.role;
+  const can = useCan();
+  const allowed = role ? can("loan:activate") || can("staff:manage") : false;
   const [tab, setTab] = React.useState<"ALL" | TransactionDirection>("ALL");
   const [period, setPeriod] = React.useState<Period>("MONTH");
-  const [query, setQuery] = React.useState("");
-  // Server paging: the ledger is every money movement the company has ever made, so it was never a
-  // list to fetch whole and slice in the browser.
-  const [page, setPage] = React.useState(1);
-  const [pageSize, setPageSize] = React.useState(25);
 
   const direction = tab === "ALL" ? undefined : tab;
   const range = React.useMemo(() => periodRange(period), [period]);
+  // The ledger's own server params (not column filters), carried beside `rq.queryParams`.
+  const extra = React.useMemo(() => {
+    const e: Record<string, string> = {};
+    if (direction) e.direction = direction;
+    if (range) {
+      e.from = range.from;
+      e.to = range.to;
+    }
+    return e;
+  }, [direction, range]);
 
-  // Any change to the filter puts you back on page 1 — an offset into the old result set means
-  // nothing in the new one. The reset happens in the same handler as the filter change, not in an
-  // effect after it: an effect let one render commit with the NEW filter and the OLD page, which
-  // fired a request for that stale page before the reset fired the page-1 request.
+  // One owner for search, column filters, sort, page and size; this is the page's only register, so
+  // it owns the URL. A change to any of them returns to page 1 in the same update.
+  const rq = useRegisterQuery({
+    registerId: "transactions",
+    staffId: me?.id,
+    sortKeys: KEYS,
+    filterKeys: KEYS,
+    defaults: { sort: { key: "date", dir: "desc" } },
+  });
+  const query = rq.state.q;
+  const page = rq.state.page;
+  const pageSize = rq.state.size;
+
+  // Direction and period are server params of their own, so changing one has to go back to page 1
+  // too: `rq.apply({})` is that reset, in the same update as the state change — never an effect after
+  // it, which let one request go out for the new filter at the old page.
   const choosePeriod = (next: Period) => {
+    rq.apply({});
     setPeriod(next);
-    setPage(1);
   };
   const chooseTab = (next: "ALL" | TransactionDirection) => {
+    rq.apply({});
     setTab(next);
-    setPage(1);
   };
 
-  const q = useQuery({
-    // Period filtering is now server-side (timezone-free), so the query keys on the range too.
-    queryKey: ["staff-transactions", query, direction, range?.from ?? "", range?.to ?? "", page, pageSize],
-    queryFn: () =>
-      staffApi.transactions(
-        query || undefined,
-        direction,
-        range ? { from: range.from, to: range.to } : undefined,
-        { page, size: pageSize },
-      ),
+  const cr = useServerRegister<TransactionView, Awaited<ReturnType<typeof staffApi.transactionsPage>>>(rq, {
+    // Direction and period are not in `rq.queryParams`, so they are in the key prefix — without them a
+    // tab change would be answered by the previous tab's cached page.
+    key: ["staff-transactions", extra],
+    fetchPage: (params, pg, size) => staffApi.transactionsPage({ filters: params, page: pg, size, extra }),
+    fetchFacet: (column, params) => staffApi.transactionsFacet(column, { ...extra, ...params }),
+    labels: FACET_LABELS,
     // A minute, not ten seconds. The ledger is a read-only oversight view of movements that have
     // already settled; the one thing that adds a row from inside the console — an accountant
-    // verifying a repayment — now invalidates `["staff-transactions"]` directly, so this poll only
-    // has to catch disbursals made elsewhere.
+    // verifying a repayment — invalidates `["staff-transactions"]` directly, so this poll only has
+    // to catch disbursals made elsewhere.
     refetchInterval: 60_000,
-    // Keep the table and the totals on screen while the next page loads.
-    placeholderData: keepPreviousData,
+    // Nothing is asked before the session says who is signed in, or for a role the gate turns away.
+    enabled: allowed,
+    retry: retryUnlessClientError,
   });
+  const th = thBag(rq, cr, FILTER_COLUMNS, COLUMN_LABEL, cr.requestFacet);
 
-  const rows = q.data?.rows ?? [];
+  const rows = cr.pageRows;
   const periodLabel = PERIODS.find((p) => p.key === period)?.label ?? "All time";
-  // From the server, not a reduce over `rows`: `rows` is one page now, and these three cards claim
-  // to describe the PERIOD. Summing the page would have made "Inflow · This month" mean "inflow in
-  // the 25 movements you happen to be looking at".
-  const totalIn = q.data?.totalInPaise ?? 0;
-  const totalOut = q.data?.totalOutPaise ?? 0;
-  const pendingIn = q.data?.pendingInPaise ?? 0;
-  const net = totalIn - totalOut;
-  const total = q.data?.total ?? 0;
-  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  // From the server, not a reduce over `rows`: `rows` is one page, and these three cards claim to
+  // describe the PERIOD. Summing the page would have made "Inflow · This month" mean "inflow in the
+  // 25 movements you happen to be looking at".
+  // Undefined until the first page lands: the cards then read "—", never a ₹0 that is not a measurement.
+  const totalIn = cr.page?.totalInPaise;
+  const totalOut = cr.page?.totalOutPaise;
+  const pendingIn = cr.page?.pendingInPaise ?? 0;
+  const net = totalIn != null && totalOut != null ? totalIn - totalOut : null;
+  const total = cr.total;
+  const pageCount = cr.pageCount;
   // A new page or filter is loading behind `keepPreviousData`: the old rows stay on screen, so say
   // they are about to change rather than leave them looking current.
-  const refreshing = q.isFetching && !q.isLoading;
+  const refreshing = cr.isPlaceholderData;
+  const filtered = query !== "" || rq.activeCount > 0;
+
+  // "Download all": `rows` is one page, so the menu walks the server under the SAME view — the
+  // table's own params plus direction/period — a page (the server's ceiling) at a time, stopping at
+  // `total` or on a short page, which is both the last page and the guard against looping forever
+  // if the count and the rows ever disagree.
+  const getAllRows = async () => {
+    const out: TransactionView[] = [];
+    for (let p = 1; ; p += 1) {
+      const chunk = await staffApi.transactionsPage({ filters: rq.queryParams, page: p, size: EXPORT_CHUNK, extra });
+      out.push(...chunk.rows);
+      if (chunk.rows.length < EXPORT_CHUNK || out.length >= chunk.total) break;
+    }
+    return out;
+  };
+
+  const exportSubtitle = [
+    tab === "ALL" ? "All movements" : tab === "INCOMING" ? "Incoming" : "Outgoing",
+    query ? `Search: “${query}”` : "",
+    describeRegister(th),
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <div>
       <PageHeader title="Transactions ledger" subtitle="All money movement — disbursals out and repayments in, company-wide.">
         <ExportMenu
           title="Transactions ledger"
-          subtitle={tab === "ALL" ? "All movements" : tab === "INCOMING" ? "Incoming" : "Outgoing"}
+          subtitle={exportSubtitle}
           fileBase="dhanboost-transactions"
           columns={[
             { header: "Date", value: (t: TransactionView) => (t.date ? formatDate(t.date) : "") },
@@ -158,23 +240,9 @@ export default function TransactionsPage() {
             { header: "Loan", value: (t) => (t.loanId != null ? `#${t.loanId}` : "") },
           ]}
           rows={rows}
-          getAllRows={async () => {
-            // `rows` is one page, so "Download all" has to walk the server under the SAME filter.
-            // 100 a call (the ledger's page ceiling), stopping once we hold `total` rows — or the
-            // moment a page comes back short, which is both the last page and the guard against
-            // looping forever if the count and the rows ever disagree.
-            const out: TransactionView[] = [];
-            const dateWindow = range ? { from: range.from, to: range.to } : undefined;
-            for (let p = 1; ; p += 1) {
-              const chunk = await staffApi.transactions(query || undefined, direction, dateWindow, {
-                page: p,
-                size: 100,
-              });
-              out.push(...chunk.rows);
-              if (chunk.rows.length < 100 || out.length >= chunk.total) break;
-            }
-            return out;
-          }}
+          // `rows` is one page, so the menu says "this page"; the filtered whole is `getAllRows`.
+          scope="page"
+          getAllRows={getAllRows}
           allLabel="Download all transactions (CSV)"
           meta={{
             periodLabel,
@@ -232,19 +300,16 @@ export default function TransactionsPage() {
           <div className="flex items-center gap-2">
             <SearchBar
               initialValue={query}
-              onSearch={(t) => {
-                setQuery(t);
-                setPage(1);
-              }}
+              onSearch={rq.setQ}
               placeholder="Search borrower / mobile / loan #"
               ariaLabel="Search transactions by borrower"
               inputClassName="w-64"
             />
             <button
-              onClick={() => q.refetch()}
+              onClick={() => cr.refetch()}
               className="flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs text-muted hover:bg-grey-100 hover:text-ink"
             >
-              {q.isFetching ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Refresh
+              {refreshing ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Refresh
             </button>
           </div>
         </div>
@@ -252,7 +317,7 @@ export default function TransactionsPage() {
         <div className="mb-2 grid grid-cols-1 gap-4 sm:grid-cols-3 sm:max-w-2xl">
           <div className="rounded border border-success-100 bg-white p-4 shadow-sm">
             <div className="flex items-center gap-1.5 text-xs text-muted"><ArrowDownLeft size={14} className="text-success-600" /> Inflow · {periodLabel}</div>
-            <div className="mt-1 font-serif text-xl font-bold text-success-700">{paiseToINR(totalIn)}</div>
+            <div className="mt-1 font-serif text-xl font-bold text-success-700">{totalIn != null ? paiseToINR(totalIn) : "—"}</div>
             {/* Verified money only; rejected repayments are not listed at all. */}
             <div className="mt-0.5 text-xs text-muted">
               {pendingIn > 0 ? `Verified · ${paiseToINR(pendingIn)} awaiting verification` : "Verified repayments"}
@@ -260,12 +325,12 @@ export default function TransactionsPage() {
           </div>
           <div className="rounded border border-line bg-white p-4 shadow-sm">
             <div className="flex items-center gap-1.5 text-xs text-muted"><ArrowUpRight size={14} className="text-navy" /> Outflow · {periodLabel}</div>
-            <div className="mt-1 font-serif text-xl font-bold text-navy">{paiseToINR(totalOut)}</div>
+            <div className="mt-1 font-serif text-xl font-bold text-navy">{totalOut != null ? paiseToINR(totalOut) : "—"}</div>
           </div>
           <div className="rounded border border-line bg-white p-4 shadow-sm">
             <div className="flex items-center gap-1.5 text-xs text-muted">Net · {periodLabel}</div>
-            <div className={`mt-1 font-serif text-xl font-bold ${net >= 0 ? "text-success-700" : "text-error-700"}`}>
-              {net < 0 ? "−" : "+"}{paiseToINR(Math.abs(net))}
+            <div className={`mt-1 font-serif text-xl font-bold ${net == null || net >= 0 ? "text-success-700" : "text-error-700"}`}>
+              {net == null ? "—" : `${net < 0 ? "−" : "+"}${paiseToINR(Math.abs(net))}`}
             </div>
           </div>
         </div>
@@ -274,18 +339,18 @@ export default function TransactionsPage() {
             filter's count under the new period's label while `keepPreviousData` holds it on screen,
             would be a claim, not a measurement. */}
         <p className="mb-4 min-h-[1rem] text-xs text-muted">
-          {q.data && !q.isPlaceholderData ? ledgerRowsCaption(periodLabel, total) : null}
+          {allowed && !cr.isLoading && !cr.isError && !cr.isPlaceholderData ? ledgerRowsCaption(periodLabel, total) : null}
         </p>
 
         <div className="rounded border border-line bg-white shadow-sm">
-          {q.isLoading ? (
+          {cr.isLoading ? (
             <Skeleton variant="table" rows={8} cols={9} />
-          ) : q.error ? (
-            <ErrorState error={q.error} onRetry={() => void q.refetch()} />
+          ) : cr.isError ? (
+            <ErrorState error={cr.error} onRetry={() => cr.refetch()} />
           ) : rows.length === 0 ? (
             <EmptyState
-              title={query ? `No transactions for “${query}”.` : "No transactions."}
-              hint={query ? "Try a different name, PAN or reference, or widen the period." : undefined}
+              title={query ? `No transactions for “${query}”.` : filtered ? "No transactions match these filters." : "No transactions."}
+              hint={query ? "Try a different name, PAN or reference, or widen the period." : filtered ? "Clear a column filter, or widen the period." : undefined}
             />
           ) : (
             // `staff-register-scroll` bounds the wrapper so the sticky `thead` has something to
@@ -304,15 +369,15 @@ export default function TransactionsPage() {
                 <thead>
                   <tr>
                     <th scope="col">S.No.</th>
-                    <th scope="col">Date</th>
-                    <th scope="col" title="The loan's repayment (due) date">Repayment date</th>
-                    <th scope="col">Borrower</th>
-                    <th scope="col">Type</th>
-                    <th scope="col" className="num">Amount</th>
-                    <th scope="col">Reference</th>
+                    <Th th={th} col="date" />
+                    <Th th={th} col="repaymentDate" />
+                    <Th th={th} col="borrower" />
+                    <Th th={th} col="type" />
+                    <Th th={th} col="amount" className="num" />
+                    <Th th={th} col="reference" />
                     <th scope="col">Proof</th>
-                    <th scope="col">Status</th>
-                    <th scope="col">Loan</th>
+                    <Th th={th} col="status" />
+                    <Th th={th} col="loan" />
                   </tr>
                 </thead>
                 <tbody>
@@ -327,13 +392,10 @@ export default function TransactionsPage() {
             <PaginationBar
               page={page}
               pageCount={pageCount}
-              setPage={setPage}
+              setPage={rq.setPage}
               total={total}
               pageSize={pageSize}
-              setPageSize={(size) => {
-                setPageSize(size);
-                setPage(1);
-              }}
+              setPageSize={rq.setSize}
             />
           )}
         </div>

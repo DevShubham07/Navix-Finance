@@ -5,11 +5,11 @@ import * as React from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Loader2, RefreshCw, ArrowRight, ChevronDown, ChevronRight as ChevronRightIcon } from "lucide-react";
-import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
+import { PaginationBar } from "@/components/staff/pipeline/pagination";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { SearchBar } from "@/components/staff/search-bar";
-import { PermissionGate, NoAccessNotice, useStaffMe, ROLE_LABEL } from "@/components/staff/live-pipeline";
+import { PermissionGate, NoAccessNotice, useStaffMe, useCan, ROLE_LABEL } from "@/components/staff/live-pipeline";
 import { EmptyState, ErrorState, Skeleton } from "@/components/ui";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
@@ -21,14 +21,18 @@ import {
   type QueuePeriod,
   type QueueRange,
 } from "@/components/staff/pipeline/queue-date-filter";
-import { useTableSort, SortableTh, type SortDir } from "@/components/staff/sortable-table";
+import { type FilterColumn } from "@/components/staff/column-filter";
+import { FilterBar } from "@/components/staff/filter-bar";
+import { Th, thBag, describeRegister } from "@/lib/staff/register-th";
+import { BLANK } from "@/lib/staff/column-filter-match";
+import { retryUnlessClientError } from "@/lib/staff/admin-all-applications";
+import { useRegisterQuery } from "@/lib/staff/register-query";
+import { useServerRegister } from "@/lib/staff/use-server-register";
 import {
   SEGMENTS,
   SEGMENT_LABEL,
   SEGMENT_TONE,
   segmentOf,
-  inSegment,
-  segmentCounts,
   type LoanSegment,
 } from "@/lib/loans/segments";
 import { loanRegisterDpd, loanRegisterDpdLabel } from "@/lib/loans/loan-register-dpd";
@@ -41,12 +45,30 @@ const DATE_SORT_KEYS = new Set(["dueDate", "sanctionedAt", "disbursedOn", "close
 
 /** Sortable columns — kept in one place so the URL-param validation and the `<SortableTh>` calls
  *  can't drift apart. */
-const SORT_KEYS = ["dueDate", "sanctionedAt", "disbursedOn", "closedOn", "principalPaise", "outstandingPaise", "dpd"] as const;
-type SortKey = (typeof SORT_KEYS)[number];
+const SORT_KEYS = [
+  "dueDate", "sanctionedAt", "disbursedOn", "closedOn", "principalPaise", "outstandingPaise", "dpd",
+  "borrowerName", "loanCycle", "netDisbursedPaise", "totalRepayablePaise", "status", "assignedOfficerName",
+] as const;
 
-function isSortKey(v: string | null): v is SortKey {
-  return !!v && (SORT_KEYS as readonly string[]).includes(v);
-}
+/** Columns offering a filter dropdown. The same keys the sort uses, so a header is one control. */
+const FILTER_KEYS = SORT_KEYS;
+
+/** Header text per key — read by the headers, the filter panels and the export's "Filtered:" line. */
+const COLUMN_LABEL: Record<string, string> = {
+  borrowerName: "Borrower",
+  sanctionedAt: "Sanctioned",
+  disbursedOn: "Disbursed",
+  dueDate: "Due",
+  closedOn: "Closure date",
+  loanCycle: "Cycle",
+  principalPaise: "Principal",
+  netDisbursedPaise: "Net disbursed",
+  totalRepayablePaise: "Repayable",
+  outstandingPaise: "Outstanding",
+  dpd: "DPD",
+  status: "Status",
+  assignedOfficerName: "Officer",
+};
 
 /** "1st" / "2nd" / "3rd" / "4th" ... from a 1-based loan cycle number. */
 function ordinal(n: number): string {
@@ -75,6 +97,23 @@ function loanStatusLabel(status: string): string {
     .join(" ");
 }
 
+/** Every stored loan status, so the Status checklist reads in words and not in enum names. */
+const STATUS_VALUES = [
+  "APPLIED", "UNDER_REVIEW", "APPROVED", "DOCS_SIGNED", "BANK_VERIFIED", "DISBURSING",
+  "ACTIVE", "REPAID", "OVERDUE", "IN_COLLECTIONS", "CLOSED", "DECLINED",
+];
+
+/** Raw value → label for the two checklist columns. The officer's raw value is their NAME (the server
+ *  filters the collections officer in Java, by display name — see `LoanRegisterService`), and "no
+ *  officer" travels as the shared blank sentinel. */
+const FACET_LABELS: Record<string, Record<string, string>> = {
+  status: Object.fromEntries(STATUS_VALUES.map((v) => [v, loanStatusLabel(v)])),
+  assignedOfficerName: { [BLANK]: "Unallocated" },
+};
+
+/** How many rows one export request asks for; the server caps a page at 500. */
+const EXPORT_CHUNK = 500;
+
 /** The open loan; `applicationId` is set when opened from a row (the register row carries it), so
  *  the pop-up skips the loan -> customer lookup a `?open=` deep link needs. */
 type OpenLoan = { loanId: number; applicationId?: number | null };
@@ -97,9 +136,10 @@ function DpdCell({ row }: { row: LoanRegisterRow }) {
 
 /**
  * Loans register — every disbursed loan, past and present, company-wide. ADMIN + COLLECTION_HEAD
- * only (`loan:register`). Mirrors the Customers page's shape (search+range server-side, segment
- * chip client-side, collapsible date-group header rows, sticky identity/actions columns) but every
- * row here already IS a loan, so there's no application-status fallback to reconcile.
+ * only (`loan:register`). Mirrors the Customers page's shape (search, date range, segment chip,
+ * column filters, sort and paging all server-side; collapsible date-group header rows within the
+ * page; sticky identity/actions columns) but every row here already IS a loan, so there's no
+ * application-status fallback to reconcile.
  */
 export default function LoansPage() {
   return (
@@ -117,17 +157,23 @@ function LoansPageInner() {
   const segParam = (searchParams.get("seg") ?? "all") as LoanSegment;
   const seg: LoanSegment = segParam === "all" || SEGMENTS.includes(segParam) ? segParam : "all";
 
-  const sortParam = searchParams.get("sort");
-  const dirParam = searchParams.get("dir");
-  const initialSortKey: SortKey = isSortKey(sortParam) ? sortParam : "dueDate";
-  const initialDir: SortDir = dirParam === "asc" ? "asc" : "desc";
-
   // Deep link from the global-search palette: `?q=318&open=318` narrows the register to that loan
-  // and opens its detail dialog, so a hit in the palette lands on the record itself.
-  const initialQuery = searchParams.get("q") ?? "";
+  // and opens its detail dialog, so a hit in the palette lands on the record itself. `?q=` is read
+  // by the register hook below, along with the filters, the sort and the page.
   const openParam = Number(searchParams.get("open"));
+  const me = useStaffMe().data;
 
-  const [query, setQuery] = React.useState(initialQuery);
+  // One owner for search, column filters, sort, page and size — it keeps them in the URL (so a
+  // filtered register is a link) and in this staffer's remembered view, and it returns to page 1 on
+  // any change that moves which rows match, in the same update.
+  const rq = useRegisterQuery({
+    registerId: "loans",
+    staffId: me?.id,
+    sortKeys: SORT_KEYS,
+    filterKeys: FILTER_KEYS,
+    defaults: { sort: { key: "dueDate", dir: "desc" } },
+  });
+  const query = rq.state.q;
   // The open loan plus, when opened from a row, the ids that row already carries — so the dialog can
   // start the customer read without first waiting on the loan. A `?open=` deep link has only the id.
   const [openLoan, setOpenLoan] = React.useState<OpenLoan | null>(
@@ -137,39 +183,104 @@ function LoansPageInner() {
   const [custom, setCustom] = React.useState<QueueRange>({});
   const range = React.useMemo(() => rangeFor(period, custom), [period, custom]);
 
-  // Search + date range are server-side (mirrors customersApi.list); the segment chip and the sort
-  // are both client-side and compose independently on top of whatever the server returned.
-  const q = useQuery({
-    queryKey: ["staff-loans", query, range.from ?? "", range.to ?? ""],
-    queryFn: () => loansApi.list(query || undefined, range),
-    // Keep the rows (and the segment-chip counts derived from them) on screen while a new search or
-    // date range loads, instead of flashing "(0)" on every chip. No identity in this key.
-    placeholderData: keepPreviousData,
+  const can = useCan();
+  // Behind the permission gate: no request until the session says who is signed in AND that they may
+  // read the register, so a role without `loan:register` never fires a 403 on first paint.
+  const allowed = me?.role ? can("loan:register") : false;
+
+  // The chip, the date window and (below) the search/filters/sort are all asked of the SERVER; only
+  // the page on screen is ever enriched. The chip and the window are page-level, not part of
+  // `rq.queryParams`, so they sit in the key prefix — without them a chip change would be answered by
+  // the previous chip's cached page.
+  const baseExtra = React.useMemo<Record<string, string>>(() => {
+    const e: Record<string, string> = {};
+    if (seg !== "all") e.seg = seg;
+    if (range.from) e.from = range.from;
+    if (range.to) e.to = range.to;
+    return e;
+  }, [seg, range.from, range.to]);
+
+  const cr = useServerRegister<LoanRegisterRow>(rq, {
+    key: ["staff-loans", seg, range.from ?? "", range.to ?? ""],
+    fetchPage: (params, pg, size) => loansApi.page({ filters: params, extra: baseExtra, page: pg, size }),
+    // No facet is fetched on mount: a header's panel opening calls `cr.requestFacet`.
+    fetchFacet: (col, params) => loansApi.facet(col, { ...baseExtra, ...params }),
+    labels: FACET_LABELS,
+    enabled: allowed,
+    retry: retryUnlessClientError,
   });
 
-  const rows = React.useMemo(() => q.data ?? [], [q.data]);
-  const counts = React.useMemo(() => segmentCounts(rows), [rows]);
-  const filtered = React.useMemo(() => rows.filter((r) => inSegment(r, seg)), [rows, seg]);
+  // The chip counts are deliberately UNFILTERED by the columns (they are also the navigation, so
+  // they must not collapse as you use them), but they do follow the search and the date window, as
+  // they did when they were counted over the rows. One tiny page per chip: the server counts, we only
+  // read `total`. Every loan is in exactly one chip, so "All" is their sum.
+  const countsQ = useQuery({
+    queryKey: ["staff-loans", "counts", query, range.from ?? "", range.to ?? ""],
+    queryFn: async () => {
+      const window: Record<string, string> = {};
+      if (range.from) window.from = range.from;
+      if (range.to) window.to = range.to;
+      const totals = await Promise.all(
+        SEGMENTS.map((s) =>
+          loansApi
+            .page({ filters: query ? { q: query } : {}, extra: { ...window, seg: s }, page: 1, size: 1 })
+            .then((r) => r.total),
+        ),
+      );
+      const out = { all: 0, active: 0, overdue: 0, closed: 0 } as Record<LoanSegment, number>;
+      SEGMENTS.forEach((s, i) => {
+        out[s] = totals[i];
+        out.all += totals[i];
+      });
+      return out;
+    },
+    enabled: allowed,
+    retry: retryUnlessClientError,
+    // Keep the last counts on screen while a new search or date range loads, instead of flashing
+    // "(0)" on every chip. No identity in this key.
+    placeholderData: keepPreviousData,
+  });
+  const counts = countsQ.data ?? { all: 0, active: 0, overdue: 0, closed: 0 };
 
-  const { sorted, sortKey, dir, toggle } = useTableSort<LoanRegisterRow>(filtered, initialSortKey, initialDir);
+  // What each column offers. `raw` is the stored value behind the label; `facet: true` means the
+  // checklist comes from the facets endpoint, not from the rows (which are one page). Status and
+  // officer are the only checklists: the rest are text, a day window or a bound, so they need no
+  // value list — and no identity column has a dropdown. `num` bounds are RUPEES, not paise: the
+  // person typing one is reading the rupee column beside it, and the server scales the operand. A
+  // column whose facet came back `truncated` degrades to a text filter.
+  //
+  // Every column both filters and sorts on the server, so none declares `sortable: false`. Two of
+  // them (Outstanding, Officer) do it in Java over the SQL result rather than in SQL — see
+  // `LoanRegisterService.page` — which costs time, not capability.
+  const filterColumns = React.useMemo<Array<FilterColumn<LoanRegisterRow>>>(() => {
+    const cols: Array<FilterColumn<LoanRegisterRow>> = [
+      { key: "borrowerName", kind: "text", value: (l) => l.borrowerName ?? "" },
+      { key: "sanctionedAt", kind: "date", value: (l) => (l.sanctionedAt ? formatDate(l.sanctionedAt) : "—") },
+      { key: "disbursedOn", kind: "date", value: (l) => (l.disbursedOn ? formatDate(l.disbursedOn) : "—") },
+      { key: "dueDate", kind: "date", value: (l) => (l.dueDate ? formatDate(l.dueDate) : "—") },
+      { key: "closedOn", kind: "date", value: (l) => (l.closedOn ? formatDate(l.closedOn) : "—") },
+      { key: "loanCycle", kind: "num", value: (l) => ordinal(l.loanCycle) },
+      { key: "principalPaise", kind: "num", value: (l) => paiseToINR(l.principalPaise) },
+      { key: "netDisbursedPaise", kind: "num", value: (l) => paiseToINR(l.netDisbursedPaise) },
+      { key: "totalRepayablePaise", kind: "num", value: (l) => paiseToINR(l.totalRepayablePaise) },
+      { key: "outstandingPaise", kind: "num", value: (l) => paiseToINR(l.outstandingPaise) },
+      { key: "dpd", kind: "num", value: (l) => loanRegisterDpdLabel(loanRegisterDpd(l)) },
+      { key: "status", facet: true, value: (l) => loanStatusLabel(l.status), raw: (l) => l.status },
+      {
+        key: "assignedOfficerName",
+        facet: true,
+        value: (l) => l.assignedOfficerName ?? "Unallocated",
+        raw: (l) => l.assignedOfficerName ?? "",
+      },
+    ];
+    return cols.map((c) => (c.facet && cr.facetTruncated(c.key) ? { ...c, kind: "text" as const } : c));
+  }, [cr]);
 
-  // Persist sort in the URL (next to ?seg=) so a view is linkable and survives reload. Defaults
-  // (dueDate desc) are omitted from the query string, same convention as ?seg=all being omitted.
-  React.useEffect(() => {
-    const p = new URLSearchParams(searchParams.toString());
-    if (sortKey === "dueDate") p.delete("sort");
-    else p.set("sort", sortKey);
-    if (dir === "desc") p.delete("dir");
-    else p.set("dir", dir);
-    const qs = p.toString();
-    const next = qs ? `${pathname}?${qs}` : pathname;
-    // Only replace when the URL actually needs to change — avoids a redundant history entry.
-    const current = searchParams.toString();
-    if (qs !== current) router.replace(next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sortKey, dir]);
-
-  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(sorted);
+  const th = thBag(rq, cr, filterColumns, COLUMN_LABEL, cr.requestFacet);
+  const { pageRows, total, pageCount } = cr;
+  const sortKey = rq.state.sort.key;
+  const page = rq.state.page;
+  const pageSize = rq.state.size;
 
   // A new segment or date window starts again at page 1 — the search box already does (onSearch
   // below). Picking "Custom" changes no window until its range is applied, so it keeps the page.
@@ -179,10 +290,12 @@ function LoansPageInner() {
     else p.set("seg", next);
     const qs = p.toString();
     router.replace(qs ? `${pathname}?${qs}` : pathname);
-    if (next !== seg) setPage(1);
+    // `apply` with an empty patch is the register's "what matches has changed" signal: it returns to
+    // page 1 without touching the filters, in one update.
+    if (next !== seg) rq.apply({});
   }
   function resetPageIfRangeChanges(next: QueueRange) {
-    if ((next.from ?? "") !== (range.from ?? "") || (next.to ?? "") !== (range.to ?? "")) setPage(1);
+    if ((next.from ?? "") !== (range.from ?? "") || (next.to ?? "") !== (range.to ?? "")) rq.apply({});
   }
   function changePeriod(next: QueuePeriod) {
     setPeriod(next);
@@ -229,7 +342,9 @@ function LoansPageInner() {
       <PageHeader title="Loans" subtitle="Every disbursed loan, past and present — search, filter and sort the full register.">
         <ExportMenu
           title="Loans register"
-          subtitle={seg === "all" ? "All loans" : SEGMENT_LABEL[seg]}
+          subtitle={[seg === "all" ? "All loans" : SEGMENT_LABEL[seg], describeRegister(th)]
+            .filter(Boolean)
+            .join(" · ")}
           fileBase="dhanboost-loans"
           columns={[
             { header: "Loan #", value: (l: LoanRegisterRow) => l.loanId },
@@ -250,13 +365,29 @@ function LoansPageInner() {
             { header: "Officer", value: (l) => l.assignedOfficerName ?? "" },
             { header: "Disbursal ref", value: (l) => l.disbursalTxnRef ?? "" },
           ]}
-          rows={sorted}
+          rows={pageRows}
+          // `rows` is ONE page, so the menu must say "this page"; the full set comes from
+          // `getAllRows`, which re-asks the server under the same search, window, chip and column
+          // filters (rq.queryParams) so "all" carries exactly what the table shows.
+          scope="page"
+          getAllRows={async () => {
+            const all: LoanRegisterRow[] = [];
+            for (let pg = 1; ; pg++) {
+              const r = await loansApi.page({ filters: rq.queryParams, extra: baseExtra, page: pg, size: EXPORT_CHUNK });
+              all.push(...r.rows);
+              if (r.rows.length === 0 || all.length >= r.total) return all;
+            }
+          }}
+          allLabel="Download all loans (CSV)"
         />
         <button
-          onClick={() => q.refetch()}
+          onClick={() => {
+            cr.refetch();
+            void countsQ.refetch();
+          }}
           className="flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs text-muted hover:bg-grey-100 hover:text-ink"
         >
-          {q.isFetching ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Refresh
+          {cr.isPlaceholderData || countsQ.isFetching ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Refresh
         </button>
       </PageHeader>
 
@@ -282,10 +413,7 @@ function LoansPageInner() {
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <SearchBar
             initialValue={query}
-            onSearch={(t) => {
-              setQuery(t);
-              setPage(1);
-            }}
+            onSearch={(t) => rq.setQ(t)}
             placeholder="Borrower, mobile, PAN, loan or application ID"
             ariaLabel="Search loans"
           />
@@ -293,14 +421,17 @@ function LoansPageInner() {
           {role && <span className="rounded-full bg-navy-tint px-3 py-1 text-sm font-semibold text-navy">{ROLE_LABEL[role]}</span>}
         </div>
 
+        {/* `onClear` is setFilters({}), not clearAll(): clearAll also wipes the search box, and "Clear filters" must not. */}
+        <FilterBar th={th} total={total} onClear={() => rq.setFilters({})} />
+
         <div className="rounded border border-line bg-white shadow-sm">
           {/* Under keepPreviousData an empty previous result must not read as "No loans for <the
               new term>" before the new response has said so — show the skeleton instead. */}
-          {q.isLoading || (q.isPlaceholderData && filtered.length === 0) ? (
+          {cr.isLoading || (cr.isPlaceholderData && pageRows.length === 0) ? (
             <Skeleton variant="table" rows={8} cols={16} />
-          ) : q.error ? (
-            <ErrorState error={q.error} onRetry={() => void q.refetch()} />
-          ) : filtered.length === 0 ? (
+          ) : cr.error ? (
+            <ErrorState error={cr.error} onRetry={() => cr.refetch()} />
+          ) : pageRows.length === 0 ? (
             <EmptyState
               title={`No loans${query ? ` for “${query}”` : ""}${seg !== "all" ? ` in ${SEGMENT_LABEL[seg]}` : ""}${
                 period !== "ALL" ? " in the selected date range" : ""
@@ -309,33 +440,33 @@ function LoansPageInner() {
           ) : (
             // `staff-register-scroll` pins the header; PaginationBar sits after the scroller so it
             // does not scroll away with the rows. The offset clears the shell header, PageHeader, the
-            // segment-chip row and the search/date toolbar.
+            // segment-chip row, the search/date toolbar and the filter-chip strip (`--filter-bar`).
             // Dimmed and aria-busy while the previous search/range's rows stand in for the next
             // one's (keepPreviousData), so they never look current (mirrors the transactions ledger).
             <div
-              className={`staff-table-scroll staff-register-scroll transition-opacity ${q.isPlaceholderData ? "opacity-60" : ""}`}
-              style={{ "--register-offset": "24rem" } as React.CSSProperties}
+              className={`staff-table-scroll staff-register-scroll transition-opacity ${cr.isPlaceholderData ? "opacity-60" : ""}`}
+              style={{ "--register-offset": "calc(24rem + var(--filter-bar))" } as React.CSSProperties}
             >
-              <table className="staff-data-table" aria-busy={q.isPlaceholderData}>
+              <table className="staff-data-table" aria-busy={cr.isPlaceholderData}>
                 <caption className="sr-only">Loans register</caption>
                 <thead>
                   <tr>
                     <th scope="col">S.No.</th>
                     <th scope="col" className="staff-sticky-identity">Loan</th>
-                    <th scope="col">Borrower</th>
+                    <Th th={th} col="borrowerName" />
                     <th scope="col">Signals</th>
-                    <SortableTh label="Sanctioned" sortKey="sanctionedAt" active={sortKey} dir={dir} onToggle={toggle} />
-                    <SortableTh label="Disbursed" sortKey="disbursedOn" active={sortKey} dir={dir} onToggle={toggle} />
-                    <SortableTh label="Due" sortKey="dueDate" active={sortKey} dir={dir} onToggle={toggle} />
-                    <SortableTh label="Closure date" sortKey="closedOn" active={sortKey} dir={dir} onToggle={toggle} />
-                    <th scope="col">Cycle</th>
-                    <SortableTh label="Principal" sortKey="principalPaise" active={sortKey} dir={dir} onToggle={toggle} className="num" />
-                    <th scope="col" className="num">Net disbursed</th>
-                    <th scope="col" className="num">Repayable</th>
-                    <SortableTh label="Outstanding" sortKey="outstandingPaise" active={sortKey} dir={dir} onToggle={toggle} className="num" />
-                    <SortableTh label="DPD" sortKey="dpd" active={sortKey} dir={dir} onToggle={toggle} className="num" />
-                    <th scope="col">Status</th>
-                    <th scope="col">Officer</th>
+                    <Th th={th} col="sanctionedAt" />
+                    <Th th={th} col="disbursedOn" />
+                    <Th th={th} col="dueDate" />
+                    <Th th={th} col="closedOn" />
+                    <Th th={th} col="loanCycle" />
+                    <Th th={th} col="principalPaise" className="num" />
+                    <Th th={th} col="netDisbursedPaise" className="num" />
+                    <Th th={th} col="totalRepayablePaise" className="num" />
+                    <Th th={th} col="outstandingPaise" className="num" />
+                    <Th th={th} col="dpd" className="num" />
+                    <Th th={th} col="status" />
+                    <Th th={th} col="assignedOfficerName" />
                     <th scope="col" className="staff-sticky-actions text-right">Open</th>
                   </tr>
                 </thead>
@@ -417,7 +548,15 @@ function LoansPageInner() {
               </table>
             </div>
           )}
-          <PaginationBar page={page} pageCount={pageCount} setPage={setPage} total={total} pageSize={pageSize} setPageSize={setPageSize} />
+          <PaginationBar
+            page={page}
+            pageCount={pageCount}
+            setPage={rq.setPage}
+            total={total}
+            pageSize={pageSize}
+            setPageSize={rq.setSize}
+            unitLabel="loans"
+          />
         </div>
       </PermissionGate>
 

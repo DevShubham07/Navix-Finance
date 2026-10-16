@@ -138,8 +138,7 @@ export const NAV: NavGroup[] = [
   {
     heading: "Collections",
     items: [
-      { label: "DPD buckets", href: "/staff/collections", Icon: HandCoins, perm: ["collections:interact", "collections:manage"], collectionBuckets: true, labelFor: { COLLECTION_HEAD: "Team DPD buckets", COLLECTION_EXECUTIVE: "My DPD cases" } },
-      { label: "DPD buckets (all)", href: "/staff/collections/overview", Icon: Gauge, perm: "collections:overview" },
+      { label: "DPD buckets (all loans)", href: "/staff/collections", Icon: HandCoins, perm: ["collections:interact", "collections:manage", "collections:overview"], collectionBuckets: true, labelFor: { COLLECTION_EXECUTIVE: "My DPD cases" } },
       // Collection Executive can see settlements they proposed; approve stays PermissionGate-gated.
       { label: "Settlements", href: "/staff/collections/settlements", Icon: HandCoins, perm: ["collections:interact", "collections:manage"], labelFor: { COLLECTION_HEAD: "Settlement approvals", COLLECTION_EXECUTIVE: "My settlements" } },
       {
@@ -194,7 +193,7 @@ export const SEGMENTED_PARENT_PATHS = new Set(
 export const ADMIN_NAV_ORDER: string[] = [
   "/staff/dashboard",
   "/staff/loans",
-  "/staff/collections/overview",
+  "/staff/collections",
   "/staff/performance",
   "/staff/admin/staff",
   "/staff/customers",

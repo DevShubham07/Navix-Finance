@@ -91,6 +91,44 @@ public class LoanController {
         return ApiResponse.ok(transactionService.listTransactions(q, direction, from, to, page, size));
     }
 
+    /**
+     * The ledger as a register page: the same rows and period/direction/search as {@code /transactions},
+     * plus {@code sort}/{@code dir} and the {@code f.<column>} filters (see
+     * {@code TransactionLedgerQuery.FILTER_COLUMNS}). {@code totalInPaise}/{@code totalOutPaise}/
+     * {@code pendingInPaise} follow the whole filter, not the page.
+     */
+    @GetMapping("/transactions/page")
+    public ApiResponse<TransactionService.TransactionPage> transactionsPage(
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) String direction,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "25") int size,
+            @RequestParam(required = false) String sort,
+            @RequestParam(required = false) String dir,
+            @RequestParam java.util.Map<String, String> all) {
+        // Same PII as /transactions (names + full PAN): Accountant + Admin only.
+        requireRole("ACCOUNTANT", "ADMIN");
+        return ApiResponse.ok(transactionService.page(q, direction, from, to, page, size, sort, dir, all));
+    }
+
+    /**
+     * The distinct values of one faceted ledger column ({@code column}), for its checklist, under the
+     * other columns' {@code f.*} filters and the same period/direction/search as the list.
+     */
+    @GetMapping("/transactions/facets")
+    public ApiResponse<com.navix.common.query.SqlFacets.Facet> transactionsFacets(
+            @RequestParam("column") String column,
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) String direction,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam java.util.Map<String, String> all) {
+        requireRole("ACCOUNTANT", "ADMIN");
+        return ApiResponse.ok(transactionService.facets(q, direction, from, to, column, all));
+    }
+
     /** Reject any actor whose role isn't in {@code allowed} (ADMIN included explicitly where needed). */
     private void requireRole(String... allowed) {
         String role = ActorContext.get().role();

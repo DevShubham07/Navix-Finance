@@ -15,6 +15,7 @@ import { useStaffSession, signOutStaff } from "@/lib/auth/staff-session";
 import { RoleSwitcher } from "@/components/staff/role-switcher";
 import { clearWorkingRole } from "@/lib/auth/working-role";
 import { clearRecent } from "@/lib/staff/search-recents";
+import { clearAllRegisterViews } from "@/lib/staff/register-view-store";
 import { cn } from "@/lib/utils";
 import { navGroupsFor, navHref, navLabel, navVisible, SEGMENTED_PARENT_PATHS } from "@/components/staff/staff-nav";
 import { COLLECTION_BUCKETS, collectionBucketCounts } from "@/lib/collection-buckets";
@@ -333,6 +334,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
     // the id is already in hand, rather than inside `signOutStaff` — that would have cost the
     // sign-out path an extra round-trip just to re-read an id the shell already has.
     clearRecent(session.id);
+    clearAllRegisterViews(session.id);
     clearWorkingRole(session.id);
     await signOutStaff();
     queryClient.clear();

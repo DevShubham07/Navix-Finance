@@ -8,6 +8,12 @@ import { PageHeader, StatCard } from "@/components/staff/staff-ui";
 import { SearchBar } from "@/components/staff/search-bar";
 import { errMessage, useStaffMe, useCan, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
+import { type FilterColumn } from "@/components/staff/column-filter";
+import { istDay } from "@/lib/staff/column-filter-match";
+import { useRegisterQuery } from "@/lib/staff/register-query";
+import { useClientRegister } from "@/lib/staff/use-client-register";
+import { Th, thBag, describeRegister } from "@/lib/staff/register-th";
+import { OUTCOME_LABEL } from "@/components/staff/lead-outcome";
 import { LeadCsvImport } from "@/components/staff/lead-csv-import";
 import { OutcomeChip } from "@/components/staff/lead-outcome";
 import { formatDateTime } from "@/lib/utils";
@@ -21,11 +27,46 @@ import {
   type AdminOutreachView,
   type DsaCommissionStatus,
 } from "@/lib/api/applications";
-import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
+import { PaginationBar } from "@/components/staff/pipeline/pagination";
 
 type Tab = "ROSTER" | "LEADS" | "COMMISSIONS" | "OUTREACH";
 
 const COMMISSION_STATUSES: DsaCommissionStatus[] = ["ACCRUED", "PAYABLE", "PAID", "VOID"];
+
+/** Per-table column declarations. Every table passes `url: false`: several registers on one page
+ *  would overwrite each other's `sort=` / `f.*` in a single query string, so the URL stays with the
+ *  page (its tab and server controls) and each table keeps only its own remembered view, namespaced
+ *  by its registerId (admin-dsa-roster / -leads / -commissions / -outreach). */
+const ROSTER_KEYS = ["name", "active", "leadsAdded", "leadsConverted", "accruedPaise", "payablePaise", "paidPaise"] as const;
+const ROSTER_LABEL: Record<string, string> = {
+  name: "DSA",
+  active: "Status",
+  leadsAdded: "Leads",
+  leadsConverted: "Converted",
+  accruedPaise: "Accrued",
+  payablePaise: "Payable",
+  paidPaise: "Paid",
+};
+
+/** DSA and Attribution (leads), DSA and Status (commissions) and DSA (outreach) are deliberately not
+ *  here: a select above each table already narrows them server-side, and two controls for one field
+ *  is a trap. Created has the From/To window for the same reason. */
+const LEAD_KEYS = ["name", "leadOutcome", "dsaNote", "city"] as const;
+const LEAD_LABEL: Record<string, string> = {
+  name: "Name",
+  leadOutcome: "Outcome",
+  dsaNote: "Note for DSA",
+  city: "City",
+};
+
+const COMMISSION_KEYS = ["netDisbursedPaise", "amountPaise"] as const;
+const COMMISSION_LABEL: Record<string, string> = {
+  netDisbursedPaise: "Net disbursed",
+  amountPaise: "Commission",
+};
+
+const OUTREACH_KEYS = ["channel", "status", "createdAt"] as const;
+const OUTREACH_LABEL: Record<string, string> = { channel: "Channel", status: "Status", createdAt: "Sent" };
 
 /**
  * Admin · DSA program — the roster + roll-ups, the company-wide DSA lead register (full detail,
@@ -34,7 +75,18 @@ const COMMISSION_STATUSES: DsaCommissionStatus[] = ["ACCRUED", "PAYABLE", "PAID"
  * /api/dsa surface).
  */
 export default function AdminDsaPage() {
-  const myRole = useStaffMe().data?.role;
+  // The tables' views live in the URL, which needs a Suspense boundary above them.
+  return (
+    <React.Suspense fallback={<div className="h-40 animate-pulse rounded border border-line bg-white" />}>
+      <AdminDsaPageInner />
+    </React.Suspense>
+  );
+}
+
+function AdminDsaPageInner() {
+  const me = useStaffMe().data;
+  const myRole = me?.role;
+  const staffId = me?.id;
   const can = useCan();
   const qc = useQueryClient();
   const [tab, setTab] = React.useState<Tab>("ROSTER");
@@ -78,6 +130,12 @@ export default function AdminDsaPage() {
         <StatCard label="Payable" value={paiseToINR(totals.payable)} accent="success" />
         <StatCard label="Paid" value={paiseToINR(totals.paid)} accent="success" />
       </div>
+      {/* The tiles sum the whole roster. The tabs below each narrow their own table (selects, search,
+          column filters), and none of that reaches these totals — say so, rather than leave a reader
+          to wonder whether a filtered table should have moved them. */}
+      <p className="mt-2 text-xs text-muted">
+        Totals across every DSA — not narrowed by the tab, its filters or search.
+      </p>
 
       <div className="mb-4 mt-6 flex gap-2">
         {([
@@ -100,31 +158,62 @@ export default function AdminDsaPage() {
 
       {tab === "ROSTER" && (
         <RosterTab
+          staffId={staffId}
           rows={rosterRows}
           loading={roster.isLoading}
           error={roster.error}
           onRetry={() => void roster.refetch()}
         />
       )}
-      {tab === "LEADS" && <LeadsTab dsaOptions={rosterRows} />}
-      {tab === "COMMISSIONS" && <CommissionsTab dsaOptions={rosterRows} />}
-      {tab === "OUTREACH" && <OutreachTab dsaOptions={rosterRows} />}
+      {tab === "LEADS" && <LeadsTab staffId={staffId} dsaOptions={rosterRows} />}
+      {tab === "COMMISSIONS" && <CommissionsTab staffId={staffId} dsaOptions={rosterRows} />}
+      {tab === "OUTREACH" && <OutreachTab staffId={staffId} dsaOptions={rosterRows} />}
     </div>
   );
 }
 
 function RosterTab({
+  staffId,
   rows,
   loading,
   error,
   onRetry,
 }: {
+  staffId: string | undefined;
   rows: AdminDsaRosterView[];
   loading: boolean;
   error: unknown;
   onRetry: () => void;
 }) {
-  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
+  const rq = useRegisterQuery({
+    registerId: "admin-dsa-roster",
+    url: false,
+    staffId,
+    sortKeys: ROSTER_KEYS,
+    filterKeys: ROSTER_KEYS,
+    defaults: { sort: { key: "name", dir: "asc" } },
+  });
+
+  const filterColumns = React.useMemo<Array<FilterColumn<AdminDsaRosterView>>>(
+    () => [
+      { key: "name", kind: "text", value: (r) => r.name ?? `#${r.dsaStaffId}` },
+      { key: "active", value: (r) => (r.active ? "Active" : "Disabled"), raw: (r) => (r.active ? "ACTIVE" : "DISABLED") },
+      // Counts, not money: the bound is typed as a plain number.
+      { key: "leadsAdded", kind: "num", value: (r) => String(r.leadsAdded), num: (r) => r.leadsAdded },
+      { key: "leadsConverted", kind: "num", value: (r) => String(r.leadsConverted), num: (r) => r.leadsConverted },
+      // Rupees on the money columns: the bound is typed beside a rupee figure.
+      { key: "accruedPaise", kind: "num", value: (r) => paiseToINR(r.accruedPaise), num: (r) => r.accruedPaise / 100 },
+      { key: "payablePaise", kind: "num", value: (r) => paiseToINR(r.payablePaise), num: (r) => r.payablePaise / 100 },
+      { key: "paidPaise", kind: "num", value: (r) => paiseToINR(r.paidPaise), num: (r) => r.paidPaise / 100 },
+    ],
+    [],
+  );
+
+  const cr = useClientRegister(rows, filterColumns, rq);
+  const { pageRows, total, pageCount } = cr;
+  const th = thBag(rq, cr, filterColumns, ROSTER_LABEL);
+  const page = rq.state.page;
+  const pageSize = rq.state.size;
   return (
     <div>
       {error ? (
@@ -136,13 +225,13 @@ function RosterTab({
               <thead>
                 <tr>
                   <th>S.No.</th>
-                  <th>DSA</th>
-                  <th>Status</th>
-                  <th className="num text-right">Leads</th>
-                  <th className="num text-right">Converted</th>
-                  <th className="num text-right">Accrued</th>
-                  <th className="num text-right">Payable</th>
-                  <th className="num text-right">Paid</th>
+                  <Th th={th} col="name" />
+                  <Th th={th} col="active" />
+                  <Th th={th} col="leadsAdded" className="num text-right" />
+                  <Th th={th} col="leadsConverted" className="num text-right" />
+                  <Th th={th} col="accruedPaise" className="num text-right" />
+                  <Th th={th} col="payablePaise" className="num text-right" />
+                  <Th th={th} col="paidPaise" className="num text-right" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
@@ -172,10 +261,11 @@ function RosterTab({
                   ) : (
                     <EmptyState title="No DSAs yet." inTable={8} />
                   ))}
+                {rows.length > 0 && total === 0 && <EmptyState title="No DSAs match the column filters." inTable={8} />}
               </tbody>
             </table>
           </div>
-          <PaginationBar page={page} pageCount={pageCount} setPage={setPage} total={total} pageSize={pageSize} setPageSize={setPageSize} />
+          <PaginationBar page={page} pageCount={pageCount} setPage={rq.setPage} total={total} pageSize={pageSize} setPageSize={rq.setSize} />
         </div>
       )}
     </div>
@@ -189,7 +279,7 @@ function dsaLabel(l: AdminDsaLeadView): string {
   return l.createdByStaffName ?? `#${l.createdByStaffId}`;
 }
 
-function LeadsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
+function LeadsTab({ staffId, dsaOptions }: { staffId: string | undefined; dsaOptions: AdminDsaRosterView[] }) {
   const qc = useQueryClient();
   const [dsaId, setDsaId] = React.useState<string>("");
   const [q, setQ] = React.useState("");
@@ -212,13 +302,47 @@ function LeadsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
       }),
   });
 
-  const rows = leads.data ?? [];
-  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
+  const rows = React.useMemo(() => leads.data ?? [], [leads.data]);
+
+  const rq = useRegisterQuery({
+    registerId: "admin-dsa-leads",
+    url: false,
+    staffId,
+    sortKeys: LEAD_KEYS,
+    filterKeys: LEAD_KEYS,
+    defaults: { sort: { key: "name", dir: "asc" } },
+  });
+
+  const filterColumns = React.useMemo<Array<FilterColumn<AdminDsaLeadView>>>(
+    () => [
+      { key: "name", kind: "text", value: (l) => l.name },
+      { key: "leadOutcome", value: (l) => OUTCOME_LABEL[l.leadOutcome] ?? l.leadOutcome, raw: (l) => l.leadOutcome },
+      { key: "dsaNote", kind: "text", value: (l) => l.dsaNote ?? "" },
+      // A blank city is a group worth ticking; the empty raw value is how the engine spells "none".
+      { key: "city", value: (l) => l.city ?? "No city", raw: (l) => l.city ?? "" },
+    ],
+    [],
+  );
+
+  const cr = useClientRegister(rows, filterColumns, rq);
+  const { pageRows, total, pageCount } = cr;
+  const th = thBag(rq, cr, filterColumns, LEAD_LABEL);
+  const page = rq.state.page;
+  const pageSize = rq.state.size;
 
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-end gap-3">
-        <Select label="DSA" className="!mb-0" value={dsaId} onChange={(e) => setDsaId(e.target.value)}>
+        <Select
+          label="DSA"
+          className="!mb-0"
+          value={dsaId}
+          onChange={(e) => {
+            setDsaId(e.target.value);
+            // The server-side set changed — back to page 1, column filters untouched.
+            rq.apply({});
+          }}
+        >
           <option value="">All DSAs</option>
           {dsaOptions.map((d) => (
             <option key={d.dsaStaffId} value={d.dsaStaffId}>
@@ -230,7 +354,10 @@ function LeadsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
           label="Attribution"
           className="!mb-0"
           value={attribution}
-          onChange={(e) => setAttribution(e.target.value as DsaLeadAttribution | "")}
+          onChange={(e) => {
+            setAttribution(e.target.value as DsaLeadAttribution | "");
+            rq.apply({});
+          }}
         >
           <option value="">Entered + uploaded</option>
           <option value="ENTERED">Entered (earns commission)</option>
@@ -240,15 +367,16 @@ function LeadsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
           initialValue={q}
           onSearch={(t) => {
             setQ(t);
-            setPage(1);
+            rq.apply({});
           }}
           placeholder="Name, PAN or mobile"
           ariaLabel="Search"
         />
-        <Input label="From" type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="!mb-0" />
-        <Input label="To" type="date" value={to} onChange={(e) => setTo(e.target.value)} className="!mb-0" />
+        <Input label="From" type="date" value={from} onChange={(e) => { setFrom(e.target.value); rq.apply({}); }} className="!mb-0" />
+        <Input label="To" type="date" value={to} onChange={(e) => { setTo(e.target.value); rq.apply({}); }} className="!mb-0" />
         <ExportMenu
           title="DSA lead register"
+          subtitle={describeRegister(th) || undefined}
           fileBase="dhanboost-dsa-leads"
           columns={[
             { header: "DSA", value: (l: AdminDsaLeadView) => dsaLabel(l) },
@@ -263,7 +391,8 @@ function LeadsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
             { header: "Employer", value: (l) => l.employer ?? "" },
             { header: "Created", value: (l) => formatDateTime(l.createdAt) },
           ]}
-          rows={rows}
+          rows={cr.rows}
+          scope="all"
         />
         <LeadCsvImport
           onImported={() => {
@@ -288,11 +417,11 @@ function LeadsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
                   <th>DSA</th>
                   <th>Attribution</th>
                   <th>PAN</th>
-                  <th>Name</th>
+                  <Th th={th} col="name" />
                   <th>Mobile</th>
-                  <th>Outcome</th>
-                  <th>Note for DSA</th>
-                  <th>City</th>
+                  <Th th={th} col="leadOutcome" />
+                  <Th th={th} col="dsaNote" />
+                  <Th th={th} col="city" />
                   <th>Created</th>
                 </tr>
               </thead>
@@ -318,18 +447,23 @@ function LeadsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
                     <td className="whitespace-nowrap text-muted">{formatDateTime(l.createdAt)}</td>
                   </tr>
                 ))}
-                {rows.length === 0 && <EmptyState title="No leads match these filters." inTable={10} />}
+                {total === 0 && (
+                  <EmptyState
+                    title={rq.activeCount > 0 ? "No leads match the column filters." : "No leads match these filters."}
+                    inTable={10}
+                  />
+                )}
               </tbody>
             </table>
           </div>
-          <PaginationBar page={page} pageCount={pageCount} setPage={setPage} total={total} pageSize={pageSize} setPageSize={setPageSize} />
+          <PaginationBar page={page} pageCount={pageCount} setPage={rq.setPage} total={total} pageSize={pageSize} setPageSize={rq.setSize} />
         </div>
       )}
     </div>
   );
 }
 
-function CommissionsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
+function CommissionsTab({ staffId, dsaOptions }: { staffId: string | undefined; dsaOptions: AdminDsaRosterView[] }) {
   const qc = useQueryClient();
   const [dsaId, setDsaId] = React.useState<string>("");
   const [status, setStatus] = React.useState<DsaCommissionStatus | "">("");
@@ -372,13 +506,45 @@ function CommissionsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
     },
   });
 
-  const rows = commissions.data ?? [];
-  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
+  const rows = React.useMemo(() => commissions.data ?? [], [commissions.data]);
+
+  const rq = useRegisterQuery({
+    registerId: "admin-dsa-commissions",
+    url: false,
+    staffId,
+    sortKeys: COMMISSION_KEYS,
+    filterKeys: COMMISSION_KEYS,
+    defaults: { sort: { key: "amountPaise", dir: "desc" } },
+  });
+
+  const filterColumns = React.useMemo<Array<FilterColumn<AdminDsaCommissionView>>>(
+    () => [
+      // Rupees on both money columns: the bound is typed beside a rupee figure.
+      { key: "netDisbursedPaise", kind: "num", value: (c) => paiseToINR(c.netDisbursedPaise), num: (c) => c.netDisbursedPaise / 100 },
+      { key: "amountPaise", kind: "num", value: (c) => paiseToINR(c.amountPaise), num: (c) => c.amountPaise / 100 },
+    ],
+    [],
+  );
+
+  const cr = useClientRegister(rows, filterColumns, rq);
+  const { pageRows, total, pageCount } = cr;
+  const th = thBag(rq, cr, filterColumns, COMMISSION_LABEL);
+  const page = rq.state.page;
+  const pageSize = rq.state.size;
 
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-end gap-3">
-        <Select label="DSA" className="!mb-0" value={dsaId} onChange={(e) => setDsaId(e.target.value)}>
+        <Select
+          label="DSA"
+          className="!mb-0"
+          value={dsaId}
+          onChange={(e) => {
+            setDsaId(e.target.value);
+            // The server-side set changed — back to page 1, column filters untouched.
+            rq.apply({});
+          }}
+        >
           <option value="">All DSAs</option>
           {dsaOptions.map((d) => (
             <option key={d.dsaStaffId} value={d.dsaStaffId}>
@@ -386,7 +552,15 @@ function CommissionsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
             </option>
           ))}
         </Select>
-        <Select label="Status" className="!mb-0" value={status} onChange={(e) => setStatus(e.target.value as DsaCommissionStatus | "")}>
+        <Select
+          label="Status"
+          className="!mb-0"
+          value={status}
+          onChange={(e) => {
+            setStatus(e.target.value as DsaCommissionStatus | "");
+            rq.apply({});
+          }}
+        >
           <option value="">All</option>
           {COMMISSION_STATUSES.map((s) => (
             <option key={s} value={s}>{s}</option>
@@ -394,6 +568,7 @@ function CommissionsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
         </Select>
         <ExportMenu
           title="DSA commission ledger"
+          subtitle={describeRegister(th) || undefined}
           fileBase="dhanboost-dsa-commissions"
           columns={[
             { header: "DSA", value: (c: AdminDsaCommissionView) => c.dsaName ?? `#${c.dsaStaffId}` },
@@ -404,7 +579,8 @@ function CommissionsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
             { header: "Txn ref", value: (c) => c.txnRef ?? "" },
             { header: "Paid by", value: (c) => c.paidBy ?? "" },
           ]}
-          rows={rows}
+          rows={cr.rows}
+          scope="all"
         />
       </div>
 
@@ -421,8 +597,8 @@ function CommissionsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
                   <th>S.No.</th>
                   <th>DSA</th>
                   <th>PAN</th>
-                  <th className="num text-right">Net disbursed</th>
-                  <th className="num text-right">Commission</th>
+                  <Th th={th} col="netDisbursedPaise" className="num text-right" />
+                  <Th th={th} col="amountPaise" className="num text-right" />
                   <th>Status</th>
                   <th>Actions</th>
                 </tr>
@@ -526,11 +702,16 @@ function CommissionsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
                   </td>
                 </tr>
               ))}
-              {rows.length === 0 && <EmptyState title="No commissions match these filters." inTable={7} />}
+              {total === 0 && (
+                <EmptyState
+                  title={rq.activeCount > 0 ? "No commissions match the column filters." : "No commissions match these filters."}
+                  inTable={7}
+                />
+              )}
               </tbody>
             </table>
           </div>
-          <PaginationBar page={page} pageCount={pageCount} setPage={setPage} total={total} pageSize={pageSize} setPageSize={setPageSize} />
+          <PaginationBar page={page} pageCount={pageCount} setPage={rq.setPage} total={total} pageSize={pageSize} setPageSize={rq.setSize} />
         </div>
       )}
       {(pay.error || voidMut.error || reassign.error) && (
@@ -540,7 +721,7 @@ function CommissionsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
   );
 }
 
-function OutreachTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
+function OutreachTab({ staffId, dsaOptions }: { staffId: string | undefined; dsaOptions: AdminDsaRosterView[] }) {
   const [dsaId, setDsaId] = React.useState<string>("");
 
   const outreach = useQuery({
@@ -548,13 +729,46 @@ function OutreachTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
     queryFn: () => adminDsaApi.outreach({ dsaId: dsaId ? Number(dsaId) : undefined }),
   });
 
-  const rows: AdminOutreachView[] = outreach.data ?? [];
-  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
+  const rows = React.useMemo<AdminOutreachView[]>(() => outreach.data ?? [], [outreach.data]);
+
+  const rq = useRegisterQuery({
+    registerId: "admin-dsa-outreach",
+    url: false,
+    staffId,
+    sortKeys: OUTREACH_KEYS,
+    filterKeys: OUTREACH_KEYS,
+    defaults: { sort: { key: "createdAt", dir: "desc" } },
+  });
+
+  const filterColumns = React.useMemo<Array<FilterColumn<AdminOutreachView>>>(
+    () => [
+      { key: "channel", value: (o) => o.channel },
+      { key: "status", value: (o) => o.status },
+      // The IST business day, agreeing with what the date filter compares — never a UTC slice.
+      { key: "createdAt", kind: "date", value: (o) => istDay(o.createdAt) ?? "—", date: (o) => istDay(o.createdAt) },
+    ],
+    [],
+  );
+
+  const cr = useClientRegister(rows, filterColumns, rq);
+  const { pageRows, total, pageCount } = cr;
+  const th = thBag(rq, cr, filterColumns, OUTREACH_LABEL);
+  const page = rq.state.page;
+  const pageSize = rq.state.size;
 
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-end gap-3">
-        <Select label="DSA" className="!mb-0" value={dsaId} onChange={(e) => setDsaId(e.target.value)}>
+        <Select
+          label="DSA"
+          className="!mb-0"
+          value={dsaId}
+          onChange={(e) => {
+            setDsaId(e.target.value);
+            // The server-side set changed — back to page 1, column filters untouched.
+            rq.apply({});
+          }}
+        >
           <option value="">All DSAs</option>
           {dsaOptions.map((d) => (
             <option key={d.dsaStaffId} value={d.dsaStaffId}>{d.name ?? `#${d.dsaStaffId}`}</option>
@@ -574,11 +788,11 @@ function OutreachTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
                 <tr>
                   <th>S.No.</th>
                   <th>Lead #</th>
-                  <th>Channel</th>
+                  <Th th={th} col="channel" />
                   <th>To</th>
                   <th>Subject / body</th>
-                  <th>Status</th>
-                  <th>Sent</th>
+                  <Th th={th} col="status" />
+                  <Th th={th} col="createdAt" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-line align-top">
@@ -601,11 +815,16 @@ function OutreachTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
                     <td className="whitespace-nowrap text-muted">{formatDateTime(o.createdAt)}</td>
                   </tr>
                 ))}
-                {rows.length === 0 && <EmptyState title="No outreach sent yet." inTable={7} />}
+                {total === 0 && (
+                  <EmptyState
+                    title={rq.activeCount > 0 ? "No outreach matches the column filters." : "No outreach sent yet."}
+                    inTable={7}
+                  />
+                )}
               </tbody>
             </table>
           </div>
-          <PaginationBar page={page} pageCount={pageCount} setPage={setPage} total={total} pageSize={pageSize} setPageSize={setPageSize} />
+          <PaginationBar page={page} pageCount={pageCount} setPage={rq.setPage} total={total} pageSize={pageSize} setPageSize={rq.setSize} />
         </div>
       )}
     </div>

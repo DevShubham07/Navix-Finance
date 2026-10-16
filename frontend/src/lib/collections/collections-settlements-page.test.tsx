@@ -1,7 +1,10 @@
 /**
- * `/staff/collections/settlements` (Phase 2): status chips with counts, PROPOSED rows first under
- * All, the pre-flight SoD notice for the staffer's own proposals, and the action-error banner
- * clearing when a new decision starts.
+ * `/staff/collections/settlements`: status chips with counts, the pre-flight SoD notice for the
+ * staffer's own proposals, and the action-error banner clearing when a new decision starts.
+ *
+ * Row ORDER is now the register's own sort (newest proposal first) rather than the old
+ * "PROPOSED rows floated to the top of All" partition: a register with a sortable Settlement
+ * column cannot honour both, and the Pending chip — with its count — is the route to that desk.
  *
  * Lives under `src/lib/collections` beside the helpers it exercises; the page is imported by path.
  */
@@ -72,7 +75,7 @@ function bodyRows() {
 }
 
 describe("CollectionsSettlementsPage", () => {
-  it("counts each status on its chip and lists PROPOSED rows first under All", async () => {
+  it("counts each status on its chip and lists rows newest proposal first", async () => {
     renderPage();
     expect(await screen.findByRole("button", { name: "All (3)" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "Proposed (2)" })).toBeInTheDocument();
@@ -81,9 +84,10 @@ describe("CollectionsSettlementsPage", () => {
 
     const rows = bodyRows();
     expect(rows).toHaveLength(3);
-    expect(rows[0]).toHaveTextContent("bbbbbbbb");
-    expect(rows[1]).toHaveTextContent("cccccccc");
-    expect(rows[2]).toHaveTextContent("aaaaaaaa");
+    // All three carry the same `createdAt`, so the sort is a no-op tie and server order stands.
+    expect(rows[0]).toHaveTextContent("aaaaaaaa");
+    expect(rows[1]).toHaveTextContent("bbbbbbbb");
+    expect(rows[2]).toHaveTextContent("cccccccc");
   });
 
   it("narrows to one status, and says so when that status is empty", async () => {
@@ -101,7 +105,7 @@ describe("CollectionsSettlementsPage", () => {
     expect(await screen.findByText("You proposed this — another Collection Head must decide")).toBeInTheDocument();
     // Only the other officer's proposal offers the decision.
     await waitFor(() => expect(screen.getAllByRole("button", { name: "Approve" })).toHaveLength(1));
-    const [mine, theirs] = bodyRows();
+    const [, mine, theirs] = bodyRows();
     expect(within(mine).queryByRole("button", { name: "Approve" })).toBeNull();
     expect(within(theirs).getByRole("button", { name: "Approve" })).toBeInTheDocument();
   });
@@ -122,8 +126,9 @@ describe("CollectionsSettlementsPage", () => {
 
   it("offers the full ids behind the truncated ones", async () => {
     renderPage();
-    const [first] = await screen.findAllByRole("button", { name: "Full settlement and case ids" });
-    fireEvent.click(first);
+    const tips = await screen.findAllByRole("button", { name: "Full settlement and case ids" });
+    // Row 2 is MINE — the already-decided APPROVED row leads under the newest-first sort.
+    fireEvent.click(tips[1]);
     const tip = await screen.findByRole("tooltip");
     expect(tip).toHaveTextContent(MINE.id);
     expect(tip).toHaveTextContent(MINE.collectionCaseId);

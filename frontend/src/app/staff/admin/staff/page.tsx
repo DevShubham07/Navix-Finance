@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { useSearchParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, UserPlus, UserX, UserCheck } from "lucide-react";
 import { EmptyState, ErrorState, Input, Select, Skeleton, toast } from "@/components/ui";
@@ -17,7 +16,11 @@ import {
   type StaffRoleName,
   type StaffStatus,
 } from "@/lib/api/applications";
-import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
+import { PaginationBar } from "@/components/staff/pipeline/pagination";
+import { type FilterColumn } from "@/components/staff/column-filter";
+import { useRegisterQuery } from "@/lib/staff/register-query";
+import { useClientRegister } from "@/lib/staff/use-client-register";
+import { Th, thBag, describeRegister } from "@/lib/staff/register-th";
 
 const ROLES = Object.keys(ROLE_LABEL) as StaffRoleName[];
 /** Only these are selectable targets — the backend now rejects a transition into INVITED. */
@@ -33,6 +36,12 @@ const STATUS_BADGE: Record<StaffStatus, BadgeVariant> = {
   DISABLED: "neutral",
 };
 const TAB_ORDER: StaffStatus[] = ["ACTIVE", "INVITED", "DISABLED"];
+
+/** Sortable + filterable columns. Status is the tab's dimension, so it deliberately has no column
+ *  filter of its own — two controls for one field is a trap, not a feature. */
+const SORT_KEYS = ["name", "role"] as const;
+
+const COLUMN_LABEL: Record<string, string> = { name: "Staff", role: "Role" };
 
 /** Admin · staff accounts — list, change role/status, disable (live /api/staff). ADMIN only. */
 export default function AdminStaffPage() {
@@ -50,25 +59,51 @@ function AdminStaffPageInner() {
   const q = useQuery({ queryKey: ["admin-staff"], queryFn: adminApi.listStaff });
 
   const [tab, setTab] = React.useState<StaffStatus>("ACTIVE");
-  const [query, setQuery] = React.useState(useSearchParams().get("q") ?? "");
+
+  // `q` lives in the register's view, which is also where the `?q=` deep link global search sends
+  // people is read from — one owner, and it returns to page 1 on its own.
+  const rq = useRegisterQuery({
+    registerId: "admin-staff",
+    staffId: me.data?.id,
+    sortKeys: SORT_KEYS,
+    filterKeys: SORT_KEYS,
+    defaults: { sort: { key: "name", dir: "asc" } },
+  });
+  const query = rq.state.q;
+
+  const all = React.useMemo(() => q.data ?? [], [q.data]);
 
   const filtered = React.useMemo(() => {
     const needle = query.trim().toLowerCase();
-    const rows = q.data ?? [];
     return needle
-      ? rows.filter((s) => s.name.toLowerCase().includes(needle) || s.email.toLowerCase().includes(needle))
-      : rows;
-  }, [q.data, query]);
+      ? all.filter((s) => s.name.toLowerCase().includes(needle) || s.email.toLowerCase().includes(needle))
+      : all;
+  }, [all, query]);
 
+  // Tab counts follow the search (they always have) but NOT the column filters: a tab badge that
+  // shrank as you filtered inside it would stop being a way to move between tabs.
   const byStatus = React.useMemo(() => {
     const groups: Record<StaffStatus, StaffResponse[]> = { ACTIVE: [], INVITED: [], DISABLED: [] };
     for (const s of filtered) groups[s.status].push(s);
-    for (const t of TAB_ORDER) groups[t].sort((a, b) => a.name.localeCompare(b.name));
     return groups;
   }, [filtered]);
 
-  const rows = byStatus[tab];
-  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
+  const filterColumns = React.useMemo<Array<FilterColumn<StaffResponse>>>(
+    () => [
+      { key: "name", kind: "text", value: (s) => s.name },
+      // The checklist reads "Credit Executive"; the filter travels as CREDIT_EXECUTIVE.
+      { key: "role", value: (s) => ROLE_LABEL[s.role], raw: (s) => s.role },
+    ],
+    [],
+  );
+
+  const inTab = React.useCallback((s: StaffResponse) => s.status === tab, [tab]);
+  const cr = useClientRegister(filtered, filterColumns, rq, inTab);
+  const { pageRows, total, pageCount } = cr;
+  const rows = cr.rows;
+  const th = thBag(rq, cr, filterColumns, COLUMN_LABEL);
+  const page = rq.state.page;
+  const pageSize = rq.state.size;
 
   const tabs: TabDef[] = TAB_ORDER.map((t) => ({
     key: t,
@@ -86,7 +121,10 @@ function AdminStaffPageInner() {
 
   return (
     <div>
-      <PageHeader title="Staff accounts" subtitle="Manage staff roles and access status.">
+      <PageHeader
+        title="Staff accounts"
+        subtitle={["Manage staff roles and access status.", describeRegister(th)].filter(Boolean).join(" · ")}
+      >
         <ExportMenu
           title="Staff accounts"
           fileBase="dhanboost-staff"
@@ -97,7 +135,10 @@ function AdminStaffPageInner() {
             { header: "Role", value: (s) => ROLE_LABEL[s.role] },
             { header: "Status", value: (s) => s.status },
           ]}
-          rows={q.data ?? []}
+          // The tab- and search-filtered set the table renders. `q.data` is the whole roster, so
+          // exporting from the Disabled tab with a search active used to return everyone.
+          rows={rows}
+          scope="all"
         />
         <button
           onClick={() => q.refetch()}
@@ -110,12 +151,16 @@ function AdminStaffPageInner() {
       <CreateStaffForm />
 
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <Tabs tabs={tabs} active={tab} onChange={(k) => { setTab(k as StaffStatus); setPage(1); }} />
-        <SearchBar
-          initialValue={query}
-          onSearch={(t) => { setQuery(t); setPage(1); }}
-          placeholder="Name or email"
+        <Tabs
+          tabs={tabs}
+          active={tab}
+          onChange={(k) => {
+            setTab(k as StaffStatus);
+            // "What matches has changed" — back to page 1 in one update, filters untouched.
+            if (k !== tab) rq.apply({});
+          }}
         />
+        <SearchBar initialValue={query} onSearch={rq.setQ} placeholder="Name or email" />
       </div>
 
       {q.isLoading ? (
@@ -128,8 +173,8 @@ function AdminStaffPageInner() {
             <thead>
               <tr>
                 <th>S.No.</th>
-                <th>Staff</th>
-                <th>Role</th>
+                <Th th={th} col="name" />
+                <Th th={th} col="role" />
                 <th>Status</th>
                 <th className="text-right">Actions</th>
               </tr>
@@ -138,18 +183,25 @@ function AdminStaffPageInner() {
               {pageRows.map((s, i) => (
                 <StaffRow key={s.id} staff={s} index={(page - 1) * pageSize + i} />
               ))}
-              {rows.length === 0 && (
-                <EmptyState title={`No ${STATUS_LABEL[tab].toLowerCase()} staff accounts.`} inTable={5} />
+              {total === 0 && (
+                <EmptyState
+                  title={
+                    rq.activeCount > 0
+                      ? "No staff accounts match the filters."
+                      : `No ${STATUS_LABEL[tab].toLowerCase()} staff accounts.`
+                  }
+                  inTable={5}
+                />
               )}
             </tbody>
           </table>
           <PaginationBar
             page={page}
             pageCount={pageCount}
-            setPage={setPage}
+            setPage={rq.setPage}
             total={total}
             pageSize={pageSize}
-            setPageSize={setPageSize}
+            setPageSize={rq.setSize}
           />
         </div>
       )}

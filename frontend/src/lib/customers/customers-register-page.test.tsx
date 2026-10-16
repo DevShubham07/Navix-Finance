@@ -207,4 +207,17 @@ describe("CustomersPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sort by Date" }));
     await waitFor(() => expect(pageCalls.at(-1)).toMatchObject({ sort: "date", dir: "desc" }));
   });
+
+  it("Clear filters drops the column filters but keeps the search term", async () => {
+    // The bar's onClear is setFilters({}), not clearAll(): the latter would also wipe the search box.
+    window.history.replaceState({}, "", "/staff/customers?q=asha&f.name=text%3Acontains%3Aa");
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Clear filters" }));
+
+    // `replace` is a bare mock here (it does not move window.location), so read the URL it was handed.
+    await waitFor(() => expect(replace).toHaveBeenCalled());
+    const url = new URLSearchParams((replace.mock.calls.at(-1)?.[0] as string).split("?")[1] ?? "");
+    expect(url.get("q")).toBe("asha");
+    expect(url.has("f.name")).toBe(false);
+  });
 });

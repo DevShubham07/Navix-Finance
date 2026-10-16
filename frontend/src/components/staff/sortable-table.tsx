@@ -53,6 +53,25 @@ function compareValues(a: unknown, b: unknown, dir: SortDir): number {
   return dir === "asc" ? cmp : -cmp;
 }
 
+/**
+ * Sort a copy of `rows` by one key. Pulled out of {@link useTableSort} so a caller that already owns
+ * the sort — `useClientRegister`, which keeps it in the URL — reuses this exact comparison instead
+ * of growing a second one that orders nulls or ISO dates differently.
+ */
+export function sortRows<T>(rows: T[], key: string, dir: SortDir): T[] {
+  const copy = [...rows];
+  copy.sort((a, b) =>
+    compareValues((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key], dir),
+  );
+  return copy;
+}
+
+/** The direction a column should take on its FIRST click — newest/largest first for dates and
+ *  numbers, A→Z for text. Exported for the same reason as {@link sortRows}. */
+export function firstClickDir(sampleValue: unknown): SortDir {
+  return defaultDirFor(sampleValue);
+}
+
 export interface UseTableSortResult<T> {
   sorted: T[];
   sortKey: string;
@@ -91,13 +110,7 @@ export function useTableSort<T>(
     setDir(nextDir);
   }, []);
 
-  const sorted = React.useMemo(() => {
-    const copy = [...rows];
-    copy.sort((a, b) =>
-      compareValues((a as Record<string, unknown>)[sortKey], (b as Record<string, unknown>)[sortKey], dir),
-    );
-    return copy;
-  }, [rows, sortKey, dir]);
+  const sorted = React.useMemo(() => sortRows(rows, sortKey, dir), [rows, sortKey, dir]);
 
   return { sorted, sortKey, dir, toggle, setSort };
 }

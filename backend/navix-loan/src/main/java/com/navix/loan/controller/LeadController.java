@@ -1,5 +1,6 @@
 package com.navix.loan.controller;
 
+import com.navix.common.query.SqlFacets;
 import com.navix.common.web.ApiResponse;
 import com.navix.loan.dto.LeadDtos.CreateLeadRequest;
 import com.navix.loan.dto.LeadDtos.DispositionRequest;
@@ -15,6 +16,7 @@ import com.navix.loan.service.LeadService;
 import jakarta.validation.Valid;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -61,6 +63,53 @@ public class LeadController {
         return ApiResponse.ok(leadService.list(
                 q, callStatus, source, createdBy, from, to, minRating, maxRating, leadOutcome,
                 page, size));
+    }
+
+    /**
+     * The same list under the register's column filters: {@code f.<column>} params (see
+     * {@code LeadBookQuery.FILTER_COLUMNS}; an unknown one is dropped, never an error), plus every
+     * param {@link #list} takes. {@code /page} is the register's own URL; the bare list stays for
+     * callers that never had column filters.
+     */
+    @GetMapping("/page")
+    public ApiResponse<LeadPage> page(
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) String callStatus,
+            @RequestParam(required = false) String source,
+            @RequestParam(required = false) Long createdBy,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(required = false) Integer minRating,
+            @RequestParam(required = false) Integer maxRating,
+            @RequestParam(required = false) String leadOutcome,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "25") int size,
+            @RequestParam Map<String, String> all) {
+        return ApiResponse.ok(leadService.list(
+                q, callStatus, source, createdBy, from, to, minRating, maxRating, leadOutcome,
+                page, size, all));
+    }
+
+    /**
+     * The distinct values of one filterable column ({@code column}), for its checklist. Takes the OTHER
+     * columns' {@code f.*} filters and the same view params as {@link #page}; its own is ignored so
+     * choosing a value does not hide the alternatives.
+     */
+    @GetMapping("/facets")
+    public ApiResponse<SqlFacets.Facet> facets(
+            @RequestParam("column") String column,
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) String callStatus,
+            @RequestParam(required = false) String source,
+            @RequestParam(required = false) Long createdBy,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(required = false) Integer minRating,
+            @RequestParam(required = false) Integer maxRating,
+            @RequestParam(required = false) String leadOutcome,
+            @RequestParam Map<String, String> all) {
+        return ApiResponse.ok(leadService.facets(
+                column, q, callStatus, source, createdBy, from, to, minRating, maxRating, leadOutcome, all));
     }
 
     @GetMapping("/stats")

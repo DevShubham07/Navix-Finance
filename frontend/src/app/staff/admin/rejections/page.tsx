@@ -3,23 +3,19 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, RefreshCw } from "lucide-react";
-import { EmptyState, ErrorState, Select, Skeleton } from "@/components/ui";
+import { EmptyState, ErrorState, Skeleton } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { useStaffMe, useCan, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
 import type { ExportColumn } from "@/lib/export/exporters";
 import { staffApi, paiseToINR, type RejectionView } from "@/lib/api/applications";
 import { CreditBadge } from "@/components/staff/credit-badge";
-import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
-
-const REASONS = [
-  { value: "", label: "All reasons" },
-  { value: "SELF_EMPLOYED", label: "Self-employed" },
-  { value: "PAST_DELINQUENCY", label: "Past delinquency" },
-  { value: "LOW_BUREAU_SCORE", label: "Low credit score" },
-  { value: "FRAUD_REJECTED", label: "Fraud rejected" },
-  { value: "MANUAL", label: "Rejected by credit" },
-] as const;
+import { PaginationBar } from "@/components/staff/pipeline/pagination";
+import { type FilterColumn } from "@/components/staff/column-filter";
+import { istDay } from "@/lib/staff/column-filter-match";
+import { useRegisterQuery } from "@/lib/staff/register-query";
+import { useClientRegister } from "@/lib/staff/use-client-register";
+import { Th, thBag, describeRegister } from "@/lib/staff/register-th";
 
 const REASON_LABEL: Record<string, string> = {
   SELF_EMPLOYED: "Self-employed",
@@ -30,7 +26,25 @@ const REASON_LABEL: Record<string, string> = {
   MANUAL: "Rejected by credit",
 };
 
-const day = (iso: string | null) => (iso ? iso.slice(0, 10) : "");
+/** The IST business day, not a UTC slice: `.slice(0, 10)` on a timestamp shows the previous day for
+ *  anything rejected after 5:30am UTC — and it has to agree with what the date filter compares. */
+const day = (iso: string | null) => istDay(iso) ?? "";
+
+/** Sortable + filterable columns. Identity (PAN, account, IFSC) is deliberately not among them:
+ *  a dropdown of account numbers is not a feature, and nobody narrows a register by one. */
+const SORT_KEYS = [
+  "borrowerName", "amountRequestedPaise", "creditScore", "reasonCode", "auto", "blockedUntil", "createdAt",
+] as const;
+
+const COLUMN_LABEL: Record<string, string> = {
+  borrowerName: "Borrower",
+  amountRequestedPaise: "Amount",
+  creditScore: "Credit",
+  reasonCode: "Reason",
+  auto: "Source",
+  blockedUntil: "Blocked until",
+  createdAt: "Rejected on",
+};
 
 const EXPORT_COLUMNS: ExportColumn<RejectionView>[] = [
   { header: "ID", value: (r) => r.id },
@@ -58,17 +72,44 @@ const EXPORT_COLUMNS: ExportColumn<RejectionView>[] = [
  * The borrower is never shown any of this; they always see the same neutral message.
  */
 export default function AdminRejectionsPage() {
-  const myRole = useStaffMe().data?.role;
+  const me = useStaffMe().data;
+  const myRole = me?.role;
   const can = useCan();
-  const [reason, setReason] = React.useState("");
   const q = useQuery({
-    queryKey: ["admin-rejections", reason],
-    queryFn: () => staffApi.rejections(reason || undefined),
+    queryKey: ["admin-rejections"],
+    queryFn: () => staffApi.rejections(),
   });
 
-  const rows = q.data ?? [];
+  const rows = React.useMemo(() => q.data ?? [], [q.data]);
   const now = Date.now();
-  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
+
+  const rq = useRegisterQuery({
+    registerId: "rejections",
+    staffId: me?.id,
+    sortKeys: SORT_KEYS,
+    filterKeys: SORT_KEYS,
+    defaults: { sort: { key: "createdAt", dir: "desc" } },
+  });
+
+  const filterColumns = React.useMemo<Array<FilterColumn<RejectionView>>>(
+    () => [
+      { key: "borrowerName", kind: "text", value: (r) => r.borrowerName ?? "" },
+      // Rupees: the bound is typed next to a rupee column.
+      { key: "amountRequestedPaise", kind: "num", value: (r) => (r.amountRequestedPaise != null ? paiseToINR(r.amountRequestedPaise) : "—"), num: (r) => (r.amountRequestedPaise != null ? r.amountRequestedPaise / 100 : null) },
+      { key: "creditScore", kind: "num", value: (r) => (r.creditScore != null ? String(r.creditScore) : "—"), num: (r) => r.creditScore ?? null },
+      { key: "reasonCode", value: (r) => REASON_LABEL[r.reasonCode] ?? r.reasonCode, raw: (r) => r.reasonCode },
+      { key: "auto", value: (r) => (r.auto ? "Automatic" : "Manual"), raw: (r) => (r.auto ? "AUTO" : "MANUAL") },
+      { key: "blockedUntil", kind: "date", value: (r) => day(r.blockedUntil) || "—", date: (r) => istDay(r.blockedUntil) },
+      { key: "createdAt", kind: "date", value: (r) => day(r.createdAt) || "—", date: (r) => istDay(r.createdAt) },
+    ],
+    [],
+  );
+
+  const cr = useClientRegister(rows, filterColumns, rq);
+  const { pageRows, total, pageCount } = cr;
+  const th = thBag(rq, cr, filterColumns, COLUMN_LABEL);
+  const page = rq.state.page;
+  const pageSize = rq.state.size;
 
   if (myRole && !can("staff:manage")) {
     return <NoAccessNotice message="Admin access only." />;
@@ -78,14 +119,20 @@ export default function AdminRejectionsPage() {
     <div>
       <PageHeader
         title="Rejections"
-        subtitle="Every rejected application and the reason behind it. Admin only — never surfaced to the borrower."
+        subtitle={[
+          "Every rejected application and the reason behind it. Admin only — never surfaced to the borrower.",
+          describeRegister(th),
+        ]
+          .filter(Boolean)
+          .join(" · ")}
       >
         <ExportMenu
           title="Rejections"
           subtitle="Rejection register"
           fileBase="dhanboost-rejections"
           columns={EXPORT_COLUMNS}
-          rows={rows}
+          rows={cr.rows}
+          scope="all"
         />
         <button
           onClick={() => q.refetch()}
@@ -95,16 +142,12 @@ export default function AdminRejectionsPage() {
         </button>
       </PageHeader>
 
-      <div className="mb-4 flex flex-wrap items-end gap-2">
-        <Select
-          aria-label="Reason"
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          className="!mb-0"
-          options={REASONS.map((r) => ({ value: r.value, label: r.label }))}
-        />
-        <span className="pb-2 text-xs text-muted">{rows.length} rejections</span>
-      </div>
+      {/* The reason dropdown that used to sit here is gone: the Reason column's own filter does the
+          same job, composes with the other columns, and survives a reload. */}
+      <p className="mb-4 text-xs text-muted">
+        {total} {total === 1 ? "rejection" : "rejections"}
+        {rq.activeCount > 0 ? ` of ${rows.length}` : ""}
+      </p>
 
       {q.isLoading ? (
         <Skeleton variant="table" rows={8} cols={12} className="rounded border border-line bg-white" />
@@ -119,17 +162,17 @@ export default function AdminRejectionsPage() {
               <thead>
                 <tr>
                   <th>S.No.</th>
-                  <th>Borrower</th>
+                  <Th th={th} col="borrowerName" />
                   <th>PAN</th>
                   <th>Account</th>
                   <th>IFSC</th>
-                  <th className="num">Amount</th>
-                  <th>Credit</th>
-                  <th>Reason</th>
+                  <Th th={th} col="amountRequestedPaise" className="num" />
+                  <Th th={th} col="creditScore" />
+                  <Th th={th} col="reasonCode" />
                   <th>Detail</th>
-                  <th>Source</th>
-                  <th>Blocked until</th>
-                  <th>Rejected on</th>
+                  <Th th={th} col="auto" />
+                  <Th th={th} col="blockedUntil" />
+                  <Th th={th} col="createdAt" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
@@ -180,16 +223,21 @@ export default function AdminRejectionsPage() {
                     </tr>
                   );
                 })}
+                {total === 0 ? (
+                  // In-table, not instead of the table: an empty result must still show the headers,
+                  // or there is no way to clear the filter that emptied it.
+                  <EmptyState title="No rejections match the column filters." inTable={12} />
+                ) : null}
               </tbody>
             </table>
           </div>
           <PaginationBar
             page={page}
             pageCount={pageCount}
-            setPage={setPage}
+            setPage={rq.setPage}
             total={total}
             pageSize={pageSize}
-            setPageSize={setPageSize}
+            setPageSize={rq.setSize}
           />
         </div>
       )}

@@ -54,13 +54,15 @@ class AdminApplicationServiceTest {
     @Mock private com.navix.common.staff.StaffDirectory staffDirectory;
 
     @Mock private CustomerTrustSignalsService trustSignals;
+    @Mock private org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate jdbc;
 
     private AdminApplicationService service;
 
     @BeforeEach
     void setUp() {
         service = new AdminApplicationService(applicationRepository, profileRepository, verification,
-                rejectionRepository, eventRepository, ownerRepository, bureauStateService, staffDirectory, trustSignals);
+                rejectionRepository, eventRepository, ownerRepository, bureauStateService, staffDirectory, trustSignals,
+                jdbc);
         ActorContext.set(new CurrentActor("1", "Meera", "ADMIN"));
     }
 
@@ -152,7 +154,11 @@ class AdminApplicationServiceTest {
     @Test
     void pageFiltersCompletenessThenEnrichesOnlyThePageOnScreen() {
         // Ids come back newest-first from SQL; 3 and 1 are complete, 2 is not.
-        when(applicationRepository.findAdminRegisterIds("%r\\_o%")).thenReturn(List.of(3L, 2L, 1L));
+        // The needle is lower-cased and LIKE-escaped before it is bound.
+        when(jdbc.queryForList(any(String.class),
+                org.mockito.ArgumentMatchers.argThat((org.springframework.jdbc.core.namedparam.SqlParameterSource ps) ->
+                        "%r\\_o%".equals(ps.getValue("needle"))),
+                org.mockito.ArgumentMatchers.eq(Long.class))).thenReturn(List.of(3L, 2L, 1L));
         LoanApplication a1 = app(1L, 9000001L, ApplicationStatus.KYC_PENDING);
         LoanApplication a2 = app(2L, 9000002L, ApplicationStatus.DRAFT);
         LoanApplication a3 = app(3L, 9000003L, ApplicationStatus.SANCTIONED);
@@ -164,7 +170,7 @@ class AdminApplicationServiceTest {
         when(applicationRepository.count()).thenReturn(40L);
         lenient().when(bureauStateService.states(anyCollection())).thenReturn(Map.of());
 
-        var page = service.page(" R_o ", "complete", 2, 1);
+        var page = service.page(" R_o ", "complete", Map.of(), 2, 1);
 
         assertThat(page.total()).isEqualTo(2L);
         assertThat(page.allCount()).isEqualTo(40L);

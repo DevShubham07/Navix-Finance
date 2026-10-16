@@ -19,12 +19,30 @@ import {
   type CreateDsaLeadInput,
   type OutreachChannel,
 } from "@/lib/api/applications";
-import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
-import { OutcomeChip } from "@/components/staff/lead-outcome";
+import { PaginationBar } from "@/components/staff/pipeline/pagination";
+import { OutcomeChip, OUTCOME_LABEL } from "@/components/staff/lead-outcome";
+import { type FilterColumn } from "@/components/staff/column-filter";
+import { useRegisterQuery } from "@/lib/staff/register-query";
+import { useClientRegister } from "@/lib/staff/use-client-register";
+import { Th, thBag } from "@/lib/staff/register-th";
 
 const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
 
 const STATUSES: DsaLeadStatus[] = ["NOT_APPLIED", "APPLIED", "IN_PROGRESS", "DISBURSED", "REPAID", "DECLINED"];
+
+/** Sortable + filterable columns. PAN and mobile are identity, so they get no dropdown. Status is
+ *  absent on purpose: the Status select above the table already narrows it (server-side), and two
+ *  controls for one field is a trap. */
+const SORT_KEYS = ["name", "uploaded", "leadOutcome", "dsaNote", "netDisbursedPaise", "commissionPaise"] as const;
+
+const COLUMN_LABEL: Record<string, string> = {
+  name: "Name",
+  uploaded: "Source",
+  leadOutcome: "Outcome",
+  dsaNote: "Note from us",
+  netDisbursedPaise: "Net disbursed",
+  commissionPaise: "Commission",
+};
 
 /** The fixed SMS template every DSA lead invite goes out as — the DSA cannot change the wording. */
 const SMS_TEMPLATE = (name: string) =>
@@ -37,7 +55,17 @@ const SMS_TEMPLATE = (name: string) =>
  * and (once disbursed) the net disbursed amount + commission.
  */
 export default function DsaLeadsPage() {
-  const myRole = useStaffMe().data?.role;
+  // useRegisterQuery reads the URL, which needs a Suspense boundary above it.
+  return (
+    <React.Suspense fallback={<div className="h-40 animate-pulse rounded border border-line bg-white" />}>
+      <DsaLeadsPageInner />
+    </React.Suspense>
+  );
+}
+
+function DsaLeadsPageInner() {
+  const me = useStaffMe().data;
+  const myRole = me?.role;
   const can = useCan();
   const qc = useQueryClient();
   const [q, setQ] = React.useState("");
@@ -51,8 +79,35 @@ export default function DsaLeadsPage() {
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["dsa-leads"] });
 
-  const rows = list.data ?? [];
-  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
+  const rows = React.useMemo(() => list.data ?? [], [list.data]);
+
+  const rq = useRegisterQuery({
+    registerId: "dsa-leads",
+    staffId: me?.id,
+    sortKeys: SORT_KEYS,
+    filterKeys: SORT_KEYS,
+    defaults: { sort: { key: "name", dir: "asc" } },
+  });
+
+  const filterColumns = React.useMemo<Array<FilterColumn<DsaLeadView>>>(
+    () => [
+      { key: "name", kind: "text", value: (l) => l.name },
+      // The chip reads "Entered"/"Uploaded"; the filter travels as ENTERED/UPLOADED, not the label.
+      { key: "uploaded", value: (l) => (l.uploaded ? "Uploaded" : "Entered"), raw: (l) => (l.uploaded ? "UPLOADED" : "ENTERED") },
+      { key: "leadOutcome", value: (l) => OUTCOME_LABEL[l.leadOutcome] ?? l.leadOutcome, raw: (l) => l.leadOutcome },
+      { key: "dsaNote", kind: "text", value: (l) => l.dsaNote ?? "" },
+      // Rupees on both money columns, null (not yet disbursed) stays null rather than 0.
+      { key: "netDisbursedPaise", kind: "num", value: (l) => paiseToINR(l.netDisbursedPaise), num: (l) => (l.netDisbursedPaise != null ? l.netDisbursedPaise / 100 : null) },
+      { key: "commissionPaise", kind: "num", value: (l) => paiseToINR(l.commissionPaise), num: (l) => (l.commissionPaise != null ? l.commissionPaise / 100 : null) },
+    ],
+    [],
+  );
+
+  const cr = useClientRegister(rows, filterColumns, rq);
+  const { pageRows, total, pageCount } = cr;
+  const th = thBag(rq, cr, filterColumns, COLUMN_LABEL);
+  const page = rq.state.page;
+  const pageSize = rq.state.size;
 
   if (myRole && !can("dsa:portal")) {
     return <NoAccessNotice message="DSA access required." />;
@@ -82,7 +137,8 @@ export default function DsaLeadsPage() {
           initialValue={q}
           onSearch={(t) => {
             setQ(t);
-            setPage(1);
+            // The query key changed, so "what matches" did — back to page 1, filters untouched.
+            rq.apply({});
           }}
           placeholder="Name, PAN or mobile"
           ariaLabel="Search"
@@ -91,7 +147,10 @@ export default function DsaLeadsPage() {
           label="Status"
           className="!mb-0"
           value={status}
-          onChange={(e) => setStatus(e.target.value as DsaLeadStatus | "")}
+          onChange={(e) => {
+            setStatus(e.target.value as DsaLeadStatus | "");
+            rq.apply({});
+          }}
         >
           <option value="">All</option>
           {STATUSES.map((s) => (
@@ -109,15 +168,15 @@ export default function DsaLeadsPage() {
           <thead>
             <tr>
               <th>S.No.</th>
-              <th>Name</th>
-              <th>Source</th>
+              <Th th={th} col="name" />
+              <Th th={th} col="uploaded" />
               <th>PAN</th>
               <th>Mobile</th>
               <th>Status</th>
-              <th>Outcome</th>
-              <th>Note from us</th>
-              <th className="num text-right">Net disbursed</th>
-              <th className="num text-right">Commission</th>
+              <Th th={th} col="leadOutcome" />
+              <Th th={th} col="dsaNote" />
+              <Th th={th} col="netDisbursedPaise" className="num text-right" />
+              <Th th={th} col="commissionPaise" className="num text-right" />
               <th className="text-right">Actions</th>
             </tr>
           </thead>
@@ -132,6 +191,9 @@ export default function DsaLeadsPage() {
               ) : (
                 <EmptyState inTable={11} title="No leads yet — add one above." />
               ))}
+            {rows.length > 0 && total === 0 ? (
+              <EmptyState inTable={11} title="No leads match the column filters." />
+            ) : null}
             {pageRows.map((row, i) => (
               <tr key={row.id}>
                 <td className="text-navy/60">{(page - 1) * pageSize + i + 1}</td>
@@ -175,10 +237,10 @@ export default function DsaLeadsPage() {
         <PaginationBar
           page={page}
           pageCount={pageCount}
-          setPage={setPage}
+          setPage={rq.setPage}
           total={total}
           pageSize={pageSize}
-          setPageSize={setPageSize}
+          setPageSize={rq.setSize}
         />
       </div>
 

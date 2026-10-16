@@ -9,6 +9,7 @@ import {
   staffApi,
   paiseToINR,
   REJECTION_REASON_LABEL,
+  type PaymentMethodName,
   type PaymentView,
   type RejectionReasonCode,
 } from "@/lib/api/applications";
@@ -16,12 +17,41 @@ import { formatApiError } from "@/lib/api/errors";
 import { formatDate } from "@/lib/utils";
 import { CustomerDetailDialog } from "@/components/staff/customer-detail-dialog";
 import { PaymentProofLink } from "@/components/ui/payment-proof-link";
-import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
+import { PaginationBar } from "@/components/staff/pipeline/pagination";
+import { type FilterColumn } from "@/components/staff/column-filter";
+import { istDay } from "@/lib/staff/column-filter-match";
+import { useRegisterQuery } from "@/lib/staff/register-query";
+import { useClientRegister } from "@/lib/staff/use-client-register";
+import { Th, thBag } from "@/lib/staff/register-th";
+import { useStaffMe } from "@/components/staff/pipeline/hooks";
 
 const REASON_OPTIONS = (Object.keys(REJECTION_REASON_LABEL) as RejectionReasonCode[]).map((v) => ({
   value: v,
   label: REJECTION_REASON_LABEL[v],
 }));
+
+/**
+ * How a payment method reads.
+ *
+ * This used to be `p.method === "UPI" ? "UPI" : "Bank transfer"`, which renders BANK_TRANSFER and
+ * NACH identically — two genuinely different things to an accountant matching proof: one is a
+ * transfer the borrower made and can show a screenshot of, the other is a mandate the system
+ * pulled. A checklist keyed on the display value would also have merged them into one tick.
+ */
+const METHOD_LABEL: Record<PaymentMethodName, string> = {
+  UPI: "UPI",
+  BANK_TRANSFER: "Bank transfer",
+  NACH: "NACH auto-debit",
+};
+
+/** Sortable + filterable columns. Customer, loan id, reference and proof are identity or links. */
+const SORT_KEYS = ["amountPaise", "method", "paidOn"] as const;
+
+const COLUMN_LABEL: Record<string, string> = {
+  amountPaise: "Amount",
+  method: "Method",
+  paidOn: "Paid on",
+};
 
 /**
  * Accountant maker-checker queue for repayments. Borrowers record manual UPI/bank
@@ -68,8 +98,34 @@ export function RepaymentVerifyQueue() {
     (verify.isPending && verify.variables?.id === p.id) ||
     (reject.isPending && reject.variables?.p.id === p.id);
 
-  const rows = q.data ?? [];
-  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
+  const rows = React.useMemo(() => q.data ?? [], [q.data]);
+
+  // `url: false` — this panel is one of six registers on `/staff/applications`, so it keeps its
+  // remembered view and leaves the address bar to the page.
+  const rq = useRegisterQuery({
+    registerId: "repayment-verify",
+    staffId: useStaffMe().data?.id,
+    sortKeys: SORT_KEYS,
+    filterKeys: SORT_KEYS,
+    defaults: { sort: { key: "paidOn", dir: "desc" }, size: 10 },
+    url: false,
+  });
+
+  const filterColumns = React.useMemo<Array<FilterColumn<PaymentView>>>(
+    () => [
+      // Rupees: the bound is typed beside a rupee column.
+      { key: "amountPaise", kind: "num", value: (p) => paiseToINR(p.amountPaise), num: (p) => p.amountPaise / 100 },
+      { key: "method", value: (p) => METHOD_LABEL[p.method] ?? p.method, raw: (p) => p.method },
+      { key: "paidOn", kind: "date", value: (p) => (p.paidOn ? formatDate(p.paidOn) : "—"), date: (p) => istDay(p.paidOn) },
+    ],
+    [],
+  );
+
+  const cr = useClientRegister(rows, filterColumns, rq);
+  const { pageRows, total, pageCount } = cr;
+  const th = thBag(rq, cr, filterColumns, COLUMN_LABEL);
+  const page = rq.state.page;
+  const pageSize = rq.state.size;
 
   return (
     <section className="rounded border border-line bg-white p-5 shadow-sm">
@@ -102,11 +158,11 @@ export function RepaymentVerifyQueue() {
                 <th scope="col" className="py-2 pr-3 font-semibold">S.No.</th>
                 <th scope="col" className="py-2 pr-3 font-semibold">Customer</th>
                 <th scope="col" className="py-2 pr-3 font-semibold">Loan</th>
-                <th scope="col" className="num py-2 pr-3 font-semibold">Amount</th>
-                <th scope="col" className="py-2 pr-3 font-semibold">Method</th>
+                <Th th={th} col="amountPaise" className="num py-2 pr-3 font-semibold" />
+                <Th th={th} col="method" className="py-2 pr-3 font-semibold" />
                 <th scope="col" className="py-2 pr-3 font-semibold">Reference</th>
                 <th scope="col" className="py-2 pr-3 font-semibold">Proof</th>
-                <th scope="col" className="py-2 pr-3 font-semibold">Paid on</th>
+                <Th th={th} col="paidOn" className="py-2 pr-3 font-semibold" />
                 <th scope="col" className="py-2 font-semibold">
                   <span className="sr-only">Actions</span>
                 </th>
@@ -131,7 +187,7 @@ export function RepaymentVerifyQueue() {
                       <span className="ml-1 rounded-full bg-gold-50 px-1.5 py-0.5 text-xs text-gold-dark">partial</span>
                     )}
                   </td>
-                  <td className="py-2.5 pr-3">{p.method === "UPI" ? "UPI" : "Bank transfer"}</td>
+                  <td className="py-2.5 pr-3">{METHOD_LABEL[p.method] ?? p.method}</td>
                   <td className="py-2.5 pr-3 text-muted">{p.txnRef || "—"}</td>
                   <td className="py-2.5 pr-3">
                     <PaymentProofLink url={p.proofUrl} className="text-xs" />
@@ -188,15 +244,19 @@ export function RepaymentVerifyQueue() {
                   </td>
                 </tr>
               ))}
+              {total === 0 ? (
+                // In-table, so the headers stay and the filter that emptied the queue can be cleared.
+                <EmptyState inTable={9} title="No repayments match the column filters." />
+              ) : null}
             </tbody>
           </table>
           <PaginationBar
             page={page}
             pageCount={pageCount}
-            setPage={setPage}
+            setPage={rq.setPage}
             total={total}
             pageSize={pageSize}
-            setPageSize={setPageSize}
+            setPageSize={rq.setSize}
           />
         </div>
       )}

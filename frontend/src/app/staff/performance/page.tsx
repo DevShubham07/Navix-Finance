@@ -112,11 +112,13 @@ function StaffPerformanceInner() {
   const filterColumns = React.useMemo<Array<FilterColumn<StaffPerformanceRow>>>(
     () => [
       { key: "staffName", value: (r) => r.staffName },
-      { key: "role", value: (r) => ROLE_LABEL[r.role] ?? r.role },
+      // `raw` is the stored enum: the dropdown shows "Credit Executive", the filter carries
+      // CREDIT_EXECUTIVE, which is the only form a server-side filter could ever accept.
+      { key: "role", value: (r) => ROLE_LABEL[r.role] ?? r.role, raw: (r) => r.role },
     ],
     [],
   );
-  const { filtered: rows, selectionFor, optionsFor, setFilter, clearAll, activeCount } =
+  const { filtered: rows, filterFor, labelsFor, optionsFor, setFilter, clearAll, activeCount } =
     useColumnFilters(allRows, filterColumns);
 
   const { sorted, sortKey, dir, toggle, setSort } = useTableSort<StaffPerformanceRow>(
@@ -305,7 +307,8 @@ function StaffPerformanceInner() {
                     onToggle={toggle}
                     setSort={setSort}
                     options={optionsFor("staffName")}
-                    selected={selectionFor("staffName")}
+                    labels={labelsFor("staffName")}
+                    filter={filterFor("staffName")}
                     onApply={(v) => setFilter("staffName", v)}
                   />
                   <FilterableTh
@@ -316,7 +319,8 @@ function StaffPerformanceInner() {
                     onToggle={toggle}
                     setSort={setSort}
                     options={optionsFor("role")}
-                    selected={selectionFor("role")}
+                    labels={labelsFor("role")}
+                    filter={filterFor("role")}
                     onApply={(v) => setFilter("role", v)}
                   />
                   <SortableTh label="Approved" sortKey="accepted" active={sortKey} dir={dir} onToggle={toggle} className="num" />

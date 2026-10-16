@@ -6,8 +6,8 @@ import { useStaffMe, ROLE_LABEL } from "@/components/staff/live-pipeline";
 import { exportCsv, exportPdf, type ExportColumn, type ExportMeta } from "@/lib/export/exporters";
 
 /**
- * "Export ▾" dropdown for staff dashboards — offers CSV and a DhanBoost-branded PDF of the rows
- * currently on screen. The PDF is stamped with the signed-in staffer (provenance). Generic over the
+ * "Export ▾" dropdown for staff dashboards — offers CSV and a DhanBoost-branded PDF of whatever the
+ * page hands it, which the labels name honestly (`scope` below: one page, or every matching row). The PDF is stamped with the signed-in staffer (provenance). Generic over the
  * row type so each page declares its columns once. When a page is server-paginated it can also pass
  * `getAllRows` to offer a "Download all" CSV that fetches every matching row on demand.
  */
@@ -22,6 +22,7 @@ export function ExportMenu<Row>({
   onOpen,
   getAllRows,
   allLabel = "Download all (CSV)",
+  scope,
 }: {
   title: string;
   subtitle?: string;
@@ -43,6 +44,16 @@ export function ExportMenu<Row>({
   /** Fetches every row under the current filter (not just the page on screen). */
   getAllRows?: () => Promise<Row[]>;
   allLabel?: string;
+  /**
+   * What `rows` actually holds, so the menu can say so.
+   *
+   * The labels used to claim "the rows on screen" unconditionally, which was false on every register
+   * that hands over its whole filtered set across all pages (loans, collections, performance,
+   * rejections, admin/dsa, referrals) — a button promising a screenful quietly produced a 4,000-row
+   * PDF. The default reads it off `getAllRows`: a caller that can fetch everything separately is,
+   * by construction, passing one page here.
+   */
+  scope?: "page" | "all";
 }) {
   const me = useStaffMe().data;
   const [open, setOpen] = React.useState(false);
@@ -90,6 +101,11 @@ export function ExportMenu<Row>({
     }
   };
   const pageOnly = rows.length === 0;
+  // "page" = the rows on screen (the caller pages server-side and offers `getAllRows` beside it);
+  // "all" = every row matching the active filters, which is what a client-side register holds.
+  const rowScope = scope ?? (getAllRows ? "page" : "all");
+  const csvLabel = rowScope === "page" ? "Export this page (CSV)" : "Export all matching (CSV)";
+  const pdfLabel = rowScope === "page" ? "Export this page (PDF)" : "Export all matching (PDF)";
 
   // Deliberately not inside the setOpen updater: React may invoke an updater twice (StrictMode),
   // and `onOpen` is a side effect — a caller's fetch must fire once per open, not per render pass.
@@ -104,7 +120,13 @@ export function ExportMenu<Row>({
         onClick={toggle}
         disabled={isDisabled}
         className="flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs font-semibold text-navy hover:bg-grey-100 disabled:cursor-not-allowed disabled:opacity-50"
-        title={isDisabled ? "Nothing to export" : "Export the rows on screen"}
+        title={
+          isDisabled
+            ? "Nothing to export"
+            : rowScope === "page"
+              ? "Export the rows on screen"
+              : "Export every row matching the current filters"
+        }
       >
         <Download size={13} /> {busy ? "Preparing…" : "Export"}{" "}
         <ChevronDown size={12} className={open ? "rotate-180 transition" : "transition"} />
@@ -119,14 +141,14 @@ export function ExportMenu<Row>({
               disabled={pageOnly}
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-ink hover:bg-grey-100 disabled:opacity-50"
             >
-              <FileSpreadsheet size={15} className="text-success-600" /> {getAllRows ? "Export this page (CSV)" : "Export CSV"}
+              <FileSpreadsheet size={15} className="text-success-600" /> {csvLabel}
             </button>
             <button
               onClick={doPdf}
               disabled={pageOnly}
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-ink hover:bg-grey-100 disabled:opacity-50"
             >
-              <FileText size={15} className="text-error-600" /> {getAllRows ? "Export this page (PDF)" : "Export PDF"}
+              <FileText size={15} className="text-error-600" /> {pdfLabel}
             </button>
             {getAllRows && (
               <button

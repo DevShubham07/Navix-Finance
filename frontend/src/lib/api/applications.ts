@@ -1826,6 +1826,59 @@ export const offerApi = {
 // Staff client — routes under /api/staff/*
 // ---------------------------------------------------------------------------
 
+/**
+ * One page of a server-paged register, and one column's facet values.
+ *
+ * Four registers moved server-side at once and each would otherwise grow its own near-identical
+ * pair of calls — which is how `col` and `column` ended up naming the same parameter on two
+ * different endpoints. One helper fixes the convention in one place: every register answers
+ * `GET <base>/page?page&size&<view params>` and `GET <base>/facets?column=<key>&<other filters>`.
+ *
+ * `filters` is the register view's `queryParams` — `q`, `sort`, `dir` and one `f.<column>` each.
+ * The server keeps only the columns it declared and drops the rest, so an old link cannot 400.
+ */
+export interface RegisterPage<T> {
+  rows: T[];
+  page: number;
+  size: number;
+  /** Rows matching the filters, across every page — what drives the pagination and the count. */
+  total: number;
+}
+
+/** The ledger's money figures, summed over the whole filter rather than the page. */
+export interface LedgerTotals {
+  /** Verified repayments only — money the accountant has confirmed arrived. */
+  totalInPaise: number;
+  totalOutPaise: number;
+  /** Listed but not yet counted in: repayments still awaiting verification. */
+  pendingInPaise: number;
+}
+
+export interface RegisterFacet {
+  values: string[];
+  /** The server had more than it will return: offer a text filter, not a partial checklist. */
+  truncated: boolean;
+}
+
+function registerPage<T, R extends RegisterPage<T> = RegisterPage<T>>(
+  base: string,
+  p: { filters?: Record<string, string>; page: number; size: number; extra?: Record<string, string> },
+) {
+  const sp = new URLSearchParams({
+    ...p.filters,
+    ...p.extra,
+    page: String(p.page),
+    size: String(p.size),
+  });
+  return bff<R>(`${base}/page?${sp}`, "GET");
+}
+
+/** `filters` must already have this column's own `f.<column>` removed — the server's `without(col)`
+ *  — so the dropdown offers the values you could switch TO, not just the one you are on. */
+function registerFacet(base: string, column: string, filters: Record<string, string>) {
+  return bff<RegisterFacet>(`${base}/facets?${new URLSearchParams({ ...filters, column })}`, "GET");
+}
+
 const STAFF_BASE = "/api/staff/applications";
 const STAFF_LOAN_BASE = "/api/staff/loan";
 
@@ -1870,13 +1923,30 @@ export const staffApi = {
   /** ADMIN-only: every application (complete + incomplete) with full KYC detail + completeness. */
   listAllApplications: () => bff<AdminApplicationView[]>(`${STAFF_BASE}/all`, "GET"),
 
-  /** ADMIN: one page of the register — search, completeness filter and paging run server-side. */
-  listAllApplicationsPage: (p: { q?: string; completeness?: "ALL" | "COMPLETE" | "INCOMPLETE"; page: number; size: number }) => {
-    const sp = new URLSearchParams({ page: String(p.page), size: String(p.size) });
+  /**
+   * ADMIN: one page of the register — search, column filters, completeness and paging run server-side.
+   * `filters` is the register view's `queryParams` (`q`, `f.<column>`, sort): the server keeps only the
+   * columns it declared and ignores the rest.
+   */
+  listAllApplicationsPage: (p: {
+    q?: string;
+    filters?: Record<string, string>;
+    completeness?: "ALL" | "COMPLETE" | "INCOMPLETE";
+    page: number;
+    size: number;
+  }) => {
+    const sp = new URLSearchParams({ ...p.filters, page: String(p.page), size: String(p.size) });
     if (p.q) sp.set("q", p.q);
     if (p.completeness && p.completeness !== "ALL") sp.set("completeness", p.completeness);
     return bff<AdminApplicationPage>(`${STAFF_BASE}/all/page?${sp}`, "GET");
   },
+
+  /** ADMIN: the values one column's filter can offer; `filters` carries the OTHER columns' `f.*`. */
+  allApplicationsFacet: (column: string, filters: Record<string, string>) =>
+    bff<{ values: string[]; truncated: boolean }>(
+      `${STAFF_BASE}/all/facets?${new URLSearchParams({ ...filters, column })}`,
+      "GET",
+    ),
 
   /** TELECALLER/ADMIN: every pre-SANCTIONED application, enriched with completeness + staleness. */
   telecalling: () => bff<TelecallingView[]>(`${STAFF_BASE}/telecalling`, "GET"),
@@ -1985,6 +2055,26 @@ export const staffApi = {
   // --- repayment verification (accountant maker-checker) ---
   /** Repayments awaiting proof verification, across all loans (accountant queue). */
   pendingRepayments: () => bff<PaymentView[]>(`${STAFF_LOAN_BASE}/pending-repayments`, "GET"),
+
+  /**
+   * One page of the ledger with the register's column filters applied server-side.
+   *
+   * `transactions()` below reads every disbursal AND every repayment in the window through two
+   * repositories and merges them in Java; this goes through the native union query instead, so a
+   * filtered page costs one statement rather than the whole period.
+   */
+  transactionsPage: (p: { filters?: Record<string, string>; page: number; size: number; extra?: Record<string, string> }) =>
+    // The three summary figures ride along with the page because the server computes them in the
+    // same aggregate over the same filter — they cover the WHOLE filter, not the page on screen, so
+    // the cards stay still while a reviewer pages. Typed here rather than cast at the call site.
+    registerPage<TransactionView, RegisterPage<TransactionView> & LedgerTotals>(
+      `${STAFF_LOAN_BASE}/transactions`,
+      p,
+    ),
+
+  /** The values one ledger column's filter can offer, under the other columns' filters. */
+  transactionsFacet: (column: string, filters: Record<string, string>) =>
+    registerFacet(`${STAFF_LOAN_BASE}/transactions`, column, filters),
 
   /**
    * One page of the company-wide transactions ledger (disbursals + repayments), newest first, with
@@ -2107,10 +2197,15 @@ export type CustomerListFilters = {
   /** Server-side sort key (`CustomerBookQuery.SORTS`); omitted = stage date. */
   sort?: CustomerSortKey;
   dir?: "asc" | "desc";
+  /**
+   * The column-filter view as the server reads it (`rq.queryParams`: `f.<col>`, and `q`). Merged
+   * UNDER the typed fields above, so a stray `seg`/`page` in here can never override them.
+   */
+  extra?: Record<string, string>;
 };
 
 /** The columns the customer register can sort on — mirrors `CustomerBookQuery.SORTS`. */
-export type CustomerSortKey = "stageDate" | "date" | "name" | "customerId" | "stage";
+export type CustomerSortKey = "stageDate" | "date" | "name" | "customerId" | "stage" | "mobile" | "pan";
 
 export type CustomerPage = { rows: CustomerSummary[]; page: number; size: number; total: number };
 
@@ -2133,9 +2228,12 @@ export type CustomerSummaryCounts = {
 };
 
 /** A blank or `false` filter must not be sent — the backend treats a present value as a filter. */
-function customerQuery(filters: Record<string, string | number | boolean | undefined>): string {
+function customerQuery(
+  filters: Record<string, string | number | boolean | Record<string, string> | undefined>,
+): string {
   const qs = new URLSearchParams();
-  Object.entries(filters).forEach(([key, value]) => {
+  const { extra, ...typed } = filters as { extra?: Record<string, string> } & Record<string, string | number | boolean | undefined>;
+  Object.entries({ ...extra, ...typed }).forEach(([key, value]) => {
     if (value === undefined || value === null || value === false || String(value).trim() === "") return;
     qs.set(key, String(value));
   });
@@ -2201,6 +2299,14 @@ export const customersApi = {
   /** Every row under the current filter, for the ADMIN "download all customers" export (server-capped). */
   exportAll: (filters: Omit<CustomerListFilters, "page" | "size"> = {}) =>
     bff<CustomerSummary[]>(`${CUSTOMERS_BASE}/export${customerQuery(filters)}`, "GET"),
+
+  /**
+   * The distinct values of one filterable column, for its checklist. `filters` carries the OTHER
+   * columns' `f.*` params (the server ignores `col`'s own), plus search/window/mine — so the options
+   * respect everything else the register is narrowed by, inside the caller's scope.
+   */
+  facets: (column: string, filters: Omit<CustomerListFilters, "seg" | "page" | "size" | "sort" | "dir"> = {}) =>
+    bff<RegisterFacet>(`${CUSTOMERS_BASE}/facets${customerQuery({ ...filters, column })}`, "GET"),
 
   /** One customer's full history (profile + applications + loans + payments). */
   get: (customerId: number) => bff<CustomerDetail>(`${CUSTOMERS_BASE}/${customerId}`, "GET"),
@@ -2360,6 +2466,19 @@ export interface LoanRegisterRow {
 const LOANS_BASE = "/api/staff/loans";
 
 export const loansApi = {
+  /**
+   * One page of the loan register, narrowed and paged server-side.
+   *
+   * `list()` below enriches EVERY loan in the window on every visit — seven batched lookups plus a
+   * compute-on-read balance per row — which is why this exists. It stays for the callers that need
+   * the whole window (the segment-chip counts, which deliberately do not follow the filters).
+   */
+  page: (p: { filters?: Record<string, string>; page: number; size: number; extra?: Record<string, string> }) =>
+    registerPage<LoanRegisterRow>(LOANS_BASE, p),
+
+  /** The values one register column's filter can offer, inside the caller's own scope. */
+  facet: (column: string, filters: Record<string, string>) => registerFacet(LOANS_BASE, column, filters),
+
   /**
    * The loan register, optionally filtered by free-text `q` (borrower name / mobile / PAN / loan or
    * application id — mirrors `customersApi.list`'s search), an inclusive `range.from`/`range.to`
@@ -2564,6 +2683,19 @@ function leadsQuery(params?: LeadListParams): string {
 }
 
 export const leadsApi = {
+  /**
+   * One page of the lead list with the register's column filters applied server-side.
+   *
+   * Distinct from `list()` below, which takes only the hand-picked params the page had before the
+   * column filters existed. A client-side filter is useless here — the page holds 25 rows out of
+   * tens of thousands, so narrowing what is loaded would read as "no match".
+   */
+  page: (p: { filters?: Record<string, string>; page: number; size: number; extra?: Record<string, string> }) =>
+    registerPage<LeadView>(LEADS_BASE, p),
+
+  /** The values one lead column's filter can offer, under the other columns' filters. */
+  facet: (column: string, filters: Record<string, string>) => registerFacet(LEADS_BASE, column, filters),
+
   /**
    * One page of the telecalling lead list. Paged server-side: a bulk import puts tens of thousands
    * of leads in this table, and the page only ever shows 25 of them.
@@ -3884,6 +4016,34 @@ export interface UpcomingLoanView {
 const COLLECTIONS_BASE = "/api/staff/collections";
 
 export const collectionsApi = {
+  /**
+   * One page of the worklist, narrowed server-side.
+   *
+   * `extra` carries the register's own server params (the `asOf` day); `filters` is the view's
+   * `queryParams`. The whole-worklist `worklist()` above stays for the callers that genuinely want
+   * every row (the bucket cards' counts, which must not follow the column filters).
+   */
+  worklistPage: (p: { filters?: Record<string, string>; page: number; size: number; extra?: Record<string, string> }) =>
+    registerPage<WorklistRow>(`${COLLECTIONS_BASE}/worklist`, p),
+
+  /**
+   * The bucket cards' figures: per-bucket counts and outstanding, over the WHOLE scope.
+   *
+   * The cards are this page's navigation control, so they deliberately do not follow the column
+   * filters — and that is exactly why they must not come from the paged register. Without this the
+   * page had to keep fetching the entire worklist alongside its page just to count it, which is the
+   * cost the server paging exists to remove.
+   */
+  worklistSummary: (extra?: Record<string, string>) =>
+    bff<Array<{ bucket: string; n: number; outstandingPaise: number }>>(
+      `${COLLECTIONS_BASE}/worklist/summary${extra && Object.keys(extra).length ? `?${new URLSearchParams(extra)}` : ""}`,
+      "GET",
+    ),
+
+  /** The values one worklist column's filter can offer, inside the caller's own case scope. */
+  worklistFacet: (column: string, filters: Record<string, string>) =>
+    registerFacet(`${COLLECTIONS_BASE}/worklist`, column, filters),
+
   /** The DPD-bucket worklist: every live loan due within the week or already past due. */
   worklist: () => bff<WorklistRow[]>(`${COLLECTIONS_BASE}/worklist`, "GET"),
   listCases: () => bff<CaseView[]>(`${COLLECTIONS_BASE}/cases`, "GET"),
