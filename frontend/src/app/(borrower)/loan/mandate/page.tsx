@@ -8,16 +8,27 @@ import { offerApi, type StepResult } from "@/lib/api/applications";
 import { useOffer, completeOfferStep, nextOfferRoute } from "@/lib/offer";
 import { formatApiError } from "@/lib/api/errors";
 
-type Phase = "checking" | "ready" | "waiting" | "done" | "failed" | "unsupported";
+type Phase = "checking" | "ready" | "waiting" | "stalled" | "done" | "failed" | "unsupported";
 
 const POLL_MS = 4000;
 const MAX_ATTEMPTS = 45;
+const MAX_CONSECUTIVE_ERRORS = 3;
+
+/** Only ever send the borrower to https on Digio's own domain. */
+function isDigioUrl(raw: string): boolean {
+  try {
+    const u = new URL(raw);
+    return u.protocol === "https:" && (u.hostname === "digio.in" || u.hostname.endsWith(".digio.in"));
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Auto-repayment (NACH eMandate) setup. Blocking: no skip, and ordinary failures are retried here by
- * the borrower. Same redirect-out / poll-on-return shape as the eSign callback, except Digio returns
- * Digio has no return URL (it ends on its own exit page), so the authorisation opens in a NEW tab and
- * this one stays mounted, polling status — the poll is the source of truth, not any redirect.
+ * the borrower. Digio has no return URL (it ends on its own exit page), so the authorisation opens in
+ * a NEW tab and this one stays mounted, polling status — the poll is the source of truth, not any
+ * redirect. Mount reads the live status, so a refresh or second tab resumes correctly.
  *
  * BANK_UNSUPPORTED is terminal: retrying cannot help, a staff override is the only way forward.
  */
@@ -30,7 +41,9 @@ export default function MandatePage() {
   // Bumped by start() so the status poll restarts after a new attempt.
   const [pollKey, setPollKey] = React.useState(0);
   // Set when the browser blocked the new tab, so the borrower can open Digio themselves.
-  const [manualUrl, setManualUrl] = React.useState<string>();
+  const [bankUrl, setBankUrl] = React.useState<string>();
+  const [popupBlocked, setPopupBlocked] = React.useState(false);
+  const [stalled, setStalled] = React.useState<string>();
 
   const classify = React.useCallback((r: StepResult): Phase => {
     const st = r.derived?.status;
@@ -47,17 +60,30 @@ export default function MandatePage() {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let attempts = 0;
+    let errors = 0;
     const tick = async () => {
       attempts += 1;
       try {
         const r = await offerApi.mandateStatus(appId);
         if (cancelled) return;
+        errors = 0;
         const next = classify(r);
+        if (next === "waiting" && attempts >= MAX_ATTEMPTS) {
+          setStalled("We haven't seen your mandate complete yet. If you've authorised it with your bank, check again in a moment.");
+          setPhase("stalled");
+          return;
+        }
         setPhase(next);
-        if (next === "waiting" && attempts < MAX_ATTEMPTS) timer = setTimeout(() => { void tick(); }, POLL_MS);
-        else if (next === "waiting") setPhase("ready"); // out of patience: let them restart
+        if (next === "waiting") timer = setTimeout(() => { void tick(); }, POLL_MS);
       } catch {
-        if (!cancelled) setPhase("ready");
+        if (cancelled) return;
+        errors += 1;
+        if (errors >= MAX_CONSECUTIVE_ERRORS) {
+          setStalled("We couldn't check your mandate right now. If you've authorised it with your bank, try checking again.");
+          setPhase("stalled");
+          return;
+        }
+        timer = setTimeout(() => { void tick(); }, POLL_MS);
       }
     };
     void tick();
@@ -75,22 +101,30 @@ export default function MandatePage() {
     if (appId == null) return;
     setBusy(true);
     setError(undefined);
-    setManualUrl(undefined);
+    setPopupBlocked(false);
     // Open synchronously inside the click so popup blockers allow it; point it at Digio once init returns.
     const tab = window.open("", "_blank");
+    if (tab) tab.opener = null; // reverse-tabnabbing: the opened page must not reach this session
     try {
       const r = await offerApi.mandateInit(appId);
       const next = classify(r);
       const url = typeof r.derived?.url === "string" ? (r.derived.url as string) : null;
-      if (next === "waiting" && url) {
+      if (next === "waiting" && url && isDigioUrl(url)) {
+        setBankUrl(url);
         if (tab) tab.location.href = url;
-        else setManualUrl(url);
+        else setPopupBlocked(true);
         setPhase("waiting");
         setPollKey((k) => k + 1);
       } else {
         tab?.close();
-        setPhase(next === "waiting" ? "ready" : next);
-        if (next === "ready" || next === "failed") setError("We could not start the setup. Please try again.");
+        if (next === "waiting") {
+          // Pending but no usable (or untrusted) URL: nothing to send the borrower to.
+          setError("We could not open your bank's page. Please try again.");
+          setPhase("failed");
+        } else {
+          setPhase(next);
+          if (next === "ready" || next === "failed") setError("We could not start the setup. Please try again.");
+        }
       }
     } catch (err) {
       tab?.close();
@@ -98,6 +132,18 @@ export default function MandatePage() {
       setPhase("failed");
     }
     setBusy(false);
+  };
+
+  // Re-open the bank page; if we never had its URL (page reloaded), mint a fresh attempt instead.
+  const reopen = () => {
+    if (bankUrl) window.open(bankUrl, "_blank", "noopener,noreferrer");
+    else void start();
+  };
+
+  const checkAgain = () => {
+    setStalled(undefined);
+    setPhase("waiting");
+    setPollKey((k) => k + 1);
   };
 
   if (appId == null || phase === "checking" || phase === "waiting" || phase === "done") {
@@ -112,11 +158,31 @@ export default function MandatePage() {
               ? "Your bank's page opened in a new tab. Authorise the mandate there, then come back to this tab — we'll continue automatically. Please keep this tab open."
               : "This takes a few seconds — please don't close this page."}
         </p>
-        {phase === "waiting" && manualUrl ? (
-          <a href={manualUrl} target="_blank" rel="noopener noreferrer" className="btn btn-gold mt-4">
-            Open your bank&apos;s page
-          </a>
+        {phase === "waiting" ? (
+          popupBlocked && bankUrl ? (
+            <a href={bankUrl} target="_blank" rel="noopener noreferrer" className="btn btn-gold mt-4">
+              Open your bank&apos;s page
+            </a>
+          ) : (
+            <button type="button" onClick={reopen} className="btn btn-outline mt-4">
+              Reopen your bank&apos;s page
+            </button>
+          )
         ) : null}
+      </div>
+    );
+  }
+
+  if (phase === "stalled") {
+    return (
+      <div className="form-card text-center">
+        <AlertTriangle size={28} className="mx-auto text-warning-800" />
+        <p className="lead mt-4 mb-1">Still waiting</p>
+        <p className="text-sm text-muted">{stalled}</p>
+        <div className="mt-4 flex justify-center gap-2">
+          <button type="button" onClick={checkAgain} className="btn btn-gold">Check again</button>
+          <button type="button" onClick={reopen} className="btn btn-outline">Reopen your bank&apos;s page</button>
+        </div>
       </div>
     );
   }
@@ -127,8 +193,9 @@ export default function MandatePage() {
         <PhoneCall size={28} className="mx-auto text-navy" />
         <p className="lead mt-4 mb-1">We&apos;ll be in touch</p>
         <p className="text-sm text-muted">
-          Your bank can&apos;t set up automatic repayment online. Our team will contact you to finish this
-          step — there is nothing more you need to do here.
+          Your bank can&apos;t set up automatic repayment online. Our team will be in touch with you to
+          finish this step, so you don&apos;t need to do anything or try again. Your advance will move
+          forward once it is done.
         </p>
       </div>
     );
