@@ -812,6 +812,41 @@ public class ApplicationFlowService {
     }
 
     /**
+     * Staff override of the blocking eMandate step, for ONE case only: the customer's latest attempt is
+     * {@code BANK_UNSUPPORTED} (the bank has no API mandate, so retrying can never help). Every other
+     * mandate state is the borrower's to retry, so it is refused here. Same gates as {@link #acceptOffer}
+     * (SANCTIONED, signed ESIGN) minus the mandate, plus a mandatory audited reason.
+     */
+    @Transactional
+    public LoanApplication mandateOverride(Long appId, String notes) {
+        requireAnyRole("DISBURSEMENT_HEAD");
+        LoanApplication app = require(appId);
+        if (app.getStatus() != ApplicationStatus.SANCTIONED) {
+            throw new BusinessException("NOT_APPLICABLE", "This application isn't sanctioned");
+        }
+        if (!mandateService.isBankUnsupported(app.getCustomerId())) {
+            throw new BusinessException("MANDATE_OVERRIDE_NOT_ALLOWED",
+                    "A mandate override is only available when the borrower's bank cannot register an online mandate");
+        }
+        if (verificationRepository.findByApplicationIdAndCheckType(appId, ApplicationVerificationService.ESIGN)
+                .filter(v -> ApplicationVerificationService.PASS.equals(v.getStatus())).isEmpty()) {
+            throw new BusinessException("AGREEMENT_NOT_SIGNED", "The borrower hasn't signed their agreement yet");
+        }
+        if (notes == null || notes.isBlank()) {
+            throw new BusinessException("NOTE_REQUIRED", "A reason is required to override the mandate");
+        }
+        long ceiling = app.getSanctionedAmountPaise() != null ? app.getSanctionedAmountPaise() : 0L;
+        long drawn = app.getAmountRequested() != null ? app.getAmountRequested() : ceiling;
+        if (drawn < LoanMath.MIN_LOAN_PAISE || drawn > ceiling) {
+            throw new BusinessException("AMOUNT_INVALID", "The borrower has not chosen a valid amount yet");
+        }
+        app.setAmountRequested(drawn);
+        transition(app, ApplicationStatus.DISBURSEMENT_PENDING, "MANDATE_OVERRIDE",
+                "Bank unsupported; overridden by " + ActorContext.get().name() + " — " + notes.trim());
+        return applicationRepository.save(app);
+    }
+
+    /**
      * ADMIN-only escape hatch: force a SANCTIONED application straight to DISBURSEMENT_PENDING
      * without waiting on the borrower's own offer-acceptance journey — for a borrower who has
      * already signed their agreement but is stuck elsewhere in that journey. Gated on a

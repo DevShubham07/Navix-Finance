@@ -333,4 +333,25 @@ class MandateServiceTest {
         active("9012", 1_00L);                            // ceiling too low
         assertThat(service.hasUsableMandate(app)).isFalse();
     }
+
+    @Test
+    void staffViewCarriesLastFourOnlyAndFlagsOnlyBankUnsupportedAsOverridable() {
+        Mandate m = new Mandate();
+        m.setStatus(Mandate.Status.BANK_UNSUPPORTED);
+        m.setAccountLast4("9012");
+        m.setBankName("HDFC Bank");
+        m.setDigioMandateId("NONE-4471-1");
+        when(mandates.findFirstByCustomerIdOrderByAttemptNoDesc(4471L)).thenReturn(Optional.of(m));
+
+        MandateService.MandateView v = service.staffView(1L).orElseThrow();
+
+        assertThat(v.accountLast4()).isEqualTo("9012");
+        assertThat(v.overridable()).isTrue();
+        assertThat(v.toString()).doesNotContain("123456789012");
+        assertThat(service.isBankUnsupported(4471L)).isTrue();
+
+        m.setStatus(Mandate.Status.AUTHORIZATION_FAILED);
+        assertThat(service.staffView(1L).orElseThrow().overridable()).isFalse();
+        assertThat(service.isBankUnsupported(4471L)).isFalse();
+    }
 }

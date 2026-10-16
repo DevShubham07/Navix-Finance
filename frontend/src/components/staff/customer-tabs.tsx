@@ -88,8 +88,6 @@ export const CUSTOMER_TABS: PillTabDef[] = [
     key: "mandate",
     label: "Mandate",
     icon: Repeat,
-    disabled: true,
-    badge: "Coming soon",
   },
   { key: "verifications", label: "Verifications", icon: ShieldCheck },
 ];
@@ -170,7 +168,7 @@ export function CustomerTabBody({
       case "activity":
         return <AuditLogsTab customerId={customerId} apps={detail.applications} />;
       case "mandate":
-        return <MandateTab />;
+        return <MandateTab applicationId={applicationId} status={app?.status ?? null} onChanged={onChanged} />;
       case "verifications":
         // Every check on the file, penny drop included, with the same per-check detail and manual
         // override the application dialog offers.

@@ -81,6 +81,9 @@ export type Permission =
   // Referral payouts: the Disbursement Head settles the ₹-rewards (logs a txn id) and sees the
   // referral-expense dashboard; ADMIN has oversight.
   | "referral:payout"
+  // Let a BANK_UNSUPPORTED file past the blocking eMandate step (the bank has no API mandate, so the
+  // borrower cannot fix it by retrying). Mirrors ApplicationFlowService.mandateOverride; nothing else.
+  | "mandate:override"
   // Re-fire a provider verification (PAN / email / address / bureau / employment / penny-drop) from
   // the staff console. ADMIN only — the backend's `retryExternalCheck` is `requireAdmin()`, so a
   // credit role could open the Retry dialog and still be refused server-side. A credit reviewer who
@@ -134,6 +137,7 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
     "customer:view",
     "customer:view:all",
     "referral:payout",
+    "mandate:override",
     "loan:pipeline",
     "leads:import",
   ],
@@ -174,6 +178,7 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
     "leads:manage",
     "referral:payout",
     "verification:retry",
+    "mandate:override",
     "loan:register",
     "collections:overview",
     // NOT dsa:portal — that is the DSA's own self-service portal, gated backend-side by

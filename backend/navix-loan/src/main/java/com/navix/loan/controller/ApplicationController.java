@@ -77,6 +77,7 @@ public class ApplicationController {
     private final AdminApplicationService adminApplications;
     private final JourneyService journey;
     private final OfferService offer;
+    private final com.navix.loan.service.MandateService mandateService;
     private final StaffDirectory staffDirectory;
     private final ApplicationActorDirectory applicationActorDirectory;
     private final com.navix.common.collections.CollectionCaseDirectory collectionCaseDirectory;
@@ -426,6 +427,19 @@ public class ApplicationController {
     @PostMapping("/{id}/force-disbursement-pending")
     public ApiResponse<ApplicationView> forceDisbursementPending(@PathVariable Long id, @RequestBody DecisionRequest req) {
         return ApiResponse.ok(ApplicationView.of(flow.adminForceDisbursementPending(id, req.notes())));
+    }
+
+    /** Staff view of the latest eMandate attempt: no authentication url, last four of the account only. */
+    @GetMapping("/{id}/mandate")
+    public ApiResponse<com.navix.loan.service.MandateService.MandateView> mandate(@PathVariable Long id) {
+        requireStaff();
+        return ApiResponse.ok(mandateService.staffView(id).orElse(null));
+    }
+
+    /** DISBURSEMENT_HEAD/ADMIN: let a BANK_UNSUPPORTED file through the mandate gate (reason required). */
+    @PostMapping("/{id}/mandate/override")
+    public ApiResponse<ApplicationView> mandateOverride(@PathVariable Long id, @RequestBody DecisionRequest req) {
+        return ApiResponse.ok(ApplicationView.of(flow.mandateOverride(id, req.notes())));
     }
 
     // No accountant-validate endpoint: the Disbursement Head's transaction id IS the validation

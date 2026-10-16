@@ -1,4 +1,4 @@
-/** The 20-tab registry: order, the disabled Mandate tab, and every body rendering for a lead-only customer. */
+/** The 20-tab registry: order, the enabled Mandate tab, and every body rendering for a lead-only customer. */
 import { render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
@@ -34,8 +34,9 @@ describe("CUSTOMER_TABS registry", () => {
     expect(CUSTOMER_TABS.length).toBe(20);
   });
 
-  it("disables only Mandate", () => {
-    expect(CUSTOMER_TABS.filter((t) => t.disabled).map((t) => t.key)).toEqual(["mandate"]);
+  it("enables the mandate tab", () => {
+    expect(CUSTOMER_TABS.filter((t) => t.disabled)).toEqual([]);
+    expect(CUSTOMER_TABS.find((t) => t.key === "mandate")?.disabled).toBeFalsy();
   });
 });
 

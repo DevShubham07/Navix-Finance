@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { can, canWorkAs, effectivePermissions, workingRolesFor } from "./rbac";
+import { can, canWorkAs, effectivePermissions, hasPermission, workingRolesFor } from "./rbac";
 
 describe("working roles", () => {
   it("ADMIN can work as Admin (first, the default) plus 7 operational roles, never DSA", () => {
@@ -67,5 +67,13 @@ describe("can", () => {
     expect(can(undefined, "CREDIT_HEAD", "loan:approve")).toBe(false);
     expect(can("CREDIT_HEAD", undefined, "loan:approve")).toBe(false);
     expect(can("CREDIT_HEAD", "CREDIT_HEAD", "loan:approve")).toBe(true);
+  });
+});
+
+describe("mandate:override", () => {
+  it("is held by DISBURSEMENT_HEAD and ADMIN only (ADMIN acts on it as Disbursement Head, like a release)", () => {
+    const roles = ["DISBURSEMENT_HEAD", "ADMIN", "CREDIT_HEAD", "CREDIT_EXECUTIVE", "ACCOUNTANT", "COLLECTION_HEAD", "TELECALLER", "DSA"] as const;
+    expect(roles.filter((r) => hasPermission(r, "mandate:override"))).toEqual(["DISBURSEMENT_HEAD", "ADMIN"]);
+    expect(can("ADMIN", "DISBURSEMENT_HEAD", "mandate:override")).toBe(true);
   });
 });

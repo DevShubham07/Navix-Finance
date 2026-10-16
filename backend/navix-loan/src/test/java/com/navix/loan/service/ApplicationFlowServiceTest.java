@@ -217,6 +217,68 @@ class ApplicationFlowServiceTest {
     }
 
     @Test
+    void overrideRequiresMandateOverridePermission() {
+        LoanApplication app = appAt(ApplicationStatus.SANCTIONED);
+        app.setSanctionedAmountPaise(2_000_000L);
+        esigned(1L);
+        lenient().when(mandateService.isBankUnsupported(7L)).thenReturn(true);
+
+        for (String role : new String[] {"CREDIT_HEAD", "CREDIT_EXECUTIVE", "ACCOUNTANT", "TELECALLER", "DSA", "BORROWER"}) {
+            actor("9", role);
+            assertThatThrownBy(() -> flow.mandateOverride(1L, "bank cannot do api mandate"))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("code", "FORBIDDEN_ROLE");
+        }
+        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.SANCTIONED);
+    }
+
+    @Test
+    void overrideRoutesBankUnsupportedFileToDisbursement() {
+        LoanApplication app = appAt(ApplicationStatus.SANCTIONED);
+        app.setSanctionedAmountPaise(2_000_000L);
+        esigned(1L);
+        when(mandateService.isBankUnsupported(7L)).thenReturn(true);
+        actor("disb1", "DISBURSEMENT_HEAD");
+
+        flow.mandateOverride(1L, "co-operative bank, no API mandate");
+
+        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.DISBURSEMENT_PENDING);
+        ArgumentCaptor<ApplicationEvent> ev = ArgumentCaptor.forClass(ApplicationEvent.class);
+        verify(eventRepository).save(ev.capture());
+        assertThat(ev.getValue().getAction()).isEqualTo("MANDATE_OVERRIDE");
+        assertThat(ev.getValue().getActorId()).isEqualTo("disb1");
+        assertThat(ev.getValue().getNotes()).contains("co-operative bank, no API mandate");
+    }
+
+    @Test
+    void overrideIsRefusedWhenTheMandateIsAnythingButBankUnsupported() {
+        LoanApplication app = appAt(ApplicationStatus.SANCTIONED);
+        app.setSanctionedAmountPaise(2_000_000L);
+        esigned(1L);
+        when(mandateService.isBankUnsupported(7L)).thenReturn(false); // failed / pending / none: borrower retries
+        actor("admin1", "ADMIN");
+
+        assertThatThrownBy(() -> flow.mandateOverride(1L, "please"))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "MANDATE_OVERRIDE_NOT_ALLOWED");
+        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.SANCTIONED);
+    }
+
+    @Test
+    void overrideNeedsAReasonAndASignedAgreement() {
+        LoanApplication app = appAt(ApplicationStatus.SANCTIONED);
+        app.setSanctionedAmountPaise(2_000_000L);
+        when(mandateService.isBankUnsupported(7L)).thenReturn(true);
+        actor("admin1", "ADMIN");
+
+        assertThatThrownBy(() -> flow.mandateOverride(1L, "reason"))
+                .hasFieldOrPropertyWithValue("code", "AGREEMENT_NOT_SIGNED");
+        esigned(1L);
+        assertThatThrownBy(() -> flow.mandateOverride(1L, "  "))
+                .hasFieldOrPropertyWithValue("code", "NOTE_REQUIRED");
+    }
+
+    @Test
     void acceptOfferRefusesWithoutAMandateWhenTheFlagIsOn() {
         actor("7", "BORROWER");
         LoanApplication app = appAt(ApplicationStatus.SANCTIONED);

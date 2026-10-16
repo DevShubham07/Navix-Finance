@@ -1885,6 +1885,17 @@ function registerFacet(base: string, column: string, filters: Record<string, str
   return bff<RegisterFacet>(`${base}/facets?${new URLSearchParams({ ...filters, column })}`, "GET");
 }
 
+export interface MandateView {
+  status: "PENDING_AUTHORIZATION" | "ACTIVE" | "AUTHORIZATION_FAILED" | "EXPIRED" | "BANK_UNSUPPORTED";
+  umrn: string | null;
+  bankName: string | null;
+  accountLast4: string | null;
+  authenticatedAt: string | null;
+  rejectReason: string | null;
+  attemptNo: number;
+  overridable: boolean;
+}
+
 const STAFF_BASE = "/api/staff/applications";
 const STAFF_LOAN_BASE = "/api/staff/loan";
 
@@ -2028,6 +2039,13 @@ export const staffApi = {
   /** ADMIN-only: force a SANCTIONED application straight to DISBURSEMENT_PENDING. Requires a signed agreement + a reason note. */
   forceDisbursementPending: (id: number, notes: string) =>
     bff<ApplicationView>(`${STAFF_BASE}/${id}/force-disbursement-pending`, "POST", { notes }),
+
+  /** Latest eMandate attempt (last four of the account only; never the auth url). Null = none started. */
+  mandate: (id: number) => bff<MandateView | null>(`${STAFF_BASE}/${id}/mandate`, "GET"),
+
+  /** DISBURSEMENT_HEAD/ADMIN: only valid when the mandate is BANK_UNSUPPORTED. Reason is audited. */
+  mandateOverride: (id: number, notes: string) =>
+    bff<ApplicationView>(`${STAFF_BASE}/${id}/mandate/override`, "POST", { notes }),
 
   /** Cancel a pre-disbursement application (staff/admin). Backend rejects once past disbursement. */
   cancel: (id: number, notes?: string) =>

@@ -229,6 +229,26 @@ public class MandateService {
         }
     }
 
+    /** What staff see: no authentication url, no full account number (only the stored last four). */
+    public record MandateView(String status, String umrn, String bankName, String accountLast4,
+                              Instant authenticatedAt, String rejectReason, int attemptNo, boolean overridable) {}
+
+    /** Latest attempt for the application's customer, or empty when none was ever started. */
+    @Transactional(readOnly = true)
+    public Optional<MandateView> staffView(Long appId) {
+        return applications.findById(appId)
+                .flatMap(a -> mandates.findFirstByCustomerIdOrderByAttemptNoDesc(a.getCustomerId()))
+                .map(m -> new MandateView(m.getStatus().name(), m.getUmrn(), m.getBankName(), m.getAccountLast4(),
+                        m.getAuthenticatedAt(), m.getRejectReason(), m.getAttemptNo(),
+                        m.getStatus() == Mandate.Status.BANK_UNSUPPORTED));
+    }
+
+    /** The only state a staff override may act on: the customer's latest attempt hit a bank with no API mandate. */
+    public boolean isBankUnsupported(Long customerId) {
+        return mandates.findFirstByCustomerIdOrderByAttemptNoDesc(customerId)
+                .filter(m -> m.getStatus() == Mandate.Status.BANK_UNSUPPORTED).isPresent();
+    }
+
     public Optional<Mandate> activeMandate(Long customerId) {
         return mandates.findFirstByCustomerIdAndStatusAndUmrnIsNotNullOrderByIdDesc(customerId, Mandate.Status.ACTIVE);
     }
