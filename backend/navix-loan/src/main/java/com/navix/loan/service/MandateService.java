@@ -69,16 +69,9 @@ public class MandateService {
         if (ifsc.length() != 11) {
             throw new BusinessException("INVALID_IFSC", "The bank IFSC is not valid for a mandate");
         }
+        long ceiling = ceiling(app, profile);
 
-        long salary = profile.getMonthlySalaryPaise() == null ? 0L : profile.getMonthlySalaryPaise();
-        long sanctioned = app.getSanctionedAmountPaise() == null ? 0L : app.getSanctionedAmountPaise();
-        long ceiling = 2 * Math.max(loanMath.eligibleLimitPaise(salary), sanctioned);
-
-        // Reuse is per customer, but only a mandate that debits THIS advance's account and can cover it.
-        String last4 = account.substring(account.length() - 4);
-        Optional<Mandate> done = mandates.findFirstByCustomerIdAndUmrnIsNotNullOrderByIdDesc(customerId)
-                .filter(x -> last4.equals(x.getAccountLast4()) && ifsc.equals(x.getIfsc())
-                        && x.getMaximumAmountPaise() >= ceiling);
+        Optional<Mandate> done = reusable(customerId, account, ifsc, ceiling);
         if (done.isPresent()) {
             return view(done.get(), null);
         }
@@ -164,9 +157,19 @@ public class MandateService {
 
     @Transactional
     public StepResult status(Long appId) {
-        Long customerId = applications.findById(appId)
-                .orElseThrow(() -> new BusinessException("APPLICATION_NOT_FOUND", "Application not found"))
-                .getCustomerId();
+        LoanApplication app = applications.findById(appId)
+                .orElseThrow(() -> new BusinessException("APPLICATION_NOT_FOUND", "Application not found"));
+        Long customerId = app.getCustomerId();
+        // Same rule as init: a valid ACTIVE mandate wins over any newer non-ACTIVE attempt.
+        CustomerProfile profile = profiles.findByApplicationId(appId).orElse(null);
+        String account = app.getDisbursalAccountNumber() == null ? "" : app.getDisbursalAccountNumber().trim();
+        String ifsc = app.getDisbursalIfsc() == null ? "" : app.getDisbursalIfsc().trim().toUpperCase(Locale.ROOT);
+        if (profile != null && ACCOUNT.matcher(account).matches() && ifsc.length() == 11) {
+            Optional<Mandate> done = reusable(customerId, account, ifsc, ceiling(app, profile));
+            if (done.isPresent()) {
+                return view(done.get(), null);
+            }
+        }
         Mandate m = mandates.findFirstByCustomerIdOrderByAttemptNoDesc(customerId).orElse(null);
         if (m == null) {
             return new StepResult(CHECK_TYPE, ApplicationVerificationService.PENDING,
@@ -178,6 +181,26 @@ public class MandateService {
         apply(m, port.fetch(m.getDigioMandateId()));
         mandates.save(m);
         return view(m, null);
+    }
+
+    /** 2 x max(formula limit, sanctioned principal); zero would satisfy any reuse check, so it is refused. */
+    private long ceiling(LoanApplication app, CustomerProfile profile) {
+        long salary = profile.getMonthlySalaryPaise() == null ? 0L : profile.getMonthlySalaryPaise();
+        long sanctioned = app.getSanctionedAmountPaise() == null ? 0L : app.getSanctionedAmountPaise();
+        long ceiling = 2 * Math.max(loanMath.eligibleLimitPaise(salary), sanctioned);
+        if (ceiling <= 0) {
+            throw new BusinessException("MANDATE_CEILING_UNAVAILABLE", "Cannot size a mandate for this application");
+        }
+        return ceiling;
+    }
+
+    /** The customer's ACTIVE mandate, if it debits this account and covers this advance. */
+    private Optional<Mandate> reusable(Long customerId, String account, String ifsc, long ceiling) {
+        String last4 = account.substring(account.length() - 4);
+        return mandates.findFirstByCustomerIdAndUmrnIsNotNullOrderByIdDesc(customerId)
+                .filter(x -> x.getStatus() == Mandate.Status.ACTIVE
+                        && last4.equals(x.getAccountLast4()) && ifsc.equals(x.getIfsc())
+                        && x.getMaximumAmountPaise() >= ceiling);
     }
 
     public Optional<Mandate> activeMandate(Long customerId) {

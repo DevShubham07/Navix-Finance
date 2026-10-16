@@ -251,4 +251,34 @@ class MandateServiceTest {
         assertThat(service.init(1L).status()).isEqualTo("PENDING");
         verify(port).register(any());
     }
+
+    @Test
+    void initAndStatusAgreeWhenReusableMandateHasNewerFailedAttempt() {
+        active("9012", 20_000_00L);
+        Mandate newer = new Mandate();
+        newer.setAttemptNo(2);
+        newer.setStatus(Mandate.Status.AUTHORIZATION_FAILED);
+        org.mockito.Mockito.lenient().when(mandates.findFirstByCustomerIdOrderByAttemptNoDesc(4471L))
+                .thenReturn(Optional.of(newer));
+        assertThat(service.init(1L).status()).isEqualTo("PASS");
+        assertThat(service.status(1L).status()).isEqualTo("PASS");
+        verify(port, never()).register(any());
+    }
+
+    @Test
+    void zeroCeilingThrowsInsteadOfRegistering() {
+        profile.setMonthlySalaryPaise(null);
+        app.setSanctionedAmountPaise(null);
+        assertThatThrownBy(() -> service.init(1L)).isInstanceOf(BusinessException.class);
+        verify(port, never()).register(any());
+    }
+
+    @Test
+    void doesNotReuseRevokedMandateThatKeepsItsUmrn() {
+        active("9012", 20_000_00L).setStatus(Mandate.Status.AUTHORIZATION_FAILED);
+        bankOk();
+        when(port.register(any())).thenReturn(new MandateSession("DID9", "partial", "https://z"));
+        service.init(1L);
+        verify(port).register(any());
+    }
 }
