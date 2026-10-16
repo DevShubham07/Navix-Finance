@@ -1,0 +1,43 @@
+package com.navix.verification.config;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.navix.common.verification.MandatePort;
+import com.navix.verification.service.MockMandateAdapter;
+import org.junit.jupiter.api.Test;
+
+class DigioConfigTest {
+
+    private static DigioProperties props(String clientId, String webhookSecret) {
+        return new DigioProperties("digio", "https://api.digio.test", clientId, "secret", webhookSecret,
+                "CFG1", null, 7);
+    }
+
+    @Test
+    void refusesToStartWhenEnabledAndClientIdBlank() {
+        assertThatThrownBy(() -> new DigioConfig().digioMandateAdapter(props(" ", "wh")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("navix.digio.client-id")
+                .hasMessageContaining("NAVIX_DIGIO_CLIENT_ID")
+                .hasMessageContaining("navix.digio.provider=mock");
+    }
+
+    @Test
+    void refusesToStartWhenEnabledAndWebhookSecretBlank() {
+        assertThatThrownBy(() -> new DigioConfig().digioMandateAdapter(props("id", null)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("navix.digio.webhook-secret");
+    }
+
+    @Test
+    void startsWithMockProvider() {
+        MandatePort port = new DigioConfig().mockMandateAdapter();
+        assertThat(port).isInstanceOf(MockMandateAdapter.class);
+    }
+
+    @Test
+    void startsWithFullDigioConfig() {
+        assertThat(new DigioConfig().digioMandateAdapter(props("id", "wh"))).isNotNull();
+    }
+}
