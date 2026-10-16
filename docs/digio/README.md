@@ -7,6 +7,16 @@ and no mandate was created, amended or cancelled while producing this.
 Read [`11-open-questions-and-assumptions.md`](11-open-questions-and-assumptions.md) **before writing any
 integration code** — three BLOCKER-class unknowns are still open.
 
+## What was built from this
+
+The first slice (registration only, at the end of the offer journey, behind the `digio-mandate` flag,
+shipped disabled) was designed and planned in:
+
+- [`../superpowers/specs/2026-10-16-digio-emandate-offer-journey-design.md`](../superpowers/specs/2026-10-16-digio-emandate-offer-journey-design.md) — the approved design
+- [`../superpowers/plans/2026-10-16-digio-emandate-offer-journey.md`](../superpowers/plans/2026-10-16-digio-emandate-offer-journey.md) — the implementation plan
+
+Debit presentation, webhooks, and mandate amendment/cancellation are explicit non-goals of that build.
+
 ## Contents
 
 | File | Covers |

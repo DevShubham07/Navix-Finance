@@ -132,7 +132,7 @@ navix_final/
 │   ├── navix-storage/            # S3 abstraction (presign)
 │   ├── navix-notification/       # ★ notification engine: events→dispatcher→in-app/SMS/email
 │   ├── navix-app/                # ★ the only bootable module; JwtAuthFilter, SecurityConfig, Flyway
-│   │   └── src/main/resources/db/migration/   # V1..V78 (the REAL schema lives here — see §10)
+│   │   └── src/main/resources/db/migration/   # V1..V83 (the REAL schema lives here — see §10)
 │   └── pom.xml                   # parent BOM
 ├── frontend/
 │   └── src/
@@ -280,7 +280,9 @@ Head (`retry-disbursement`). ADMIN may force `SANCTIONED → DISBURSEMENT_PENDIN
 **Offer journey (`SANCTIONED`):** a sanction is an amount + repayment date, and the borrower then
 walks `JourneyService.OfferStep` (amount → repayment-date → DigiLocker → references → summary →
 selfie → address → sanction letter → eSign → 🎉 → disbursal account) under `/api/applications/{id}/
-offer/*`. Confirming the disbursal account is what routes the file to `DISBURSEMENT_PENDING`. A
+offer/*`. Confirming the disbursal account routes the file to `DISBURSEMENT_PENDING` — unless the
+`digio-mandate` flag is on and the customer holds no usable UMRN, in which case the borrower registers a
+Digio eMandate first (`OFFER_MANDATE`, §6) and the mandate hands the file off. A
 sanction never expires.
 
 **Repay → close:** repayments are recorded by the borrower (PENDING_VERIFICATION) and confirmed by
@@ -355,7 +357,12 @@ How a real applicant moves through the product — this is now the **designed, b
 4. **Phase-3 offer journey (`/loan/*`, application `SANCTIONED`)** — `OfferStep` in order: `amount`
    (within the sanctioned ceiling) → `repayment-date` → `digilocker` → `references` → `summary` →
    `selfie` → `address` → `sanction-letter` (Key Fact Statement PDF) → `esign` (Aadhaar eSign, §14) →
-   🎉 → `disbursal-account`. Confirming the account routes the file to `DISBURSEMENT_PENDING`.
+   🎉 → `disbursal-account` → `mandate`. The `mandate` step (`OFFER_MANDATE`, Digio NACH eMandate) is
+   offered **only when the `digio-mandate` flag is on and the customer holds no usable UMRN**; then
+   confirming the account no longer routes to `DISBURSEMENT_PENDING` — the registered mandate (UMRN) does.
+   Flag off (the shipped default) or a UMRN already held: the step is skipped and confirming the account
+   routes to `DISBURSEMENT_PENDING` as before. Registration only — no debit presentation, webhook receiver,
+   or mandate amendment/cancellation exists. Staff see it on the customer's Mandate tab.
 5. **Track live** — `/loan/status` polls `GET …/{id}` and renders the live state-machine status +
    audit trail.
 6. **Active loan** — after the Disbursement Head releases the money (`ACTIVE`), `/dashboard` shows the
@@ -452,7 +459,7 @@ endpoints, different httpOnly cookies, never shared.** This was an explicit requ
 `collections:manage`, `collections:interact`, `staff:manage`, `customer:view` (every staff role
 except **DSA** — see the note above), `customer:view:all`, `customer:assign` (Heads + TELECALLER +
 ADMIN), `customer:manage` (ADMIN — correct KYC, cancel, blocklist), `document:upload`,
-`verification:retry`, `referral:payout` (DISBURSEMENT_HEAD + ADMIN), `leads:manage` (TELECALLER +
+`verification:retry`, `mandate:override` (DISBURSEMENT_HEAD + ADMIN — override a `BANK_UNSUPPORTED` mandate attempt), `referral:payout` (DISBURSEMENT_HEAD + ADMIN), `leads:manage` (TELECALLER +
 ADMIN), `dsa:portal` (**DSA only** — the *only* token a DSA holds, and deliberately **not** granted to
 ADMIN, whose oversight goes through `dsa:manage`), `dsa:manage` (ADMIN).
 
@@ -586,7 +593,7 @@ Flyway migrations live in **`backend/navix-app/src/main/resources/db/migration/`
 navix-common). Applied on every boot:
 
 Flyway migrations live in **`backend/navix-app/src/main/resources/db/migration/`** (not
-navix-common) and are applied on every boot — **V1..V78** today. Each file carries a header comment
+navix-common) and are applied on every boot — **V1..V83** today. Each file carries a header comment
 explaining *why* it exists; that is the source of truth. The index is
 [`docs/MIGRATIONS.md`](docs/MIGRATIONS.md).
 
@@ -669,7 +676,10 @@ What holds across all of it, and does not belong in that file:
   the endpoint still 401s, so the implemented leg stays inert until Digitap enables it and a row is
   inserted; see [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md)), `digitap-pan` + `digitap-email`
   (**both off, V72** — neither product is provisioned, `412` on every call, so the adapter skips the leg
-  entirely; flip a row when Digitap provisions it), `employment-auto-retry` (on — the hourly re-run of
+  entirely; flip a row when Digitap provisions it), `digio-mandate` (**off, V83** — the Digio eMandate step after the disbursal account; read with
+  `defaultWhenMissing = FALSE` for the same reason as `bureau-auto-reject`: with `NAVIX_DIGIO_PROVIDER=digio` it
+  files a real, legally binding NPCI mandate and there is no sandbox, so a missing row must leave it off),
+  `employment-auto-retry` (on — the hourly re-run of
   EPFO checks a vendor outage parked), `global-search` (**on, V73** — the staff Cmd/Ctrl+K palette;
   the one flag read with `defaultWhenMissing = TRUE`, since search takes no money-affecting action
   and exposes nothing a role could not already open, so a fresh environment still gets a console).
@@ -687,7 +697,10 @@ What holds across all of it, and does not belong in that file:
   (default `true` — a bureau no-hit tries the next provider rather than ending the chain),
   `NAVIX_ESIGN_*` (`PROVIDER` signzy|mock · `CALLBACK_URL` + `CALLBACK_SECRET` — **both mandatory when
   the provider is `signzy`**; the app refuses to start otherwise, SSM `/navix/<env>/navix/esign/…`),
-  `NAVIX_S3_*`, `NAVIX_SMS_*` (incl. `NAVIX_SMS_MOCK`),
+  `NAVIX_DIGIO_*` (`PROVIDER` mock|digio · `BASE_URL` · `CLIENT_ID` · `CLIENT_SECRET` · `WEBHOOK_SECRET` ·
+  `CORPORATE_CONFIG_ID` · `NARRATION` · `EXPIRE_IN_DAYS` — the Digio eMandate; the app **refuses to start**
+  with provider `digio` unless the five credentials are set, SSM `/navix/<env>/navix/digio/…`; `.env.example`
+  ships `mock`), `NAVIX_S3_*`, `NAVIX_SMS_*` (incl. `NAVIX_SMS_MOCK`),
   `NAVIX_WHATSAPP_*` (`TOKEN` — SSM `/navix/<env>/navix/whatsapp/token` · `ENABLED` · `MOCK` · `OTP_TEMPLATE`),
   `NAVIX_EMAIL_*` (`PROVIDER` log|smtp|ses|resend · `ENABLED` · `FROM` · `CONFIGURATION_SET` for SES · `RESEND_API_KEY`),
   `NAVIX_SES_EVENTS_*` (`ENABLED` · `QUEUE` — the SES bounce/complaint SQS listener), `NAVIX_NOTIF_*` (async pool sizing),
@@ -754,7 +767,7 @@ The rules that survive outside that file:
 - **[`docs/API_SURFACE.md`](docs/API_SURFACE.md)** — the full endpoint map (controllers still win).
 - **[`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md)** — Signzy / Digitap / Fintrix / SES / UltronSMS:
   capability routing, auth, hosts, live-test status, per-API gotchas.
-- **[`docs/MIGRATIONS.md`](docs/MIGRATIONS.md)** — the V1..V78 Flyway catalog.
+- **[`docs/MIGRATIONS.md`](docs/MIGRATIONS.md)** — the V1..V83 Flyway catalog.
 - **[`docs/whatsapp/WHATSAPP_GUIDE.md`](docs/whatsapp/WHATSAPP_GUIDE.md)** — borrower messaging: WhatsApp
   (SmartChat — API quirks, template catalogue, backlog), SMS (UltronSMS) and DLT in one place.
 
