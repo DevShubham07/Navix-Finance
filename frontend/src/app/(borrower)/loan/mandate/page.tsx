@@ -38,6 +38,8 @@ export default function MandatePage() {
   const [phase, setPhase] = React.useState<Phase>("checking");
   const [error, setError] = React.useState<string>();
   const [busy, setBusy] = React.useState(false);
+  // Synchronous re-entry guard: every init files a real NPCI mandate, so a double-tap must not send two.
+  const initInFlight = React.useRef(false);
   // Bumped by start() so the status poll restarts after a new attempt.
   const [pollKey, setPollKey] = React.useState(0);
   // Set when the browser blocked the new tab, so the borrower can open Digio themselves.
@@ -98,7 +100,8 @@ export default function MandatePage() {
 
   // Start, and also the retry: init mints a fresh attempt and a new redirect URL each time.
   const start = async () => {
-    if (appId == null) return;
+    if (appId == null || initInFlight.current) return;
+    initInFlight.current = true;
     setBusy(true);
     setError(undefined);
     setPopupBlocked(false);
@@ -131,6 +134,7 @@ export default function MandatePage() {
       setError(formatApiError(err, "We could not start the setup. Please try again."));
       setPhase("failed");
     }
+    initInFlight.current = false;
     setBusy(false);
   };
 
@@ -164,7 +168,8 @@ export default function MandatePage() {
               Open your bank&apos;s page
             </a>
           ) : (
-            <button type="button" onClick={reopen} className="btn btn-outline mt-4">
+            <button type="button" onClick={reopen} disabled={busy} className="btn btn-outline mt-4">
+              {busy ? <Loader2 size={16} className="animate-spin" /> : null}
               Reopen your bank&apos;s page
             </button>
           )
@@ -181,7 +186,10 @@ export default function MandatePage() {
         <p className="text-sm text-muted">{stalled}</p>
         <div className="mt-4 flex justify-center gap-2">
           <button type="button" onClick={checkAgain} className="btn btn-gold">Check again</button>
-          <button type="button" onClick={reopen} className="btn btn-outline">Reopen your bank&apos;s page</button>
+          <button type="button" onClick={reopen} disabled={busy} className="btn btn-outline">
+            {busy ? <Loader2 size={16} className="animate-spin" /> : null}
+            Reopen your bank&apos;s page
+          </button>
         </div>
       </div>
     );
