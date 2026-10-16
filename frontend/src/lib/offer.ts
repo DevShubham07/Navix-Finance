@@ -47,7 +47,9 @@ export const OFFER_SEGMENTS = new Set(OFFER_STEPS.map((s) => s.seg));
  * `getServerSnapshot` makes every render produce a "new" value — an infinite update loop that
  * crashed `LoanLayout` and blanked every `/loan/*` route.
  */
-const ALL_SEGMENTS: readonly string[] = OFFER_STEPS.map((s) => s.seg);
+// The mandate step is flag-gated server-side, so the server's list is the only thing that may add it;
+// leaving it out here means it appears a moment late, never when it should not exist.
+const ALL_SEGMENTS: readonly string[] = OFFER_STEPS.filter((s) => s.seg !== "mandate").map((s) => s.seg);
 
 let applicableSegments: string[] | null = null;
 

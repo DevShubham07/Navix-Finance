@@ -16,7 +16,8 @@ const MAX_ATTEMPTS = 45;
 /**
  * Auto-repayment (NACH eMandate) setup. Blocking: no skip, and ordinary failures are retried here by
  * the borrower. Same redirect-out / poll-on-return shape as the eSign callback, except Digio returns
- * the borrower to this page, so mount reads the live status rather than assuming a fresh start.
+ * Digio has no return URL (it ends on its own exit page), so the authorisation opens in a NEW tab and
+ * this one stays mounted, polling status — the poll is the source of truth, not any redirect.
  *
  * BANK_UNSUPPORTED is terminal: retrying cannot help, a staff override is the only way forward.
  */
@@ -26,6 +27,10 @@ export default function MandatePage() {
   const [phase, setPhase] = React.useState<Phase>("checking");
   const [error, setError] = React.useState<string>();
   const [busy, setBusy] = React.useState(false);
+  // Bumped by start() so the status poll restarts after a new attempt.
+  const [pollKey, setPollKey] = React.useState(0);
+  // Set when the browser blocked the new tab, so the borrower can open Digio themselves.
+  const [manualUrl, setManualUrl] = React.useState<string>();
 
   const classify = React.useCallback((r: StepResult): Phase => {
     const st = r.derived?.status;
@@ -57,7 +62,7 @@ export default function MandatePage() {
     };
     void tick();
     return () => { cancelled = true; if (timer) clearTimeout(timer); };
-  }, [appId, classify]);
+  }, [appId, classify, pollKey]);
 
   React.useEffect(() => {
     if (phase === "done" && appId != null) {
@@ -70,17 +75,25 @@ export default function MandatePage() {
     if (appId == null) return;
     setBusy(true);
     setError(undefined);
+    setManualUrl(undefined);
+    // Open synchronously inside the click so popup blockers allow it; point it at Digio once init returns.
+    const tab = window.open("", "_blank");
     try {
       const r = await offerApi.mandateInit(appId);
       const next = classify(r);
       const url = typeof r.derived?.url === "string" ? (r.derived.url as string) : null;
       if (next === "waiting" && url) {
-        window.location.assign(url);
-        return;
+        if (tab) tab.location.href = url;
+        else setManualUrl(url);
+        setPhase("waiting");
+        setPollKey((k) => k + 1);
+      } else {
+        tab?.close();
+        setPhase(next === "waiting" ? "ready" : next);
+        if (next === "ready" || next === "failed") setError("We could not start the setup. Please try again.");
       }
-      setPhase(next === "waiting" ? "ready" : next);
-      if (next === "ready" || next === "failed") setError("We could not start the setup. Please try again.");
     } catch (err) {
+      tab?.close();
       setError(formatApiError(err, "We could not start the setup. Please try again."));
       setPhase("failed");
     }
@@ -92,7 +105,18 @@ export default function MandatePage() {
       <div className="form-card text-center">
         {phase === "done" ? <CheckCircle2 size={28} className="mx-auto text-success-600" /> : <Loader2 size={28} className="mx-auto animate-spin text-navy" />}
         <p className="lead mt-4 mb-1">{phase === "done" ? "Auto-repayment set up" : phase === "waiting" ? "Confirming with your bank" : "Loading…"}</p>
-        <p className="text-sm text-muted">{phase === "done" ? "Taking you to the next step…" : "This takes a few seconds — please don't close this page."}</p>
+        <p className="text-sm text-muted">
+          {phase === "done"
+            ? "Taking you to the next step…"
+            : phase === "waiting"
+              ? "Your bank's page opened in a new tab. Authorise the mandate there, then come back to this tab — we'll continue automatically. Please keep this tab open."
+              : "This takes a few seconds — please don't close this page."}
+        </p>
+        {phase === "waiting" && manualUrl ? (
+          <a href={manualUrl} target="_blank" rel="noopener noreferrer" className="btn btn-gold mt-4">
+            Open your bank&apos;s page
+          </a>
+        ) : null}
       </div>
     );
   }
