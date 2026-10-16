@@ -170,4 +170,85 @@ class MandateServiceTest {
         assertThat(m.getStatus()).isEqualTo(Mandate.Status.PENDING_AUTHORIZATION);
         assertThat(r.status()).isEqualTo("PENDING");
     }
+
+    @Test
+    void recoveredMandateWithoutUmrnDoesNotStrandBorrower() {
+        bankOk();
+        when(port.register(any()))
+                .thenThrow(new RuntimeException("timeout"))
+                .thenReturn(new MandateSession("DID2", "partial", "https://y"));
+        when(port.findByRef("4471-1")).thenReturn(Optional.of(
+                new MandateResult("DIDX", "partial", "created", null, null, null, null, null)));
+        var first = service.init(1L);
+        assertThat(first.status()).isEqualTo("FAIL");
+        ArgumentCaptor<Mandate> c = ArgumentCaptor.forClass(Mandate.class);
+        verify(mandates).save(c.capture());
+        Mandate saved = c.getValue();
+        assertThat(saved.getDigioMandateId()).isEqualTo("DIDX");
+        assertThat(saved.getAttemptNo()).isEqualTo(1);
+
+        when(mandates.findFirstByCustomerIdOrderByAttemptNoDesc(4471L)).thenReturn(Optional.of(saved));
+        var second = service.init(1L);
+        ArgumentCaptor<MandateRequest> r = ArgumentCaptor.forClass(MandateRequest.class);
+        verify(port, times(2)).register(r.capture());
+        assertThat(r.getAllValues().get(1).customerRefNumber()).isEqualTo("4471-2");
+        assertThat(second.derived().get("url")).isEqualTo("https://y");
+    }
+
+    @Test
+    void recoveredMandateWithUmrnIsActive() {
+        bankOk();
+        when(port.register(any())).thenThrow(new RuntimeException("timeout"));
+        when(port.findByRef("4471-1")).thenReturn(Optional.of(
+                new MandateResult("DIDX", "auth_success", "ack_received", "UMRN9", null, null, null, null)));
+        assertThat(service.init(1L).status()).isEqualTo("PASS");
+    }
+
+    @Test
+    void stateMappingIsExplicitAndCaseInsensitive() {
+        assertThat(MandateService.mapNoUmrn("AUTH_FAILED", null)).isEqualTo(Mandate.Status.AUTHORIZATION_FAILED);
+        assertThat(MandateService.mapNoUmrn("auth_success", "NACK_RECEIVED")).isEqualTo(Mandate.Status.AUTHORIZATION_FAILED);
+        assertThat(MandateService.mapNoUmrn("Expired", null)).isEqualTo(Mandate.Status.EXPIRED);
+        assertThat(MandateService.mapNoUmrn("auth_success", "awaiting_ack")).isEqualTo(Mandate.Status.PENDING_AUTHORIZATION);
+        assertThat(MandateService.mapNoUmrn("something_new", "weird")).isEqualTo(Mandate.Status.PENDING_AUTHORIZATION);
+        assertThat(MandateService.mapNoUmrn("complete", null)).isEqualTo(Mandate.Status.PENDING_AUTHORIZATION);
+    }
+
+    private Mandate active(String last4, long max) {
+        Mandate m = new Mandate();
+        m.setDigioMandateId("OLD");
+        m.setUmrn("UMRN0");
+        m.setStatus(Mandate.Status.ACTIVE);
+        m.setAccountLast4(last4);
+        m.setIfsc("HDFC0001234");
+        m.setMaximumAmountPaise(max);
+        m.setAttemptNo(1);
+        when(mandates.findFirstByCustomerIdAndUmrnIsNotNullOrderByIdDesc(4471L)).thenReturn(Optional.of(m));
+        return m;
+    }
+
+    @Test
+    void reusesMandateWhenAccountAndCeilingMatch() {
+        active("9012", 20_000_00L);
+        assertThat(service.init(1L).status()).isEqualTo("PASS");
+        verify(port, never()).register(any());
+    }
+
+    @Test
+    void doesNotReuseMandateBoundToADifferentAccount() {
+        active("0000", 20_000_00L);
+        bankOk();
+        when(port.register(any())).thenReturn(new MandateSession("DID9", "partial", "https://z"));
+        assertThat(service.init(1L).status()).isEqualTo("PENDING");
+        verify(port).register(any());
+    }
+
+    @Test
+    void doesNotReuseMandateWhoseCeilingIsTooSmall() {
+        active("9012", 20_000_00L - 1);
+        bankOk();
+        when(port.register(any())).thenReturn(new MandateSession("DID9", "partial", "https://z"));
+        assertThat(service.init(1L).status()).isEqualTo("PENDING");
+        verify(port).register(any());
+    }
 }

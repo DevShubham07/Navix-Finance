@@ -61,11 +61,6 @@ public class MandateService {
                 .orElseThrow(() -> new BusinessException("PROFILE_NOT_FOUND", "Profile not found"));
         Long customerId = app.getCustomerId();
 
-        Optional<Mandate> done = mandates.findFirstByCustomerIdAndUmrnIsNotNullOrderByIdDesc(customerId);
-        if (done.isPresent()) {
-            return view(done.get(), null);
-        }
-
         String account = app.getDisbursalAccountNumber() == null ? "" : app.getDisbursalAccountNumber().trim();
         if (!ACCOUNT.matcher(account).matches()) {
             throw new BusinessException("INVALID_ACCOUNT_NUMBER", "The bank account number is not valid for a mandate");
@@ -73,6 +68,19 @@ public class MandateService {
         String ifsc = app.getDisbursalIfsc() == null ? "" : app.getDisbursalIfsc().trim().toUpperCase(Locale.ROOT);
         if (ifsc.length() != 11) {
             throw new BusinessException("INVALID_IFSC", "The bank IFSC is not valid for a mandate");
+        }
+
+        long salary = profile.getMonthlySalaryPaise() == null ? 0L : profile.getMonthlySalaryPaise();
+        long sanctioned = app.getSanctionedAmountPaise() == null ? 0L : app.getSanctionedAmountPaise();
+        long ceiling = 2 * Math.max(loanMath.eligibleLimitPaise(salary), sanctioned);
+
+        // Reuse is per customer, but only a mandate that debits THIS advance's account and can cover it.
+        String last4 = account.substring(account.length() - 4);
+        Optional<Mandate> done = mandates.findFirstByCustomerIdAndUmrnIsNotNullOrderByIdDesc(customerId)
+                .filter(x -> last4.equals(x.getAccountLast4()) && ifsc.equals(x.getIfsc())
+                        && x.getMaximumAmountPaise() >= ceiling);
+        if (done.isPresent()) {
+            return view(done.get(), null);
         }
 
         int attemptNo = mandates.findFirstByCustomerIdOrderByAttemptNoDesc(customerId)
@@ -105,9 +113,6 @@ public class MandateService {
                     "This bank does not support online mandate registration", d);
         }
 
-        long salary = profile.getMonthlySalaryPaise() == null ? 0L : profile.getMonthlySalaryPaise();
-        long sanctioned = app.getSanctionedAmountPaise() == null ? 0L : app.getSanctionedAmountPaise();
-        long ceiling = 2 * Math.max(loanMath.eligibleLimitPaise(salary), sanctioned);
         m.setMaximumAmountPaise(ceiling);
         m.setFirstCollectionDate(today);
         m.setFinalCollectionDate(today.plusYears(5));
@@ -135,9 +140,22 @@ public class MandateService {
             if (found == null) {
                 throw failure; // never filed: nothing to adopt, and we do not re-POST
             }
-            // The lookup carries no authentication url; the borrower resumes via status().
             m.setDigioMandateId(found.digioMandateId());
             apply(m, found);
+            if (m.getStatus() != Mandate.Status.ACTIVE) {
+                // The lookup carries no authentication url, so the borrower could never authorise this
+                // one. Keep the row for audit (it advances attempt_no) but abandon it; the next init
+                // mints a fresh CRN and a fresh url.
+                if (m.getStatus() == Mandate.Status.PENDING_AUTHORIZATION) {
+                    m.setStatus(Mandate.Status.AUTHORIZATION_FAILED);
+                }
+                m.setRegisteredAt(Instant.now());
+                mandates.save(m);
+                Map<String, Object> d = new LinkedHashMap<>();
+                d.put("retry", true);
+                return new StepResult(CHECK_TYPE, ApplicationVerificationService.FAIL,
+                        "We could not complete the mandate setup. Please try again.", d);
+            }
         }
         m.setRegisteredAt(Instant.now());
         mandates.save(m);
@@ -154,7 +172,7 @@ public class MandateService {
             return new StepResult(CHECK_TYPE, ApplicationVerificationService.PENDING,
                     "Mandate not started", new LinkedHashMap<>());
         }
-        if (m.getStatus() == Mandate.Status.BANK_UNSUPPORTED || m.getStatus() == Mandate.Status.ACTIVE) {
+        if (m.getStatus() != Mandate.Status.PENDING_AUTHORIZATION) {
             return view(m, null);
         }
         apply(m, port.fetch(m.getDigioMandateId()));
@@ -174,17 +192,30 @@ public class MandateService {
         m.setRejectCode(r.rejectCode());
         m.setRejectReason(r.rejectReason());
         m.setAuthenticatedAt(r.authenticatedAt());
-        String st = (r.state() == null ? "" : r.state()).toLowerCase(Locale.ROOT);
         if (r.umrn() != null && !r.umrn().isBlank()) {
             m.setUmrn(r.umrn());
             m.setStatus(Mandate.Status.ACTIVE);
-        } else if (st.contains("expire")) {
-            m.setStatus(Mandate.Status.EXPIRED);
-        } else if (st.contains("fail") || st.contains("reject") || r.rejectCode() != null) {
-            m.setStatus(Mandate.Status.AUTHORIZATION_FAILED);
-        } else {
-            m.setStatus(Mandate.Status.PENDING_AUTHORIZATION);
+            return;
         }
+        m.setStatus(mapNoUmrn(r.state(), r.bankState()));
+    }
+
+    /**
+     * docs/digio/09-state-mapping.md. Without a UMRN nothing is usable; only documented terminal values
+     * map to a terminal status. Anything unrecognised (and the unproven {@code complete}) stays pending.
+     */
+    static Mandate.Status mapNoUmrn(String state, String bankState) {
+        String s = state == null ? "" : state.toLowerCase(Locale.ROOT);
+        String b = bankState == null ? "" : bankState.toLowerCase(Locale.ROOT);
+        if (s.equals("expired")) {
+            return Mandate.Status.EXPIRED;
+        }
+        if (s.equals("auth_failed") || s.equals("cancelled") || s.equals("revoked")
+                || b.equals("register_failed") || b.equals("nack_received") || b.equals("reject_spo_bank")
+                || b.equals("transfer_failed") || b.equals("failed") || b.equals("revoked")) {
+            return Mandate.Status.AUTHORIZATION_FAILED;
+        }
+        return Mandate.Status.PENDING_AUTHORIZATION;
     }
 
     private static StepResult view(Mandate m, String authUrl) {
