@@ -41,7 +41,6 @@ class JourneyServiceTest {
     private com.navix.loan.repository.ApplicationDocumentRepository documentRepository;
     @Mock
     private MandateService mandateService;
-    @Mock
 
     private JourneyService journey;
     private LoanApplication app;

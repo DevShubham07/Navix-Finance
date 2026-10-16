@@ -132,6 +132,7 @@ class MandateJourneyTest {
     @Test
     void mandateStatusWithUmrnCallsAcceptOffer() {
         flag(true);
+        app.setDisbursalConfirmedAt(java.time.Instant.now());
         when(mandateService.status(APP)).thenReturn(new StepResult("EMANDATE", "PASS", "ok", Map.of()));
         when(mandateService.mandateRequired(app)).thenReturn(false); // the UMRN landed
 
@@ -215,6 +216,24 @@ class MandateJourneyTest {
 
         assertThat(offer.mandateStatus(APP).message()).isEqualTo("bank unsupported");
         verify(flow, never()).acceptOffer(any(), any());
+    }
+
+    /**
+     * R1: with the flag OFF (the shipped default) mandateRequired is false for every application, so the
+     * I6 hand-off must still refuse a file whose disbursal account has not been confirmed — acceptOffer
+     * checks the eSign, not the account, and would queue it for disbursement with no destination.
+     */
+    @Test
+    void flagOffDoesNotHandOffAnApplicationWithNoConfirmedAccount() {
+        flag(false);
+        app.setDisbursalConfirmedAt(null);
+        when(mandateService.status(APP)).thenReturn(new StepResult("EMANDATE", "PENDING", "not started", Map.of()));
+
+        offer.mandateStatus(APP);
+
+        verify(flow, never()).acceptOffer(any(), any());
+        verify(journeyMock, never()).advance(APP, JourneyService.OfferStep.OFFER_DONE);
+        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.SANCTIONED);
     }
 
     /**

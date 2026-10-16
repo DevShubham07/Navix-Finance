@@ -484,7 +484,11 @@ public class OfferService {
             return mandateService.status(appId);
         }
         StepResult result = mandateService.status(appId);
-        if (!mandateService.mandateRequired(app)) {
+        // disbursalConfirmedAt is load-bearing, not a nicety: with the flag off (the shipped default)
+        // mandateRequired is false for EVERY application, and acceptOffer checks the eSign but not the
+        // account — so without this a poll on any sanctioned, eSigned file would queue it for
+        // disbursement with no account number, no IFSC and no penny drop.
+        if (app.getDisbursalConfirmedAt() != null && !mandateService.mandateRequired(app)) {
             // Either the UMRN landed, or the kill switch was turned off under a borrower who had already
             // confirmed their account — in which case this is the pre-feature hand-off, not a skipped step.
             journey.advance(appId, JourneyService.OfferStep.OFFER_DONE);

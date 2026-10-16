@@ -44,8 +44,17 @@ class DigioConfigTest {
 
     @Test
     void startsWithMockProvider() {
-        MandatePort port = new DigioConfig().mockMandateAdapter();
+        MandatePort port = new DigioConfig().mockMandateAdapter("dev");
         assertThat(port).isInstanceOf(MockMandateAdapter.class);
+    }
+
+    /** Booting on the mock in prod is legal (the flag may be off); serving a mandate on it is not. */
+    @Test
+    void mockRefusesToServeInProd() {
+        MandatePort prod = new DigioConfig().mockMandateAdapter("prod");
+        assertThatThrownBy(prod::liveBanks).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("NAVIX_DIGIO_PROVIDER");
+        assertThatThrownBy(() -> prod.fetch("ENA1")).isInstanceOf(IllegalStateException.class);
     }
 
     @Test

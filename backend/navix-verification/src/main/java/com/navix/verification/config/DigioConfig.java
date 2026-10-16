@@ -58,9 +58,10 @@ public class DigioConfig {
         }
     }
 
+    /** Booting on the mock is legal (CI, local, and prod while the flag is off); SERVING on it in prod is not. */
     @Bean
     @ConditionalOnProperty(name = "navix.digio.provider", havingValue = "mock")
-    public MandatePort mockMandateAdapter() {
-        return new MockMandateAdapter();
+    public MandatePort mockMandateAdapter(@org.springframework.beans.factory.annotation.Value("${NAVIX_ENV:dev}") String env) {
+        return new MockMandateAdapter(env);
     }
 }

@@ -221,7 +221,7 @@ export default function MandatePage() {
         <p className="mb-4 text-sm text-muted">
           To receive your advance, authorise an eMandate with your bank so your repayment can be collected
           automatically on the due date. The mandate allows debits up to a maximum amount (ceiling) that is
-          higher than your advance. You will only ever be debited what you owe.
+          higher than your advance.
         </p>
         {phase === "failed" ? (
           <p className="mb-3 flex items-start gap-2 text-sm text-error-600">
