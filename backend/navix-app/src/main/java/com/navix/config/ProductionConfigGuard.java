@@ -53,6 +53,9 @@ public class ProductionConfigGuard {
     @Value("${navix.esign.provider:signzy}")
     private String esignProvider;
 
+    @Value("${navix.digio.provider:digio}")
+    private String digioProvider;
+
     @PostConstruct
     void check() {
         if (!"prod".equalsIgnoreCase(env)) {
@@ -80,6 +83,13 @@ public class ProductionConfigGuard {
             throw new IllegalStateException("NAVIX_ENV=prod with navix.esign.provider=mock — every loan "
                     + "agreement would be recorded as signed without a real Aadhaar e-signature. "
                     + "Unset NAVIX_ESIGN_PROVIDER.");
+        }
+        if ("mock".equalsIgnoreCase(digioProvider)) {
+            // application.yml defaults to mock so CI and local runs boot, which is exactly why prod must
+            // not: a forgotten env var would record every mandate as registered with nothing filed at NPCI.
+            throw new IllegalStateException("NAVIX_ENV=prod with navix.digio.provider=mock — every "
+                    + "eMandate would be recorded as registered without a real NPCI filing. "
+                    + "Set NAVIX_DIGIO_PROVIDER=digio (and the NAVIX_DIGIO_* credentials).");
         }
     }
 }

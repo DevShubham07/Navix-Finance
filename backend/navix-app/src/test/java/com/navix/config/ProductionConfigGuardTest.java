@@ -26,6 +26,7 @@ class ProductionConfigGuardTest {
         ReflectionTestUtils.setField(g, "env", env);
         ReflectionTestUtils.setField(g, "secret", secret);
         ReflectionTestUtils.setField(g, "esignProvider", esignProvider);
+        ReflectionTestUtils.setField(g, "digioProvider", "digio");
         return g;
     }
 
@@ -74,6 +75,22 @@ class ProductionConfigGuardTest {
         assertThatThrownBy(() -> guard("prod", STRONG_SECRET, false, false, "mock").check())
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("NAVIX_ESIGN_PROVIDER");
+    }
+
+    @Test
+    void prod_rejectsMockDigio_whichFilesNoMandate() {
+        ProductionConfigGuard g = guard("prod", STRONG_SECRET, false, false);
+        ReflectionTestUtils.setField(g, "digioProvider", "mock");
+        assertThatThrownBy(g::check)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("NAVIX_DIGIO_PROVIDER");
+    }
+
+    @Test
+    void dev_bootsWithMockDigio() {
+        ProductionConfigGuard g = guard("dev", DEFAULT_SECRET, true, true);
+        ReflectionTestUtils.setField(g, "digioProvider", "mock");
+        assertThatCode(g::check).doesNotThrowAnyException();
     }
 
     @Test
