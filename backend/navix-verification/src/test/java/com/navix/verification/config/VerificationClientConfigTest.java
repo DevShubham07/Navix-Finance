@@ -157,7 +157,7 @@ class VerificationClientConfigTest {
     @Test
     void everyProviderRestClientKeepsJsonFirstAndAcceptsOctetStream() {
         RestClient signzy = new VerificationClientConfig().signzyRestClient(
-                new SignzyProperties("https://signzy.test", "tok", "cid", null, null), defaults());
+                new SignzyProperties("https://signzy.test", "tok", "cid", null, null, null), defaults());
         RestClient fintrix = new VerificationClientConfig().fintrixRestClient(
                 new FintrixProperties("https://fintrix.test", "id", "secret"), defaults());
         RestClient digitapSvc = new VerificationClientConfig().digitapSvcRestClient(
@@ -188,7 +188,7 @@ class VerificationClientConfigTest {
     void theFirstConverterThatCanWriteABodyIsTheLenientJsonOne() {
         List<RestClient> clients = List.of(
                 new VerificationClientConfig().signzyRestClient(
-                        new SignzyProperties("https://signzy.test", "tok", "cid", null, null), defaults()),
+                        new SignzyProperties("https://signzy.test", "tok", "cid", null, null, null), defaults()),
                 new VerificationClientConfig().fintrixRestClient(
                         new FintrixProperties("https://fintrix.test", "id", "secret"), defaults()),
                 new VerificationClientConfig().digitapSvcRestClient(

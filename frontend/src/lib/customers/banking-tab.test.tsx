@@ -46,12 +46,15 @@ afterEach(() => {
 describe("Banking tab", () => {
   it("shows the pending empty state and declared-only salary when no analysis exists", async () => {
     renderTab();
-    expect(await screen.findByText("Analysis pending", { selector: "h3, p, div" })).toBeInTheDocument();
+    expect(await screen.findByText("Not analysed", { selector: "h3, p, div" })).toBeInTheDocument();
     expect(screen.getByText("Declared only")).toBeInTheDocument();
   });
 
   it("renders the ACCEPT banner and account chip for an analysed payload", async () => {
     const view: BankAnalysisView = {
+      id: 7,
+      customerId: 42,
+      createdAt: "2026-10-08T09:55:00Z",
       status: "ANALYSED",
       bank: "HDFC BANK",
       accounts: [{ maskedNumber: "XXXX1154", type: "SAVINGS", txnCount: 309, status: "ACTIVE" }],

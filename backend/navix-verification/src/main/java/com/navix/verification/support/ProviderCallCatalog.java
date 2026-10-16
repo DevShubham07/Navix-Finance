@@ -58,6 +58,10 @@ public final class ProviderCallCatalog {
         ROUTES.put("/api/v3/digilocker-v2/geteAadhaar", new Route("DIGILOCKER", "SIGNZY"));
         ROUTES.put("/api/v3/liveness-secure/createUrl", new Route("LIVENESS", "SIGNZY"));
         ROUTES.put("/api/v3/liveness-secure/getData", new Route("LIVENESS", "SIGNZY"));
+        // On-demand credit lookup (Banking tab) — three calls, one operation, never fired by the lifecycle.
+        ROUTES.put("/api/v3/statementanalysis/analyze-statement", new Route("BANK_STATEMENT", "SIGNZY"));
+        ROUTES.put("/api/v3/statementanalysis/retrieve-work-order", new Route("BANK_STATEMENT", "SIGNZY"));
+        ROUTES.put("/api/v3/statementanalysis/download-report", new Route("BANK_STATEMENT", "SIGNZY"));
         ROUTES.put("/api/v3/contract/initiate", new Route("ESIGN", "SIGNZY"));
         ROUTES.put("/api/v3/contract/pullData", new Route("ESIGN", "SIGNZY"));
     }

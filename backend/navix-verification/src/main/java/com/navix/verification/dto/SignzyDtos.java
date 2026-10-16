@@ -334,4 +334,76 @@ public final class SignzyDtos {
                     null, null, null, null);
         }
     }
+
+    // ---- Bank Statement Analysis : /api/v3/statementanalysis/{analyze-statement,retrieve-work-order,download-report} ----
+
+    /**
+     * One statement PDF. {@code fileUrl} must be fetchable by Signzy — we pass a presigned S3 GET URL
+     * (15 min TTL, which is ample: Signzy downloads the file during the analyze call itself).
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record BsaFile(
+            @JsonProperty("fileUrl") String fileUrl,
+            @JsonProperty("password") String password) {
+    }
+
+    /**
+     * {@code authToken} is NOT the portal token in the Authorization header — it is a separate,
+     * short-lived JWT from Signzy's Authenticate API, carried in the BODY of every BSA call. See
+     * {@code navix.signzy.bsa-auth-token}.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record BsaAnalyzeRequest(
+            @JsonProperty("authToken") String authToken,
+            @JsonProperty("files") List<BsaFile> files,
+            @JsonProperty("customerName") String customerName,
+            @JsonProperty("statementPeriod") String statementPeriod) {
+    }
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record BsaReportRequest(
+            @JsonProperty("authToken") String authToken,
+            @JsonProperty("reportId") String reportId) {
+    }
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record BsaDownloadRequest(
+            @JsonProperty("authToken") String authToken,
+            @JsonProperty("reportId") String reportId,
+            @JsonProperty("fileType") String fileType) {
+    }
+
+    /** One account Signzy identified across the uploaded statements. Every field is nullable. */
+    public record BsaAccount(
+            String accountNumber,
+            String accountTypeName,
+            String bankName,
+            String status,
+            String ifsc,
+            String micr,
+            String branchName,
+            String accountHolderName,
+            String startDate,
+            String endDate,
+            Integer txnCount,
+            /** Signzy's tampering verdict on the file(s): ORIGINAL | REVIEW | FRAUD SUSPECTED | UNKNOWN. */
+            String authenticity) {
+    }
+
+    /**
+     * The shared envelope of analyze-statement and retrieve-work-order — the same {@code report} +
+     * {@code reportAccounts} shape, with more of it filled in as the analysis progresses.
+     */
+    public record BsaReport(
+            String reportId,
+            String reportStatus,
+            String reportStatusDescription,
+            String bankScore,
+            List<BsaAccount> accounts,
+            String rawJson) {
+    }
+
+    /** download-report: public URLs to the finished report. Valid for Signzy's own retention window. */
+    public record BsaReportFiles(String jsonUrl, String excelUrl, String rawJson) {
+    }
 }

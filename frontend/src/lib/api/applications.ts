@@ -4344,3 +4344,68 @@ export const skipTraceApi = {
   history: (customerId: number) => bff<SkipTraceRun[]>(`${SKIP_TRACE_BASE}/customers/${customerId}`, "GET"),
   run: (customerId: number) => bff<SkipTraceRun>(`${SKIP_TRACE_BASE}/customers/${customerId}`, "POST"),
 };
+
+// ---------------------------------------------------------------------------
+// Bank Statement Analysis — on-demand Signzy BSA (credit). Billed per statement, so it is only ever
+// triggered by the credit desk / ADMIN from the customer's Banking tab; the stored result is free to
+// read for any staff but DSA. Signzy's flow is asynchronous: a run comes back PENDING and the
+// backend advances it on each read, so the UI polls while `status === "PENDING"`.
+// ---------------------------------------------------------------------------
+export type BankAnalysisAccount = {
+  maskedNumber: string | null;
+  type: string | null;
+  txnCount: number | null;
+  status: string | null;
+  ifsc?: string | null;
+  micr?: string | null;
+  facility?: string | null;
+  branch?: string | null;
+  periodFrom?: string | null;
+  periodTo?: string | null;
+  holderName?: string | null;
+  /** Signzy's tampering verdict for the file(s): ORIGINAL | REVIEW | FRAUD SUSPECTED | UNKNOWN. */
+  authenticity?: string | null;
+  openingBalancePaise?: number | null;
+  closingBalancePaise?: number | null;
+};
+export type BankAnalysisView = {
+  id: number;
+  customerId: number;
+  applicationId?: number | null;
+  status: "ANALYSED" | "PENDING" | "FAILED";
+  reportId?: string | null;
+  reportStatus?: string | null;
+  reportStatusDescription?: string | null;
+  bankScore?: string | null;
+  bank: string | null;
+  accounts: BankAnalysisAccount[];
+  /** Salary identification lives in Signzy's downloadable report; null until that is mapped. */
+  salary: {
+    verdict: "ACCEPT" | "REVIEW" | "REJECT";
+    rule: string;
+    primarySource: string;
+    consecutiveMonths: number;
+    minSalaryPaise: number;
+    uniqueCredits: number;
+    employerOnStatement?: string;
+    analysedAt: string;
+  } | null;
+  excelUrl?: string | null;
+  jsonUrl?: string | null;
+  message?: string | null;
+  runByStaffId?: number | null;
+  runByName?: string | null;
+  runByRole?: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
+};
+const BANK_ANALYSIS_BASE = "/api/staff/bank-analysis";
+export const bankAnalysisApi = {
+  /** The latest analysis, or null when none has been run. Advances a still-running report. */
+  get: (customerId: number) =>
+    bff<BankAnalysisView | null>(`${BANK_ANALYSIS_BASE}/customers/${customerId}`, "GET"),
+  history: (customerId: number) =>
+    bff<BankAnalysisView[]>(`${BANK_ANALYSIS_BASE}/customers/${customerId}/history`, "GET"),
+  run: (customerId: number) =>
+    bff<BankAnalysisView>(`${BANK_ANALYSIS_BASE}/customers/${customerId}`, "POST"),
+};

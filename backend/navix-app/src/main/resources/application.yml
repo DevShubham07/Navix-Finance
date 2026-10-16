@@ -66,6 +66,11 @@ navix:
     # Signzy PRODUCTION account — serves PAN 206AB (unmasked name) + reverse-geocode (address).
     prod-base-url: ${SIGNZY_PROD_BASE_URL:https://api.signzy.app}
     prod-token: ${SIGNZY_PROD_TOKEN:}
+    # Bank Statement Analysis is the one Signzy product that also wants a token in the request BODY:
+    # a short-lived JWT from their Authenticate API, separate from the header token above. Blank means
+    # the Banking tab reports "not configured" instead of calling; an expired one gets a 401. Rotate
+    # via SSM /navix/<env>/navix/signzy/bsa-auth-token.
+    bsa-auth-token: ${SIGNZY_BSA_AUTH_TOKEN:}
     # Consent-block device IP (Signzy doesn't enforce an allow-list on this today, but keep it a real
     # IP rather than 0.0.0.0 for consistency with the Digitap check below). aws.md §5.1's static NAT
     # egress IP — never changes.

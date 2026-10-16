@@ -92,7 +92,7 @@ class VerificationClientContentTypeTest {
     void signzyClient_sendsApplicationJson() {
         VerificationClientConfig config = new VerificationClientConfig();
         SignzyProperties props = new SignzyProperties(
-                baseUrl(), "token", "uid", baseUrl(), "prodToken");
+                baseUrl(), "token", "uid", baseUrl(), "prodToken", null);
         postAndAssertJson(config.signzyRestClient(props, timeouts()));
     }
 
@@ -100,7 +100,7 @@ class VerificationClientContentTypeTest {
     void signzyProdClient_sendsApplicationJson() {
         VerificationClientConfig config = new VerificationClientConfig();
         SignzyProperties props = new SignzyProperties(
-                baseUrl(), "token", "uid", baseUrl(), "prodToken");
+                baseUrl(), "token", "uid", baseUrl(), "prodToken", null);
         postAndAssertJson(config.signzyProdRestClient(props, timeouts()));
     }
 
