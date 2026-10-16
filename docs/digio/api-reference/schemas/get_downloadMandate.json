@@ -1,0 +1,115 @@
+{
+ "components": {
+  "schemas": {
+   "GenericBadRequestResponse": {
+    "properties": {
+     "code": {
+      "description": "Error code",
+      "type": "string"
+     },
+     "details": {
+      "description": "Details about the exception. Usually contains the exception id for reference.",
+      "type": "string"
+     },
+     "errors": {
+      "description": "Custom errors",
+      "type": "string"
+     },
+     "message": {
+      "description": "Description of the error",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   }
+  },
+  "securitySchemes": {
+   "api_auth": {
+    "in": "header",
+    "scheme": "basic",
+    "type": "http"
+   }
+  }
+ },
+ "info": {
+  "contact": {
+   "email": "support@digio.in"
+  },
+  "description": "Getting started with Digio Rest Apis",
+  "title": "Digio Apis",
+  "x-provenance": "Fetched 2026-10-16 from https://documentation.digio.in/swagger/get_downloadMandate.json (servers[] replaced with the hosts documented at https://documentation.digio.in/digienvironments/; the published spec ships a localhost placeholder)"
+ },
+ "openapi": "3.0.1",
+ "paths": {
+  "/v3/client/mandate/download": {
+   "get": {
+    "description": "This API is used to download files related to physical nach using mandate id",
+    "operationId": "downloadMandate",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "mandate_id",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "*/*": {
+        "examples": {
+         "file": {
+          "description": "file",
+          "value": "Zip File"
+         }
+        },
+        "schema": {
+         "description": "Zip File",
+         "format": "byte",
+         "type": "file"
+        }
+       }
+      },
+      "description": "Successfully downloaded the document"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "examples": {
+         "Bad Request": {
+          "description": "Bad Request",
+          "value": {
+           "code": "ENTITY_NOT_FOUND",
+           "details": "EX23297402937402",
+           "message": "Entity not found for this id"
+          }
+         }
+        },
+        "schema": {
+         "$ref": "#/components/schemas/GenericBadRequestResponse"
+        }
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "api_auth": []
+     }
+    ],
+    "summary": "Download Mandate Files (XML and processed images) [Physical NACH]"
+   }
+  }
+ },
+ "servers": [
+  {
+   "description": "Production",
+   "url": "https://api.digio.in"
+  },
+  {
+   "description": "Sandbox",
+   "url": "https://ext.digio.in:444"
+  }
+ ]
+}

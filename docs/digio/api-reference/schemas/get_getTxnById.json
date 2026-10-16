@@ -1,0 +1,273 @@
+{
+ "components": {
+  "schemas": {
+   "CustomerDetailsSchema_Client": {
+    "description": "Details of customer",
+    "properties": {
+     "destination_account_type": {
+      "default": "SAVINGS",
+      "description": "Type of account of the customer",
+      "enum": [
+       "SAVINGS",
+       "CURRENT",
+       "OTHER"
+      ],
+      "type": "string"
+     },
+     "destination_ifsc": {
+      "description": "IFSC code of the bank",
+      "type": "string"
+     },
+     "name": {
+      "description": "Name of the customer",
+      "type": "string"
+     },
+     "user_account_number": {
+      "description": "Masked account number of the customer",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "ExternalNachDebitTxnOnGetSchema_Client": {
+    "description": "Details of the last transaction",
+    "properties": {
+     "created_at": {
+      "description": "Creation timestamp of the last transaction",
+      "format": "date-time",
+      "type": "string"
+     },
+     "customer": {
+      "$ref": "#/components/schemas/CustomerDetailsSchema_Client"
+     },
+     "details": {
+      "$ref": "#/components/schemas/TxnDetailsSchema_Client"
+     },
+     "id": {
+      "description": "ID of the last transaction",
+      "type": "string"
+     },
+     "state": {
+      "description": "State of the last transaction",
+      "type": "string"
+     },
+     "status_updated_at": {
+      "description": "Timestamp when the status was last updated",
+      "format": "date-time",
+      "type": "string"
+     },
+     "umrn": {
+      "description": "UMRN of the last transaction",
+      "type": "string"
+     },
+     "updated_at": {
+      "description": "Last update timestamp of the last transaction",
+      "format": "date-time",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "GenericBadRequestResponse_Client": {
+    "properties": {
+     "code": {
+      "description": "Error code",
+      "type": "string"
+     },
+     "details": {
+      "description": "Details about the exception. Usually contains the exception id for reference.",
+      "type": "string"
+     },
+     "errors": {
+      "description": "Custom errors",
+      "type": "string"
+     },
+     "message": {
+      "description": "Description of the error",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "TxnDetailsSchema_Client": {
+    "description": "Detailed information about the last transaction",
+    "properties": {
+     "amount": {
+      "description": "Transaction amount in standard currency units",
+      "format": "double",
+      "type": "number"
+     },
+     "amount_in_paise": {
+      "description": "Transaction amount in the smallest currency units (e.g., paise)",
+      "format": "int32",
+      "type": "integer"
+     },
+     "customer_vpa": {
+      "description": "Virtual Payment Address of the customer, if applicable",
+      "type": "string"
+     },
+     "failure_code": {
+      "description": "Code indicating the reason for transaction failure, if applicable",
+      "type": "string"
+     },
+     "failure_reason": {
+      "description": "Description of the reason for transaction failure, if applicable",
+      "type": "string"
+     },
+     "ready_to_process_at": {
+      "description": "Timestamp indicating when the transaction is ready to be processed",
+      "format": "date-time",
+      "type": "string"
+     },
+     "settlement_desc": {
+      "description": "Description of the settlement",
+      "type": "string"
+     },
+     "sponsor_bank_id": {
+      "description": "Identifier for the sponsor bank",
+      "type": "string"
+     },
+     "status": {
+      "description": "Status of the NACH payment transaction",
+      "enum": [
+       "NEW",
+       "READY_TO_SEND",
+       "SKIPPED",
+       "CANCELLED",
+       "SUBMITTED_TO_BANK",
+       "DIGIO_TECHNICAL_ERROR",
+       "ACCEPTED_SPO_BANK",
+       "REJECT_SPO_BANK",
+       "PAYMENT_DELAYED",
+       "PAYMENT_AUTHENTICATED",
+       "PAYMENT_FAILED",
+       "PAYMENT_SUCCESS"
+      ],
+      "type": "string"
+     },
+     "txn_ref": {
+      "description": "Reference number for the transaction",
+      "type": "string"
+     },
+     "type": {
+      "description": "Type of the transaction",
+      "enum": [
+       "NACH_DEBIT"
+      ],
+      "type": "string"
+     },
+     "utr": {
+      "description": "Unique Transaction Reference number for the transaction",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   }
+  },
+  "securitySchemes": {
+   "api_auth": {
+    "in": "header",
+    "scheme": "basic",
+    "type": "http"
+   }
+  }
+ },
+ "info": {
+  "contact": {
+   "email": "support@digio.in"
+  },
+  "description": "Getting started with Digio Rest Apis",
+  "title": "Digio Apis",
+  "x-provenance": "Fetched 2026-10-16 from https://documentation.digio.in/swagger/get_getTxnById.json (servers[] replaced with the hosts documented at https://documentation.digio.in/digienvironments/; the published spec ships a localhost placeholder)"
+ },
+ "openapi": "3.0.1",
+ "paths": {
+  "/v3/client/nach_debit/transaction/{txnId}": {
+   "get": {
+    "description": "This API is used to get single debit transaction details, txnId refers to the NPT id which was created against a scheduled plan.",
+    "operationId": "getTxnById",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "txnId",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "examples": {
+         "Success Request": {
+          "description": "Success Request",
+          "value": {
+           "created_at": "2019-04-15 16:25:34",
+           "customer": {
+            "name": "devesh"
+           },
+           "details": {
+            "amount": 1,
+            "amount_in_paise": 100,
+            "failure_code": "",
+            "failure_reason": "",
+            "ready_to_process_at": "2019-04-15 16:25:34",
+            "sponsor_bank_id": "YESB0000000",
+            "status": "payment_success"
+           },
+           "id": "NPT1904111122223333BCBDQIQ4HAB",
+           "state": "success",
+           "status_updated_at": "2019-04-15 16:26:08",
+           "umrn": "UMRN4444333322221111",
+           "updated_at": "2019-04-15 16:26:08"
+          }
+         }
+        },
+        "schema": {
+         "$ref": "#/components/schemas/ExternalNachDebitTxnOnGetSchema_Client"
+        }
+       }
+      }
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "examples": {
+         "Bad Request": {
+          "description": "Bad Request",
+          "value": {
+           "code": "ENTITY_NOT_FOUND",
+           "details": "EX23297402937402",
+           "message": "Entity not found for this id"
+          }
+         }
+        },
+        "schema": {
+         "$ref": "#/components/schemas/GenericBadRequestResponse_Client"
+        }
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "api_auth": []
+     }
+    ],
+    "summary": "Get Transaction Details"
+   }
+  }
+ },
+ "servers": [
+  {
+   "description": "Production",
+   "url": "https://api.digio.in"
+  },
+  {
+   "description": "Sandbox",
+   "url": "https://ext.digio.in:444"
+  }
+ ]
+}

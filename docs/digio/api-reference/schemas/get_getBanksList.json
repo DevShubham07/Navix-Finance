@@ -1,0 +1,291 @@
+{
+ "components": {
+  "schemas": {
+   "BankMeta": {
+    "properties": {
+     "active": {
+      "description": "Indicates if the bank is currently active.",
+      "example": true,
+      "type": "boolean"
+     },
+     "allowedAuthSubType": {
+      "description": "Set of allowed mandate authentication subtypes.",
+      "items": {
+       "description": "Set of allowed mandate authentication subtypes.",
+       "enum": [
+        "net_banking",
+        "debit",
+        "aadhaar",
+        "otp",
+        "other",
+        "pan",
+        "customer_id",
+        "direct_bank"
+       ],
+       "type": "string"
+      },
+      "type": "array",
+      "uniqueItems": true
+     },
+     "apiMandate": {
+      "description": "Indicates if the bank supports API-based mandates.",
+      "example": false,
+      "type": "boolean"
+     },
+     "apiMandateAadhaarCard": {
+      "description": "Indicates if the bank supports API mandates via Aadhaar Card.",
+      "example": false,
+      "type": "boolean"
+     },
+     "apiMandateDDDebitCard": {
+      "description": "Indicates if the bank supports Direct debit API mandates via Debit Card.",
+      "example": false,
+      "type": "boolean"
+     },
+     "apiMandateDDNetBanking": {
+      "description": "Indicates if the bank supports Direct debit API mandates via Net Banking.",
+      "example": false,
+      "type": "boolean"
+     },
+     "apiMandateDDOtp": {
+      "description": "Indicates if the bank supports Direct debit API mandates via Otp.",
+      "example": false,
+      "type": "boolean"
+     },
+     "apiMandateDebitCard": {
+      "description": "Indicates if the bank supports API mandates via Debit Card.",
+      "example": false,
+      "type": "boolean"
+     },
+     "apiMandateNetBanking": {
+      "description": "Indicates if the bank supports API mandates via Net Banking.",
+      "example": false,
+      "type": "boolean"
+     },
+     "bankShortCode": {
+      "description": "Short code for the bank.",
+      "example": "ICIC",
+      "type": "string"
+     },
+     "bankShortCodeDebit": {
+      "description": "Short code for the bank's debit.",
+      "example": "ICICDB",
+      "type": "string"
+     },
+     "esignMandate": {
+      "description": "Indicates if the bank supports eSign mandates.",
+      "example": false,
+      "type": "boolean"
+     },
+     "id": {
+      "description": "Unique identifier for the bank.",
+      "example": "BNI190205133107279IW29M2B4TZ7PAJ",
+      "type": "string"
+     },
+     "ifscPrefix": {
+      "description": "Prefix of the bank's IFSC code.",
+      "example": "ICIC",
+      "type": "string"
+     },
+     "name": {
+      "description": "Name of the bank.",
+      "example": "Abhyudaya Co Op Bank",
+      "type": "string"
+     },
+     "pennyLess": {
+      "description": "Indicates if the bank supports penny-less transactions.",
+      "example": true,
+      "type": "boolean"
+     },
+     "physicalMandate": {
+      "description": "Indicates if the bank supports physical mandates.",
+      "example": true,
+      "type": "boolean"
+     },
+     "primaryBank": {
+      "description": "Indicates if the bank is the primary bank.",
+      "example": false,
+      "type": "boolean"
+     },
+     "routingCode": {
+      "description": "Routing code for the bank.",
+      "example": "ARMX",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "GenericBadRequestResponse": {
+    "properties": {
+     "code": {
+      "description": "Error code",
+      "type": "string"
+     },
+     "details": {
+      "description": "Details about the exception. Usually contains the exception id for reference.",
+      "type": "string"
+     },
+     "errors": {
+      "description": "Custom errors",
+      "type": "string"
+     },
+     "message": {
+      "description": "Description of the error",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   }
+  },
+  "securitySchemes": {
+   "api_auth": {
+    "in": "header",
+    "scheme": "basic",
+    "type": "http"
+   }
+  }
+ },
+ "info": {
+  "contact": {
+   "email": "support@digio.in"
+  },
+  "description": "Getting started with Digio Rest Apis",
+  "title": "Digio Apis",
+  "x-provenance": "Fetched 2026-10-16 from https://documentation.digio.in/swagger/get_getBanksList.json (servers[] replaced with the hosts documented at https://documentation.digio.in/digienvironments/; the published spec ships a localhost placeholder)"
+ },
+ "openapi": "3.0.1",
+ "paths": {
+  "/v3/client/mandate/banks": {
+   "get": {
+    "description": "This API retrieves a list of banks that are live in the system. The banks returned can be filtered based on the mode and whether they support penny-less transactions.",
+    "operationId": "getBanksList",
+    "parameters": [
+     {
+      "description": "Filter by mode of operation. Allowed values: API, ESIGN, PHYSICAL.",
+      "example": "API",
+      "in": "query",
+      "name": "mode",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "description": "Filter by penny-less support. If true, only banks supporting penny-less transactions are returned.",
+      "example": true,
+      "in": "query",
+      "name": "penny_less",
+      "schema": {
+       "type": "boolean"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "examples": {
+         "Success": {
+          "description": "Success",
+          "value": [
+           {
+            "active": true,
+            "api_mandate": false,
+            "esign_mandate": false,
+            "id": "BNI190205133107279IW29M2B4TZ7PAJ",
+            "ifsc_prefix": "ICIC",
+            "name": "510 Army Base W/s Credit Coop Primary Bank Ltd.",
+            "penny_less": false,
+            "physical_mandate": true,
+            "primary_bank": false,
+            "routing_code": "ARMX"
+           },
+           {
+            "active": true,
+            "api_mandate": false,
+            "esign_mandate": false,
+            "id": "BNI190205153036123F6UIBWCVOFSTSK",
+            "ifsc_prefix": "HDFC",
+            "name": "Abhinandan Urban Coop Bank Amravati",
+            "penny_less": true,
+            "physical_mandate": true,
+            "primary_bank": false,
+            "routing_code": "ABUX"
+           },
+           {
+            "active": true,
+            "api_mandate": false,
+            "esign_mandate": true,
+            "id": "BNI1812040345269602CUEACAFX9R7JC",
+            "ifsc_prefix": "ABHY",
+            "name": "Abhyudaya Co Op Bank",
+            "penny_less": true,
+            "physical_mandate": true,
+            "primary_bank": false,
+            "routing_code": "ABHY"
+           },
+           {
+            "active": true,
+            "api_mandate": false,
+            "esign_mandate": false,
+            "id": "BNI1902051331072707IKYF5BTXXG3YP",
+            "ifsc_prefix": "ADCB",
+            "name": "Abu Dhabi Commercial Bank",
+            "penny_less": false,
+            "physical_mandate": true,
+            "primary_bank": false,
+            "routing_code": "ADCB"
+           }
+          ]
+         }
+        },
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/BankMeta"
+         },
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successfully retrieved the list of live banks."
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "examples": {
+         "Bad Request": {
+          "description": "Bad Request",
+          "value": {
+           "code": "INVALID_API_CREDENTIALS",
+           "details": "EX23297402937402",
+           "message": "Invalid API credentials"
+          }
+         }
+        },
+        "schema": {
+         "$ref": "#/components/schemas/GenericBadRequestResponse"
+        }
+       }
+      },
+      "description": "Invalid request parameters or API credentials."
+     }
+    },
+    "security": [
+     {
+      "api_auth": []
+     }
+    ],
+    "summary": "Live Banks"
+   }
+  }
+ },
+ "servers": [
+  {
+   "description": "Production",
+   "url": "https://api.digio.in"
+  },
+  {
+   "description": "Sandbox",
+   "url": "https://ext.digio.in:444"
+  }
+ ]
+}

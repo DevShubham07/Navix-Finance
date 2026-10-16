@@ -1,0 +1,588 @@
+{
+ "components": {
+  "schemas": {
+   "BankDetails_Client": {
+    "description": "Details of bank",
+    "properties": {
+     "ack_report": {
+      "description": "List of acknowledgments received from bank's end",
+      "items": {
+       "$ref": "#/components/schemas/ExternalAckReport_Client"
+      },
+      "type": "array"
+     },
+     "authenticated_at": {
+      "description": "Time of authentication with the bank",
+      "format": "date-time",
+      "type": "string"
+     },
+     "bank_name": {
+      "description": "Name of the bank",
+      "type": "string"
+     },
+     "res_report": {
+      "description": "List of response received from bank's end",
+      "items": {
+       "$ref": "#/components/schemas/ExternalResReport_Client"
+      },
+      "type": "array"
+     },
+     "shared_at": {
+      "description": "Time at which shared with the respective bank",
+      "format": "date-time",
+      "type": "string"
+     },
+     "shared_with_bank": {
+      "description": "Email id of bank",
+      "type": "string"
+     },
+     "state": {
+      "description": "Status with the bank",
+      "enum": [
+       "created",
+       "ready",
+       "downloaded",
+       "failed",
+       "auth_success",
+       "successful",
+       "partial",
+       "sign_pending",
+       "signed",
+       "transfer_failed",
+       "transfer_success",
+       "reject_spo_bank",
+       "accepted_spo_bank",
+       "awaiting_ack",
+       "nack_received",
+       "ack_received",
+       "awaiting_res",
+       "register_failed",
+       "register_success",
+       "revoked"
+      ],
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "ExternalAckReport_Client": {
+    "description": "List of acknowledgments received from bank's end",
+    "properties": {
+     "accepted": {
+      "description": "This depicts whether the mandate was accepted or rejected",
+      "type": "boolean"
+     },
+     "created_at": {
+      "description": "Timestamp of acknowledgment",
+      "format": "date-time",
+      "type": "string"
+     },
+     "enach_id": {
+      "description": "Mandate ID",
+      "type": "string"
+     },
+     "file_name": {
+      "description": "Acknowledgment file name",
+      "type": "string"
+     },
+     "generated_at": {
+      "description": "Time at which acknowledgment was received",
+      "format": "date-time",
+      "type": "string"
+     },
+     "id": {
+      "description": "Unique ID for acknowledgment",
+      "type": "string"
+     },
+     "message_id": {
+      "description": "Message ID received for acknowledgement",
+      "type": "string"
+     },
+     "original_message_id": {
+      "description": "Original Message ID against which the acknowledged is received",
+      "type": "string"
+     },
+     "reject_code": {
+      "description": "If rejected, this denotes the code",
+      "type": "string"
+     },
+     "reject_reason": {
+      "description": "Descriptive reason in case of rejection",
+      "type": "string"
+     },
+     "umrn": {
+      "description": "UMRN received from bank",
+      "type": "string"
+     },
+     "updated_at": {
+      "description": "Timestamp of last modification of the acknowledgment",
+      "format": "date-time",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "ExternalMandate_Client": {
+    "properties": {
+     "auth_sub_mode": {
+      "description": "In case of API mandate, sub auth mode type",
+      "enum": [
+       "net_banking",
+       "debit",
+       "aadhaar"
+      ],
+      "type": "string"
+     },
+     "bank_details": {
+      "$ref": "#/components/schemas/BankDetails_Client"
+     },
+     "created_at": {
+      "description": "Timestamp at which mandate was created",
+      "format": "date-time",
+      "type": "string"
+     },
+     "id": {
+      "description": "Unique ID to identify mandates provided by Digio.",
+      "type": "string"
+     },
+     "mandate_details": {
+      "$ref": "#/components/schemas/MandateDetails_Client"
+     },
+     "mandate_id": {
+      "description": "Unique ID to identify mandates provided by Digio.",
+      "type": "string"
+     },
+     "mode": {
+      "description": "Mode of mandate authentication",
+      "enum": [
+       "api",
+       "esign",
+       "physical"
+      ],
+      "type": "string"
+     },
+     "npci_auth_failed_error": {
+      "description": "Failure reason if shared by NPCI after rejecting a request at NPCI gateway level",
+      "type": "string"
+     },
+     "npci_auth_reject_reason": {
+      "description": "Failure reason if shared by bank post NPCI gateway acceptence",
+      "type": "string"
+     },
+     "service_provider_details": {
+      "$ref": "#/components/schemas/PublicCorporateConfigData_Client"
+     },
+     "state": {
+      "description": "'partial': \n'signed': \n'expired': \n'auth_success': \n'auth_failed': \n'cancelled': \n'revoked': \n",
+      "enum": [
+       "partial",
+       "complete",
+       "signed",
+       "expired",
+       "auth_success",
+       "auth_failed",
+       "cancelled",
+       "revoked"
+      ],
+      "type": "string"
+     },
+     "sub_user": {
+      "$ref": "#/components/schemas/ExternalSubUser_Client"
+     },
+     "type": {
+      "description": "Use case of mandate",
+      "enum": [
+       "CREATE",
+       "AMEND",
+       "CANCEL"
+      ],
+      "type": "string"
+     },
+     "umrn": {
+      "description": "UMRN of the mandate registered",
+      "type": "string"
+     },
+     "updated_at": {
+      "description": "Last modification timestamp of the mandate",
+      "format": "date-time",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "ExternalResReport_Client": {
+    "description": "List of response received from bank's end",
+    "properties": {
+     "accepted": {
+      "description": "This depicts whether the mandate was accepted or rejected",
+      "type": "boolean"
+     },
+     "created_at": {
+      "description": "Timestamp of response",
+      "format": "date-time",
+      "type": "string"
+     },
+     "dest_bank_id": {
+      "description": "Id of destination bank",
+      "type": "string"
+     },
+     "dest_bank_name": {
+      "description": "Name of destination bank",
+      "type": "string"
+     },
+     "enach_id": {
+      "description": "Mandate ID",
+      "type": "string"
+     },
+     "file_name": {
+      "description": "Response file name",
+      "type": "string"
+     },
+     "generated_at": {
+      "description": "Time at which response was received",
+      "format": "date-time",
+      "type": "string"
+     },
+     "id": {
+      "description": "Unique ID for response",
+      "type": "string"
+     },
+     "message_id": {
+      "description": "Message ID received for response",
+      "type": "string"
+     },
+     "original_message_id": {
+      "description": "Original Message ID against which the response is received",
+      "type": "string"
+     },
+     "reject_code": {
+      "description": "If rejected, this denotes the code",
+      "type": "string"
+     },
+     "reject_reason": {
+      "description": "Descriptive reason in case of rejection",
+      "type": "string"
+     },
+     "umrn": {
+      "description": "UMRN received from bank",
+      "type": "string"
+     },
+     "updated_at": {
+      "description": "Timestamp of last modification of the response",
+      "format": "date-time",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "ExternalSubUser_Client": {
+    "properties": {
+     "email_id": {
+      "description": "Sub-user's email id, if registered",
+      "type": "string"
+     },
+     "id": {
+      "description": "Unique ID for sub-user",
+      "type": "string"
+     },
+     "identifier": {
+      "description": "This denotes what type of identifier was used",
+      "enum": [
+       "email",
+       "mobile",
+       "unknown"
+      ],
+      "type": "string"
+     },
+     "identifier_value": {
+      "description": "Identifier for sub-user, this is generally emailID or mobile number",
+      "type": "string"
+     },
+     "mobile": {
+      "description": "Subuser's mobile number",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "GenericBadRequestResponse_Client": {
+    "properties": {
+     "code": {
+      "description": "Error code",
+      "type": "string"
+     },
+     "details": {
+      "description": "Details about the exception. Usually contains the exception id for reference.",
+      "type": "string"
+     },
+     "message": {
+      "description": "Description of the error",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "MandateDetails_Client": {
+    "description": "Details of mandate",
+    "properties": {
+     "auth_type": {
+      "description": "Mode of authentication used for mandate",
+      "enum": [
+       "api",
+       "esign",
+       "physical",
+       "any",
+       "upi"
+      ],
+      "type": "string"
+     },
+     "authentication_time": {
+      "description": "Timestamp of mandate authentication",
+      "format": "date-time",
+      "type": "string"
+     },
+     "collection_amount": {
+      "description": "For fixed amount mandate, this denotes the amount",
+      "type": "number"
+     },
+     "customer_account_number": {
+      "description": "Masked account number of customer",
+      "type": "string"
+     },
+     "customer_account_type": {
+      "description": "Type of bank account of customer",
+      "enum": [
+       "savings",
+       "current",
+       "other"
+      ],
+      "type": "string"
+     },
+     "customer_email": {
+      "description": "Customer email number",
+      "type": "string"
+     },
+     "customer_identifier": {
+      "description": "Identifier for customer, could be email or mobile number",
+      "type": "string"
+     },
+     "customer_mobile": {
+      "description": "Mobile number of customer",
+      "type": "string"
+     },
+     "customer_name": {
+      "description": "Name of customer",
+      "type": "string"
+     },
+     "customer_ref_number": {
+      "description": "Unique Reference Number identifier the customer",
+      "type": "string"
+     },
+     "destination_bank_id": {
+      "description": "IFSC code of customer's bank account",
+      "type": "string"
+     },
+     "destination_bank_name": {
+      "description": "Name of customer's bank",
+      "type": "string"
+     },
+     "file_name": {
+      "description": "Name of file shared with the bank",
+      "type": "string"
+     },
+     "final_collection_date": {
+      "description": "Date of last debit",
+      "format": "date-time",
+      "type": "string"
+     },
+     "first_collection_date": {
+      "description": "Date of first debit",
+      "format": "date-time",
+      "type": "string"
+     },
+     "frequency": {
+      "description": "In case of recurring mandate, denotes the frequency.",
+      "enum": [
+       "ADHO",
+       "INDA",
+       "DAIL",
+       "WEEK",
+       "MNTH",
+       "QURT",
+       "MIAN",
+       "YEAR",
+       "ONETIME",
+       "BIMN"
+      ],
+      "type": "string"
+     },
+     "is_recurring": {
+      "description": "Denotes whether it is a recurring mandate or not",
+      "type": "boolean"
+     },
+     "maximum_amount": {
+      "description": "Maximum amount that may be collected from the customer's account",
+      "type": "number"
+     },
+     "npci_txn_id": {
+      "description": "Transaction ID in reference to NPCI",
+      "type": "string"
+     },
+     "scheme_ref_number": {
+      "description": "Unique number maintained by Corporate for the reconciliation",
+      "type": "string"
+     },
+     "sponsor_bank_name": {
+      "description": "Name of sponsor's bank account",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "MandateRegistrationCancellationRequest_Client": {
+    "example": {
+     "digio_mandate_id": "ENA220714111111111111J2211111COUP"
+    },
+    "properties": {
+     "dest_ifsc": {
+      "description": "IFSC code of the destincation bank",
+      "type": "string"
+     },
+     "digio_mandate_id": {
+      "description": "ENA id of the mandate",
+      "type": "string"
+     },
+     "reason": {
+      "description": "Cancellation Reason<br>C001: Cancellation on customer request <br>C002: Cancellation on corporate request <br>C003: Account closed or frozen or inoperative <br>C004: Cancelled from bank side",
+      "enum": [
+       "C001",
+       "C002",
+       "C003",
+       "C004"
+      ],
+      "type": "string"
+     },
+     "umrn": {
+      "description": "UMRN of the mandate to be cancelled",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "PublicCorporateConfigData_Client": {
+    "description": "Details of service provider",
+    "properties": {
+     "is_enabled_for_aadhaar_auth": {
+      "description": "It is only applicable for API mandate and it returns true/false. If the sponsor bank supports authentication using aadhaar then it returns true, else it returns false.",
+      "type": "boolean"
+     },
+     "service_provider_name": {
+      "description": "Service provider name",
+      "type": "string"
+     },
+     "service_provider_utility_code": {
+      "description": "Utility code of service provider",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   }
+  },
+  "securitySchemes": {
+   "api_auth": {
+    "in": "header",
+    "scheme": "basic",
+    "type": "http"
+   }
+  }
+ },
+ "info": {
+  "contact": {
+   "email": "support@digio.in"
+  },
+  "description": "Getting started with Digio Rest Apis",
+  "title": "Digio Apis",
+  "x-provenance": "Fetched 2026-10-16 from https://documentation.digio.in/swagger/final_post_registrationCancelForm.json (servers[] replaced with the hosts documented at https://documentation.digio.in/digienvironments/; the published spec ships a localhost placeholder)"
+ },
+ "openapi": "3.0.1",
+ "paths": {
+  "/v3/client/mandate/registration_cancel": {
+   "post": {
+    "description": "This API is used to create a cancellation request for an existing registered mandate",
+    "operationId": "registrationCancelForm",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "examples": {
+        "Digio Mandate ID Based": {
+         "description": "Used when ENACH Id of the mandate is known",
+         "value": {
+          "dest_ifsc": "HDFC0000001",
+          "digio_mandate_id": "ENA210214190221232HW97JVY739IRAP"
+         }
+        },
+        "UMRN Based": {
+         "description": "Used when UMRN is known",
+         "value": {
+          "dest_ifsc": "HDFC0000001",
+          "umrn": "UMRN1679764895832493"
+         }
+        }
+       },
+       "schema": {
+        "$ref": "#/components/schemas/MandateRegistrationCancellationRequest_Client"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ExternalMandate_Client"
+        }
+       }
+      }
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "examples": {
+         "Bad Request": {
+          "description": "Bad Request",
+          "value": {
+           "code": "BAD_REQUEST",
+           "details": "EX23297402937402",
+           "message": "Cancellation not allowed, Umrn not yet available"
+          }
+         }
+        },
+        "schema": {
+         "$ref": "#/components/schemas/GenericBadRequestResponse_Client"
+        }
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "api_auth": []
+     }
+    ],
+    "summary": "Cancel existing registered mandate"
+   }
+  }
+ },
+ "servers": [
+  {
+   "description": "Production",
+   "url": "https://api.digio.in"
+  },
+  {
+   "description": "Sandbox",
+   "url": "https://ext.digio.in:444"
+  }
+ ]
+}

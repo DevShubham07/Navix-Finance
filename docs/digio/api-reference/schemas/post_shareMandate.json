@@ -1,0 +1,132 @@
+{
+ "components": {
+  "schemas": {
+   "GenericBadRequestResponse": {
+    "properties": {
+     "code": {
+      "description": "Error code",
+      "type": "string"
+     },
+     "details": {
+      "description": "Details about the exception. Usually contains the exception id for reference.",
+      "type": "string"
+     },
+     "errors": {
+      "description": "Custom errors",
+      "type": "string"
+     },
+     "message": {
+      "description": "Description of the error",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "GenericSuccessResponse": {
+    "properties": {
+     "success": {
+      "description": "Depicting whether the request failed or not",
+      "type": "boolean"
+     }
+    },
+    "type": "object"
+   },
+   "MandateShareRequest": {
+    "example": {
+     "mandate_id": "ENA181016165754099DFNWW7JIH2LCKJ",
+     "partner_entity_email": "test@bank.com"
+    },
+    "properties": {
+     "mandate_id": {
+      "description": "Mandate ID registered at our end",
+      "type": "string"
+     },
+     "partner_entity_email": {
+      "description": "Email of bank to whom the mandate is to be shared with",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   }
+  },
+  "securitySchemes": {
+   "api_auth": {
+    "in": "header",
+    "scheme": "basic",
+    "type": "http"
+   }
+  }
+ },
+ "info": {
+  "contact": {
+   "email": "support@digio.in"
+  },
+  "description": "Getting started with Digio Rest Apis",
+  "title": "Digio Apis",
+  "x-provenance": "Fetched 2026-10-16 from https://documentation.digio.in/swagger/post_shareMandate.json (servers[] replaced with the hosts documented at https://documentation.digio.in/digienvironments/; the published spec ships a localhost placeholder)"
+ },
+ "openapi": "3.0.1",
+ "paths": {
+  "/v3/client/mandate/share": {
+   "post": {
+    "description": "This API is used to share mandate files directly with bank",
+    "operationId": "shareMandate",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/MandateShareRequest"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/GenericSuccessResponse"
+        }
+       }
+      }
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "examples": {
+         "Bad Request": {
+          "description": "Bad Request",
+          "value": {
+           "code": "BAD_REQUEST",
+           "details": "EX23297402937402",
+           "message": "Cancellation not allowed, Umrn not yet available"
+          }
+         }
+        },
+        "schema": {
+         "$ref": "#/components/schemas/GenericBadRequestResponse"
+        }
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "api_auth": []
+     }
+    ],
+    "summary": "Share Mandate Files"
+   }
+  }
+ },
+ "servers": [
+  {
+   "description": "Production",
+   "url": "https://api.digio.in"
+  },
+  {
+   "description": "Sandbox",
+   "url": "https://ext.digio.in:444"
+  }
+ ]
+}

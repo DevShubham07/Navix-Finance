@@ -1,0 +1,1070 @@
+{
+ "components": {
+  "schemas": {
+   "CorporateDetailsSchema_Client": {
+    "description": "Details of corporate",
+    "properties": {
+     "corporate_account_number": {
+      "description": "Masked account number of the corporate",
+      "type": "string"
+     },
+     "corporate_reference": {
+      "description": "Reference number against the corporate",
+      "type": "string"
+     },
+     "name": {
+      "description": "Name of the corporate",
+      "type": "string"
+     },
+     "sponsor_bank_code": {
+      "description": "Bank code for sponsor bank",
+      "type": "string"
+     },
+     "sponsor_ifsc": {
+      "description": "IFSC code of the sponsor bank",
+      "type": "string"
+     },
+     "utility_code": {
+      "description": "Utility code registered for the corporate",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "CustomerDetailsSchema_Client": {
+    "description": "Details of customer",
+    "properties": {
+     "destination_account_type": {
+      "default": "SAVINGS",
+      "description": "Type of account of the customer",
+      "enum": [
+       "SAVINGS",
+       "CURRENT",
+       "OTHER"
+      ],
+      "type": "string"
+     },
+     "destination_ifsc": {
+      "description": "IFSC code of the bank",
+      "type": "string"
+     },
+     "name": {
+      "description": "Name of the customer",
+      "type": "string"
+     },
+     "user_account_number": {
+      "description": "Masked account number of the customer",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "CustomerDetails_Client": {
+    "properties": {
+     "identifier": {
+      "description": "Unique ID of the customer",
+      "type": "string"
+     },
+     "name": {
+      "description": "Name of the customer",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "ExternalPaymentInflowSettlement_Client": {
+    "properties": {
+     "account_number": {
+      "description": "Account number associated with the settlement",
+      "type": "string"
+     },
+     "consolidation_id": {
+      "description": "Consolidation identifier for the settlement",
+      "type": "string"
+     },
+     "fee1": {
+      "description": "First fee amount deducted from the settlement",
+      "type": "number"
+     },
+     "fee2": {
+      "description": "Second fee amount deducted from the settlement",
+      "type": "number"
+     },
+     "final_amount": {
+      "description": "Final amount after taxes and fees have been deducted",
+      "type": "number"
+     },
+     "settlement_bank_account_name": {
+      "description": "Name of the settlement bank account",
+      "type": "string"
+     },
+     "settlement_bank_txn_ref": {
+      "description": "Bank transaction reference for the settlement",
+      "type": "string"
+     },
+     "status": {
+      "description": "Status of the external settlement",
+      "enum": [
+       "scheduled",
+       "settle_success"
+      ],
+      "type": "string"
+     },
+     "tax1": {
+      "description": "First tax amount deducted from the settlement",
+      "type": "number"
+     },
+     "tax2": {
+      "description": "Second tax amount deducted from the settlement",
+      "type": "number"
+     },
+     "tax3": {
+      "description": "Third tax amount deducted from the settlement",
+      "type": "number"
+     },
+     "total_amount": {
+      "description": "Total amount to be settled",
+      "type": "number"
+     }
+    },
+    "type": "object"
+   },
+   "ExternalSubUser_Client": {
+    "description": "Only present if a sub-user has created the schedule.",
+    "properties": {
+     "email_id": {
+      "description": "Sub-user's email id, if registered",
+      "type": "string"
+     },
+     "id": {
+      "description": "Unique ID for sub-user",
+      "type": "string"
+     },
+     "identifier": {
+      "description": "This denotes what type of identifier was used",
+      "enum": [
+       "email",
+       "mobile",
+       "unknown"
+      ],
+      "type": "string"
+     },
+     "identifier_value": {
+      "description": "Identifier for sub-user, this is generally emailID or mobile number",
+      "type": "string"
+     },
+     "mobile": {
+      "description": "Subuser's mobile number",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "ExternalUpiDebitTxnSchema_Client": {
+    "description": "List of all transactions for the specific UPI schedule plan",
+    "properties": {
+     "created_at": {
+      "description": "Creation timestamp of the transaction",
+      "format": "date-time",
+      "type": "string"
+     },
+     "customer": {
+      "$ref": "#/components/schemas/CustomerDetails_Client"
+     },
+     "details": {
+      "$ref": "#/components/schemas/UpiTxnDetailsSchema_Client"
+     },
+     "digio_utr": {
+      "description": "Digio's unique transaction reference number",
+      "type": "string"
+     },
+     "id": {
+      "description": "Unique identifier for the transaction",
+      "type": "string"
+     },
+     "parent_transaction_id": {
+      "description": "Identifier of the parent transaction, if any",
+      "type": "string"
+     },
+     "settlement_date": {
+      "description": "Date of settlement for the transaction",
+      "format": "date-time",
+      "type": "string"
+     },
+     "settlement_details": {
+      "$ref": "#/components/schemas/ExternalPaymentInflowSettlement_Client"
+     },
+     "settlement_transaction_details": {
+      "description": "List of details for each settlement transaction",
+      "items": {
+       "$ref": "#/components/schemas/TransactionDetails_Client"
+      },
+      "type": "array"
+     },
+     "state": {
+      "description": "State of the transaction",
+      "enum": [
+       "scheduled",
+       "skipped",
+       "notified",
+       "processing",
+       "delayed",
+       "failed",
+       "authenticated",
+       "success"
+      ],
+      "type": "string"
+     },
+     "status_updated_at": {
+      "description": "Timestamp when the transaction status was last updated",
+      "format": "date-time",
+      "type": "string"
+     },
+     "umrn": {
+      "description": "UMRN associated with the transaction",
+      "type": "string"
+     },
+     "updated_at": {
+      "description": "Update timestamp of the transaction",
+      "format": "date-time",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "ExternalUpiMandateSchema_Client": {
+    "description": "Mandate information associated with the scheduled plan",
+    "properties": {
+     "auth_type": {
+      "description": "Authentication type for the mandate",
+      "enum": [
+       "UPI"
+      ],
+      "type": "string"
+     },
+     "authentication_time": {
+      "description": "Timestamp when the mandate was authenticated",
+      "format": "date-time",
+      "type": "string"
+     },
+     "collection_amount": {
+      "description": "Amount to be collected per transaction",
+      "type": "number"
+     },
+     "corporate_config_id": {
+      "description": "Configuration ID for the corporate",
+      "type": "string"
+     },
+     "customer_id": {
+      "description": "Customer ID associated with the mandate",
+      "type": "string"
+     },
+     "customer_identifier": {
+      "description": "Identifier for the customer, such as a phone number",
+      "type": "string"
+     },
+     "customer_name": {
+      "description": "Name of the customer",
+      "type": "string"
+     },
+     "customer_ref_number": {
+      "description": "Reference number of the customer, not present in the provided JSON but assumed to be relevant",
+      "type": "string"
+     },
+     "customer_vpa": {
+      "description": "Virtual Payment Address of the customer",
+      "type": "string"
+     },
+     "debit_account": {
+      "description": "Debit account number",
+      "type": "string"
+     },
+     "debit_ifsc": {
+      "description": "IFSC code of the debit account",
+      "type": "string"
+     },
+     "failure_message": {
+      "description": "Message describing the reason for any failure",
+      "type": "string"
+     },
+     "final_collection_date": {
+      "description": "Date for the final collection attempt",
+      "format": "date-time",
+      "type": "string"
+     },
+     "first_collection_date": {
+      "description": "Date for the first collection attempt",
+      "format": "date-time",
+      "type": "string"
+     },
+     "frequency": {
+      "description": "Frequency of the mandate collection",
+      "enum": [
+       "ADHO",
+       "INDA",
+       "DAIL",
+       "WEEK",
+       "MNTH",
+       "QURT",
+       "MIAN",
+       "YEAR",
+       "ONETIME",
+       "BIMN"
+      ],
+      "type": "string"
+     },
+     "id": {
+      "description": "Unique identifier for the UPI mandate",
+      "type": "string"
+     },
+     "is_recurring": {
+      "default": false,
+      "description": "Indicates if the mandate is for recurring payments",
+      "type": "boolean"
+     },
+     "mandate_type": {
+      "description": "Type of the mandate",
+      "enum": [
+       "CREATE",
+       "AMEND",
+       "CANCEL"
+      ],
+      "type": "string"
+     },
+     "maximum_amount": {
+      "description": "Maximum amount that can be collected",
+      "type": "number"
+     },
+     "merchant_code": {
+      "description": "Merchant code",
+      "type": "string"
+     },
+     "narration": {
+      "description": "Narration for the mandate",
+      "type": "string"
+     },
+     "org_psp_ref_no": {
+      "description": "Reference number provided by the organization's PSP",
+      "type": "string"
+     },
+     "partner_bank_code": {
+      "description": "Bank code of the partner bank",
+      "type": "string"
+     },
+     "scheme_ref_number": {
+      "description": "Reference number of the scheme, not present in the provided JSON but assumed to be relevant",
+      "type": "string"
+     },
+     "service_provider_name": {
+      "description": "Name of the service provider",
+      "type": "string"
+     },
+     "status": {
+      "description": "Current status of the mandate",
+      "enum": [
+       "PARTIAL",
+       "AUTH_FAILED",
+       "AUTH_SUCCESS",
+       "REGISTER_FAILED",
+       "REGISTER_SUCCESS",
+       "PAUSED",
+       "CANCELLED",
+       "EXPIRED",
+       "REVOKED"
+      ],
+      "type": "string"
+     },
+     "umrn": {
+      "description": "Unique Mandate Reference Number",
+      "type": "string"
+     },
+     "updated_at": {
+      "description": "Timestamp of the last update to the mandate",
+      "format": "date-time",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "ExternalUpiScheduledPlanSchema_Client": {
+    "properties": {
+     "corporate": {
+      "$ref": "#/components/schemas/CorporateDetailsSchema_Client"
+     },
+     "created_at": {
+      "description": "Timestamp when the scheduled plan was created",
+      "format": "date-time",
+      "type": "string"
+     },
+     "customer": {
+      "$ref": "#/components/schemas/CustomerDetailsSchema_Client"
+     },
+     "details": {
+      "$ref": "#/components/schemas/UpiSchedulePlanDetails_Client"
+     },
+     "id": {
+      "description": "Unique identifier for the UPI scheduled plan",
+      "type": "string"
+     },
+     "last_transaction": {
+      "$ref": "#/components/schemas/ExternalUpiDebitTxnSchema_Client"
+     },
+     "mandate": {
+      "$ref": "#/components/schemas/ExternalUpiMandateSchema_Client"
+     },
+     "status": {
+      "description": "Current status of the scheduled payment",
+      "enum": [
+       "ACTIVE",
+       "CANCELLED",
+       "PAUSED",
+       "COMPLETED"
+      ],
+      "type": "string"
+     },
+     "sub_user": {
+      "$ref": "#/components/schemas/ExternalSubUser_Client"
+     },
+     "transactions": {
+      "description": "List of all transactions for the specific UPI schedule plan",
+      "items": {
+       "$ref": "#/components/schemas/ExternalUpiDebitTxnSchema_Client"
+      },
+      "type": "array"
+     },
+     "umrn": {
+      "description": "Unique Mandate Reference Number for the scheduled plan",
+      "type": "string"
+     },
+     "upcoming_transaction": {
+      "$ref": "#/components/schemas/ExternalUpiDebitTxnSchema_Client"
+     },
+     "updated_at": {
+      "description": "Timestamp when the scheduled plan was last updated",
+      "format": "date-time",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "GenericBadRequestResponse_Client": {
+    "properties": {
+     "code": {
+      "description": "Error code",
+      "type": "string"
+     },
+     "details": {
+      "description": "Details about the exception. Usually contains the exception id for reference.",
+      "type": "string"
+     },
+     "errors": {
+      "description": "Custom errors",
+      "type": "string"
+     },
+     "message": {
+      "description": "Description of the error",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "SplitSettlementInfo_Client": {
+    "description": "Any one of corporate_account_number or settlement_config_profile_id or split_settlement_info is required.",
+    "properties": {
+     "settlement_account_number": {
+      "description": "Bank Account Number",
+      "type": "string"
+     },
+     "split_amount_in_paise": {
+      "description": "Amount to be settled in paise",
+      "format": "int32",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "split_amount_in_paise"
+    ],
+    "type": "object"
+   },
+   "TransactionDetails_Client": {
+    "properties": {
+     "account_number": {
+      "description": "Account number associated with the transaction",
+      "type": "string"
+     },
+     "amount_in_paise": {
+      "description": "Amount in paise of the debit transaction",
+      "format": "int64",
+      "type": "integer"
+     },
+     "settlement_date": {
+      "description": "Date and time when the settlement was processed",
+      "format": "date-time",
+      "type": "string"
+     },
+     "settlement_utr_number": {
+      "description": "Unique Reference Number for the settlement",
+      "type": "string"
+     },
+     "txn_id": {
+      "description": "Transaction ID of the debit transaction",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "UpiMandateExtendedDetail_Client": {
+    "properties": {
+     "amount": {
+      "type": "number"
+     },
+     "amountType": {
+      "enum": [
+       "fixed",
+       "maximum"
+      ],
+      "type": "string"
+     },
+     "authenticationTime": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "corporateConfigId": {
+      "type": "string"
+     },
+     "customerAccountNumber": {
+      "type": "string"
+     },
+     "customerAccountType": {
+      "enum": [
+       "savings",
+       "current",
+       "cc",
+       "sb_nre",
+       "sb_nro",
+       "other"
+      ],
+      "type": "string"
+     },
+     "customerName": {
+      "type": "string"
+     },
+     "customerRefNumber": {
+      "type": "string"
+     },
+     "customerVpa": {
+      "type": "string"
+     },
+     "destinationBankIfsc": {
+      "type": "string"
+     },
+     "digioEnachId": {
+      "type": "string"
+     },
+     "frequency": {
+      "enum": [
+       "ADHO",
+       "INDA",
+       "DAIL",
+       "WEEK",
+       "MNTH",
+       "QURT",
+       "MIAN",
+       "YEAR",
+       "ONETIME",
+       "BIMN"
+      ],
+      "type": "string"
+     },
+     "id": {
+      "type": "string"
+     },
+     "identifier": {
+      "type": "string"
+     },
+     "mandateEndDate": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "mandateRequestId": {
+      "type": "string"
+     },
+     "mandateStartDate": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "merchantCategoryCode": {
+      "type": "string"
+     },
+     "narration": {
+      "type": "string"
+     },
+     "ownerId": {
+      "type": "string"
+     },
+     "partnerBank": {
+      "enum": [
+       "KOTAK",
+       "YESB",
+       "JUSPAY_KOTAK",
+       "MGS_YESB"
+      ],
+      "type": "string"
+     },
+     "schemeRefNumber": {
+      "type": "string"
+     },
+     "serviceProviderName": {
+      "type": "string"
+     },
+     "sponsorBankCode": {
+      "enum": [
+       "KOTAK",
+       "YESB",
+       "JUSPAY_KOTAK",
+       "MGS_YESB"
+      ],
+      "type": "string"
+     },
+     "status": {
+      "enum": [
+       "authenticated",
+       "register_failed",
+       "register_success",
+       "paused",
+       "revoke_initiated",
+       "cancelled",
+       "expired",
+       "revoked"
+      ],
+      "type": "string"
+     },
+     "statusUpdatedAt": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "subUserId": {
+      "type": "string"
+     },
+     "umrn": {
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "UpiSchedulePlanDetails_Client": {
+    "properties": {
+     "amount_in_paise": {
+      "description": "Amount to be paid in paise",
+      "format": "int32",
+      "type": "integer"
+     },
+     "client_ref_id": {
+      "description": "Client reference ID for identification",
+      "type": "string"
+     },
+     "ended_at": {
+      "description": "Date when the schedule ended",
+      "format": "date-time",
+      "type": "string"
+     },
+     "first_proposed_settlement_date": {
+      "description": "Date for the first proposed settlement",
+      "format": "date-time",
+      "type": "string"
+     },
+     "frequency": {
+      "description": "Frequency of subscription payments",
+      "enum": [
+       "onetime",
+       "adhoc",
+       "intraday",
+       "daily",
+       "weekly",
+       "monthly",
+       "quarterly",
+       "semiannually",
+       "yearly",
+       "bimonthly"
+      ],
+      "type": "string"
+     },
+     "last_presented_at": {
+      "description": "Date when the last payment was presented",
+      "format": "date-time",
+      "type": "string"
+     },
+     "last_presented_settlement_date": {
+      "description": "Date of the last presented settlement",
+      "format": "date-time",
+      "type": "string"
+     },
+     "mandate_id": {
+      "description": "Mandate ID associated with the payment schedule",
+      "type": "string"
+     },
+     "narration": {
+      "description": "Narration or description of the payment schedule",
+      "type": "string"
+     },
+     "next_present_at": {
+      "description": "Date when the next payment should be presented",
+      "format": "date-time",
+      "type": "string"
+     },
+     "next_scheduled_settlement_date": {
+      "description": "Date for the next scheduled settlement",
+      "format": "date-time",
+      "type": "string"
+     },
+     "paid_count": {
+      "default": 0,
+      "description": "Number of payments already made",
+      "format": "int32",
+      "type": "integer"
+     },
+     "payment_count": {
+      "description": "Total number of payments to be made",
+      "format": "int32",
+      "type": "integer"
+     },
+     "txn_reference": {
+      "description": "Transaction reference",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "UpiScheduledPlanCreateRequest_Client": {
+    "properties": {
+     "amount": {
+      "description": "Either  of amount or amount_in_paise is mandatory.",
+      "type": "number"
+     },
+     "amount_in_paise": {
+      "description": "Either  of amount or amount_in_paise is mandatory",
+      "format": "int32",
+      "type": "integer"
+     },
+     "corporate_account_number": {
+      "description": "Any one of corporate_account_number or settlement_config_profile_id or split_settlement_info is required. All numeric",
+      "maxLength": 18,
+      "minLength": 8,
+      "type": "string"
+     },
+     "frequency": {
+      "default": "ONETIME",
+      "enum": [
+       "onetime",
+       "adhoc",
+       "intraday",
+       "daily",
+       "weekly",
+       "monthly",
+       "quarterly",
+       "semiannually",
+       "yearly",
+       "bimonthly"
+      ],
+      "type": "string"
+     },
+     "narration": {
+      "description": " Default: Enterprise name",
+      "maxLength": 20,
+      "minLength": 1,
+      "type": "string"
+     },
+     "optional_attr": {
+      "$ref": "#/components/schemas/UpiTxnOptionalAttr_Client"
+     },
+     "payment_count": {
+      "default": 1,
+      "description": "Should be non-negative and >= 1.  payment_count has to be one if frequency is ONETIME",
+      "format": "int32",
+      "type": "integer"
+     },
+     "settlement_config_profile_id": {
+      "description": "Config of settlement, if already predefined. Any one of corporate_account_number or settlement_config_profile_id or split_settlement_info is required.",
+      "type": "string"
+     },
+     "settlement_date": {
+      "description": "Date for Settlement in yyyy-mm-dd hh:mm:ss\n\nDefault: \n(i) first_collection_date as provided in registered mandate\nOR\n(ii) current date\nNote : Settlement Date should be more than 26 hours from current time\n",
+      "format": "date-time",
+      "type": "string"
+     },
+     "split_settlement_info": {
+      "description": "Any one of corporate_account_number or settlement_config_profile_id or split_settlement_info is required.",
+      "items": {
+       "$ref": "#/components/schemas/SplitSettlementInfo_Client"
+      },
+      "maxItems": 10,
+      "minItems": 2,
+      "type": "array"
+     },
+     "sub_user_identifier": {
+      "description": "Set value to assign it to a sub-user",
+      "type": "string"
+     },
+     "umrn": {
+      "description": "Mandate UMRN created upon successful registration of Mandate",
+      "type": "string"
+     },
+     "unique_key": {
+      "description": "To be used for Corporate\u2019s reference.\nDefault: <umrn>_<count>\nex: <umrn>_1, <umrn>_2\nAllowed chars: a-zA-Z.0-9_\nNote : It should be unique for each created debit.\n",
+      "maxLength": 30,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9-_]*$",
+      "type": "string"
+     },
+     "upi_mandate_extended_detail": {
+      "$ref": "#/components/schemas/UpiMandateExtendedDetail_Client"
+     }
+    },
+    "required": [
+     "frequency",
+     "umrn"
+    ],
+    "type": "object"
+   },
+   "UpiTxnDetailsSchema_Client": {
+    "description": "Detailed information about the UPI transaction",
+    "properties": {
+     "amount": {
+      "description": "Transaction amount in standard currency units",
+      "format": "double",
+      "type": "number"
+     },
+     "amount_in_paise": {
+      "description": "Transaction amount in the smallest currency units (e.g., paise)",
+      "format": "int32",
+      "type": "integer"
+     },
+     "customer_vpa": {
+      "description": "Virtual Payment Address of the customer, if applicable",
+      "type": "string"
+     },
+     "failure_code": {
+      "description": "Code indicating the reason for transaction failure, if applicable",
+      "type": "string"
+     },
+     "failure_reason": {
+      "description": "Description of the reason for transaction failure, if applicable",
+      "type": "string"
+     },
+     "ready_to_process_at": {
+      "description": "Timestamp indicating when the transaction is ready to be processed",
+      "format": "date-time",
+      "type": "string"
+     },
+     "settlement_desc": {
+      "description": "Description of the settlement",
+      "type": "string"
+     },
+     "sponsor_bank_id": {
+      "description": "Identifier for the sponsor bank",
+      "type": "string"
+     },
+     "status": {
+      "description": "Status of the NACH payment transaction",
+      "enum": [
+       "new",
+       "ready_to_send",
+       "skipped",
+       "notify_initiated",
+       "notified",
+       "ready_to_debit",
+       "debit_sequenced",
+       "cancelled",
+       "approved",
+       "debit_initiated",
+       "submitted_to_bank",
+       "digio_technical_error",
+       "accepted_spo_bank",
+       "reject_spo_bank",
+       "payment_delayed",
+       "payment_authenticated",
+       "payment_failed",
+       "payment_success"
+      ],
+      "type": "string"
+     },
+     "txn_ref": {
+      "description": "Reference number for the transaction",
+      "type": "string"
+     },
+     "type": {
+      "description": "Type of the transaction",
+      "enum": [
+       "nach_debit",
+       "upi",
+       "payment_link",
+       "upi_debit"
+      ],
+      "type": "string"
+     },
+     "utr": {
+      "description": "Unique Transaction Reference number for the transaction",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "UpiTxnOptionalAttr_Client": {
+    "description": "Please refer below for the additional attributes, that should only be passed by Mutual Fund use case customers",
+    "properties": {
+     "client_id": {
+      "description": "UCC for the said Client.",
+      "type": "string"
+     },
+     "member_id": {
+      "description": "Member ID for whom the PA/ Bank is uploading the file",
+      "type": "string"
+     },
+     "order_id": {
+      "description": "Pass the Order Number for this SIP order",
+      "pattern": "^[A-Za-z0-9]*$",
+      "type": "string"
+     },
+     "pg_bank_ref_number": {
+      "description": "Unique reference number provided by the member for payment to be collected for a unique client.",
+      "type": "string"
+     },
+     "txn_type": {
+      "description": "Type of transaction",
+      "type": "string"
+     }
+    },
+    "required": [
+     "member_id"
+    ],
+    "type": "object"
+   }
+  },
+  "securitySchemes": {
+   "api_auth": {
+    "in": "header",
+    "scheme": "basic",
+    "type": "http"
+   }
+  }
+ },
+ "info": {
+  "contact": {
+   "email": "support@digio.in"
+  },
+  "description": "Getting started with Digio Rest Apis",
+  "title": "Digio Apis",
+  "x-provenance": "Fetched 2026-10-16 from https://documentation.digio.in/swagger/post_createUpiScheduledPlan.json (servers[] replaced with documented hosts)"
+ },
+ "openapi": "3.0.1",
+ "paths": {
+  "/v3/client/upi_payment/scheduled/register": {
+   "post": {
+    "description": "This API is used to create schedule plan for a single UMRN",
+    "operationId": "createUpiScheduledPlan",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UpiScheduledPlanCreateRequest_Client"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "examples": {
+         "Success Request": {
+          "description": "Success Request",
+          "value": {
+           "corporate": {
+            "corporate_account_number": "xxxxxxxx6789",
+            "corporate_reference": "abc123",
+            "name": "Digio tech",
+            "sponsor_bank_code": "YESB",
+            "sponsor_ifsc": "YESB0000000",
+            "utility_code": "NACH00000000000000"
+           },
+           "created_at": "2019-04-15 16:30:21",
+           "customer": {
+            "destination_account_type": "savings",
+            "destination_ifsc": "HDFC0000000",
+            "name": "XYZ",
+            "user_account_number": "xxxxxxxx6321"
+           },
+           "details": {
+            "amount_in_paise": 150,
+            "client_ref_id": "10b3ab554e0e40bfbff7843d4743fe63@upi-34",
+            "first_proposed_settlement_date": "2019-04-15 16:30:21",
+            "frequency": "monthly",
+            "narration": "Digio tech",
+            "next_present_at": "2019-04-15 16:30:21",
+            "next_scheduled_settlement_date": "2019-04-16 00:00:00",
+            "paid_count": 0,
+            "payment_count": 2,
+            "present_settlement_before_days": 10
+           },
+           "id": "NSP19045555444433ANCDE8QQ3ABC4P",
+           "partner": {
+            "identifier": "test@bank.com",
+            "name": "Test Bank"
+           },
+           "sponsor_bank_name": "Test Bank",
+           "status": "active",
+           "umrn": "UMRN4444333322221111",
+           "upcoming_transaction": {
+            "present_at": "2019-04-15 16:30:21",
+            "scheduled_settlement_date": "2019-04-16 00:00:00",
+            "state": "scheduled"
+           }
+          }
+         }
+        },
+        "schema": {
+         "$ref": "#/components/schemas/ExternalUpiScheduledPlanSchema_Client"
+        }
+       }
+      }
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "examples": {
+         "Bad Request": {
+          "description": "Bad Request",
+          "value": {
+           "code": "REQUEST_VALIDATION_FAILED",
+           "details": "EX23297402937402",
+           "message": "destination_bank_id can not be null"
+          }
+         }
+        },
+        "schema": {
+         "$ref": "#/components/schemas/GenericBadRequestResponse_Client"
+        }
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "api_auth": []
+     }
+    ],
+    "summary": "Create presentation for a single UMRN"
+   }
+  }
+ },
+ "servers": [
+  {
+   "description": "Production",
+   "url": "https://api.digio.in"
+  },
+  {
+   "description": "Sandbox",
+   "url": "https://ext.digio.in:444"
+  }
+ ]
+}

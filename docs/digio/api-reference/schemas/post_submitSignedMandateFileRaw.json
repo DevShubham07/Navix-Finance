@@ -1,0 +1,141 @@
+{
+ "components": {
+  "schemas": {
+   "GenericBadRequestResponse": {
+    "properties": {
+     "code": {
+      "description": "Error code",
+      "type": "string"
+     },
+     "details": {
+      "description": "Details about the exception. Usually contains the exception id for reference.",
+      "type": "string"
+     },
+     "errors": {
+      "description": "Custom errors",
+      "type": "string"
+     },
+     "message": {
+      "description": "Description of the error",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "GenericSuccessResponse": {
+    "properties": {
+     "success": {
+      "description": "Depicting whether the request failed or not",
+      "type": "boolean"
+     }
+    },
+    "type": "object"
+   },
+   "PhysicalMandateSignedUploadRequest": {
+    "example": {
+     "file_data": "UGxlYXNlIHVzZSBhIEpQRUcgb3IgUE5HIGltYWdlLiBUaGlzIGlzIGp1c3QgYSBzYW1wbGUuIA==",
+     "id": "ENA181016165754099DFNWW7JIH2LCKJ"
+    },
+    "properties": {
+     "file_data": {
+      "description": "Base64 Encoded image",
+      "type": "string"
+     },
+     "id": {
+      "description": "Physical mandate id",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   }
+  },
+  "securitySchemes": {
+   "api_auth": {
+    "in": "header",
+    "scheme": "basic",
+    "type": "http"
+   }
+  }
+ },
+ "info": {
+  "contact": {
+   "email": "support@digio.in"
+  },
+  "description": "Getting started with Digio Rest Apis",
+  "title": "Digio Apis",
+  "x-provenance": "Fetched 2026-10-16 from https://documentation.digio.in/swagger/post_submitSignedMandateFileRaw.json (servers[] replaced with the hosts documented at https://documentation.digio.in/digienvironments/; the published spec ships a localhost placeholder)"
+ },
+ "openapi": "3.0.1",
+ "paths": {
+  "/v3/client/mandate/submit_signed_mandate_raw": {
+   "post": {
+    "description": "This API is used to Submit signed scanned image of NACH form",
+    "operationId": "submitSignedMandateFileRaw",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "is_cropped",
+      "schema": {
+       "type": "boolean"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PhysicalMandateSignedUploadRequest"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/GenericSuccessResponse"
+        }
+       }
+      }
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "examples": {
+         "Bad Request": {
+          "description": "Bad Request",
+          "value": {
+           "code": "ENTITY_NOT_FOUND",
+           "details": "EX23297402937402",
+           "message": "Entity not found for this id"
+          }
+         }
+        },
+        "schema": {
+         "$ref": "#/components/schemas/GenericBadRequestResponse"
+        }
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "api_auth": []
+     }
+    ],
+    "summary": "Submit Scanned Image RAW [Physical NACH]"
+   }
+  }
+ },
+ "servers": [
+  {
+   "description": "Production",
+   "url": "https://api.digio.in"
+  },
+  {
+   "description": "Sandbox",
+   "url": "https://ext.digio.in:444"
+  }
+ ]
+}

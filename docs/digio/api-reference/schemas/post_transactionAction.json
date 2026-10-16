@@ -1,0 +1,296 @@
+{
+ "components": {
+  "schemas": {
+   "CustomerDetailsSchema_Client": {
+    "description": "Details of customer",
+    "properties": {
+     "destination_account_type": {
+      "default": "SAVINGS",
+      "description": "Type of account of the customer",
+      "enum": [
+       "SAVINGS",
+       "CURRENT",
+       "OTHER"
+      ],
+      "type": "string"
+     },
+     "destination_ifsc": {
+      "description": "IFSC code of the bank",
+      "type": "string"
+     },
+     "name": {
+      "description": "Name of the customer",
+      "type": "string"
+     },
+     "user_account_number": {
+      "description": "Masked account number of the customer",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "ExternalNachDebitTxnOnGetSchema_Client": {
+    "description": "Details of the last transaction",
+    "properties": {
+     "created_at": {
+      "description": "Creation timestamp of the last transaction",
+      "format": "date-time",
+      "type": "string"
+     },
+     "customer": {
+      "$ref": "#/components/schemas/CustomerDetailsSchema_Client"
+     },
+     "details": {
+      "$ref": "#/components/schemas/TxnDetailsSchema_Client"
+     },
+     "id": {
+      "description": "ID of the last transaction",
+      "type": "string"
+     },
+     "state": {
+      "description": "State of the last transaction",
+      "type": "string"
+     },
+     "status_updated_at": {
+      "description": "Timestamp when the status was last updated",
+      "format": "date-time",
+      "type": "string"
+     },
+     "umrn": {
+      "description": "UMRN of the last transaction",
+      "type": "string"
+     },
+     "updated_at": {
+      "description": "Last update timestamp of the last transaction",
+      "format": "date-time",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "GenericBadRequestResponse_Client": {
+    "properties": {
+     "code": {
+      "description": "Error code",
+      "type": "string"
+     },
+     "details": {
+      "description": "Details about the exception. Usually contains the exception id for reference.",
+      "type": "string"
+     },
+     "errors": {
+      "description": "Custom errors",
+      "type": "string"
+     },
+     "message": {
+      "description": "Description of the error",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "NDTransactionActionRequest_Client": {
+    "example": {
+     "action": "reattempt",
+     "transaction_id": "NPT190411112222650HDAAAADZ4TRZ"
+    },
+    "properties": {
+     "action": {
+      "description": "Action to be performed on the transaction. Use case: <br>cancel (allowed only before initiation)<br>reattempt (allowed only after failure) - Incase of failure of an earlier mandate\n",
+      "enum": [
+       "cancel",
+       "reattempt",
+       "update",
+       "approve"
+      ],
+      "type": "string"
+     },
+     "transaction_id": {
+      "description": "Transaction id i.e. NPT id which refers to the specific transaction against a schedule.",
+      "type": "string"
+     }
+    },
+    "required": [
+     "action",
+     "transaction_id"
+    ],
+    "type": "object"
+   },
+   "TxnDetailsSchema_Client": {
+    "description": "Detailed information about the last transaction",
+    "properties": {
+     "amount": {
+      "description": "Transaction amount in standard currency units",
+      "format": "double",
+      "type": "number"
+     },
+     "amount_in_paise": {
+      "description": "Transaction amount in the smallest currency units (e.g., paise)",
+      "format": "int32",
+      "type": "integer"
+     },
+     "customer_vpa": {
+      "description": "Virtual Payment Address of the customer, if applicable",
+      "type": "string"
+     },
+     "failure_code": {
+      "description": "Code indicating the reason for transaction failure, if applicable",
+      "type": "string"
+     },
+     "failure_reason": {
+      "description": "Description of the reason for transaction failure, if applicable",
+      "type": "string"
+     },
+     "ready_to_process_at": {
+      "description": "Timestamp indicating when the transaction is ready to be processed",
+      "format": "date-time",
+      "type": "string"
+     },
+     "settlement_desc": {
+      "description": "Description of the settlement",
+      "type": "string"
+     },
+     "sponsor_bank_id": {
+      "description": "Identifier for the sponsor bank",
+      "type": "string"
+     },
+     "status": {
+      "description": "Status of the NACH payment transaction",
+      "enum": [
+       "NEW",
+       "READY_TO_SEND",
+       "SKIPPED",
+       "CANCELLED",
+       "SUBMITTED_TO_BANK",
+       "DIGIO_TECHNICAL_ERROR",
+       "ACCEPTED_SPO_BANK",
+       "REJECT_SPO_BANK",
+       "PAYMENT_DELAYED",
+       "PAYMENT_AUTHENTICATED",
+       "PAYMENT_FAILED",
+       "PAYMENT_SUCCESS"
+      ],
+      "type": "string"
+     },
+     "txn_ref": {
+      "description": "Reference number for the transaction",
+      "type": "string"
+     },
+     "type": {
+      "description": "Type of the transaction",
+      "enum": [
+       "NACH_DEBIT"
+      ],
+      "type": "string"
+     },
+     "utr": {
+      "description": "Unique Transaction Reference number for the transaction",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   }
+  },
+  "securitySchemes": {
+   "api_auth": {
+    "in": "header",
+    "scheme": "basic",
+    "type": "http"
+   }
+  }
+ },
+ "info": {
+  "contact": {
+   "email": "support@digio.in"
+  },
+  "description": "Getting started with Digio Rest Apis",
+  "title": "Digio Apis",
+  "x-provenance": "Fetched 2026-10-16 from https://documentation.digio.in/swagger/post_transactionAction.json (servers[] replaced with the hosts documented at https://documentation.digio.in/digienvironments/; the published spec ships a localhost placeholder)"
+ },
+ "openapi": "3.0.1",
+ "paths": {
+  "/v3/client/nach_debit/transaction/action": {
+   "post": {
+    "description": "This API is used to cancel/reattempt a single transaction",
+    "operationId": "transactionAction",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/NDTransactionActionRequest_Client"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "examples": {
+         "Success Request": {
+          "description": "Success Request",
+          "value": {
+           "created_at": "2019-04-15 16:47:18",
+           "customer": {
+            "name": "devesh"
+           },
+           "details": {
+            "amount": 1.5,
+            "amount_in_paise": 150,
+            "ready_to_process_at": "2019-04-15 00:00:00",
+            "sponsor_bank_id": "YESB0000000",
+            "status": "new"
+           },
+           "id": "NPT1904111122223333BCBDQIQ4HAB",
+           "state": "scheduled",
+           "status_updated_at": "2019-04-15 16:47:18",
+           "umrn": "UMRN4444333322221111"
+          }
+         }
+        },
+        "schema": {
+         "$ref": "#/components/schemas/ExternalNachDebitTxnOnGetSchema_Client"
+        }
+       }
+      }
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "examples": {
+         "Bad Request": {
+          "description": "Bad Request",
+          "value": {
+           "code": "ACTION_NOT_ALLOWED_IN_CURRENT_STATE",
+           "details": "EX23297402937402",
+           "message": "Requested action not allowed in current entity state"
+          }
+         }
+        },
+        "schema": {
+         "$ref": "#/components/schemas/GenericBadRequestResponse_Client"
+        }
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "api_auth": []
+     }
+    ],
+    "summary": "Transaction Action"
+   }
+  }
+ },
+ "servers": [
+  {
+   "description": "Production",
+   "url": "https://api.digio.in"
+  },
+  {
+   "description": "Sandbox",
+   "url": "https://ext.digio.in:444"
+  }
+ ]
+}

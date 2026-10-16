@@ -1,0 +1,405 @@
+{
+ "components": {
+  "schemas": {
+   "AmendExternalMandateSchema_Client": {
+    "properties": {
+     "authentication_url": {
+      "description": "If include_authentication_url was true in the request object then this object is populated.",
+      "type": "string"
+     },
+     "bank_details": {
+      "$ref": "#/components/schemas/CreateMandateBankDetailsSchema_Client"
+     },
+     "created_at": {
+      "description": "Timestamp of when the request was create at",
+      "format": "date-time",
+      "type": "string"
+     },
+     "id": {
+      "description": "Unique ID to identify mandates provided by Digio.",
+      "type": "string"
+     },
+     "mandate_id": {
+      "description": "Unique ID to identify mandates provided by Digio.",
+      "type": "string"
+     },
+     "mode": {
+      "description": "Authentication mode for mandate.",
+      "enum": [
+       "API",
+       "ESIGN",
+       "PHYSICAL"
+      ],
+      "type": "string"
+     },
+     "service_provider_details": {
+      "$ref": "#/components/schemas/PublicCorporateConfigData_Client"
+     },
+     "state": {
+      "description": "This depicts the current state of mandate",
+      "enum": [
+       "partial",
+       "signed",
+       "expired",
+       "auth_success",
+       "auth_failed",
+       "cancelled",
+       "revoked"
+      ],
+      "type": "string"
+     },
+     "sub_user": {
+      "$ref": "#/components/schemas/ExternalSubUserSchema_Client"
+     },
+     "type": {
+      "description": "The type for mandate which was requested",
+      "enum": [
+       "AMEND"
+      ],
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "AmendMandateMetaSchema_Client": {
+    "description": "Data attributes of mandate.",
+    "properties": {
+     "amendment_reason": {
+      "description": "Reason for amendment<br>A001: On Customer Request<br>M036: Represent with CBS account number",
+      "enum": [
+       "A001",
+       "M036"
+      ],
+      "type": "string"
+     },
+     "collection_amount": {
+      "description": "This is for fixed amount mandate EMI amount eg: 5500.50<br>Note: Mandate amount limit is 1,00,00,000 for physical/API/Esign mandate variant as per Circular No. NACH/2023-24/NACH/003 w.e.f. 15 Sep, 2023<br>Either of collection_amount or maximum_amount is mandatory<br>",
+      "maximum": 10000000,
+      "minimum": 1,
+      "type": "number"
+     },
+     "final_collection_date": {
+      "description": "Date for Last Debit in yyyy-mm-dd<br>Maximum allowed limit for final_collection_date is 40 yrs .<br><br>Note: If Final collection date is not passed then DIGIO will set this to default 40 yrs <br>",
+      "format": "date-time",
+      "type": "string"
+     },
+     "first_collection_date": {
+      "description": "Date for First Debit in yyyy-mm-dd ; means the date from which you want the mandate to be registered",
+      "format": "date-time",
+      "type": "string"
+     },
+     "frequency": {
+      "description": "If is_recurring : true, pass debit frequency. <br>Note: Choose one from below, commensurate with your use case category (management category) eg: L001 (Loan Installment should have a defined frequency that is commensurate with the EMI schedule agreed upon with the customer eg: Monthly). Incorrect frequency passed for a management category, may lead to mandate registration failure and is at the destination bank's discretion.",
+      "enum": [
+       "Adhoc",
+       "IntraDay",
+       "Daily",
+       "Weekly",
+       "Monthly",
+       "BiMonthly",
+       "Quarterly",
+       "Semiannually",
+       "Yearly"
+      ],
+      "type": "string"
+     },
+     "maximum_amount": {
+      "description": "Maximum amount that may be collected from the customer's account, per instruction eg: 5500.50<br>Note: Mandate amount limit is 1,00,00,000 for physical/API/Esign mandate variant as per Circular No. NACH/2023-24/NACH/003 w.e.f. 15 Sep, 2023<br>Either of collection_amount or maximum_amount is mandatory<br>",
+      "maximum": 10000000,
+      "minimum": 1,
+      "type": "number"
+     },
+     "original_mandate_id": {
+      "description": "UMRN of the original mandate",
+      "maxLength": 20,
+      "minLength": 20,
+      "type": "string"
+     }
+    },
+    "required": [
+     "amendment_reason",
+     "collection_amount",
+     "customer_account_number",
+     "customer_account_type",
+     "customer_name",
+     "first_collection_date",
+     "frequency",
+     "is_recurring",
+     "management_category",
+     "maximum_amount",
+     "original_mandate_id"
+    ],
+    "type": "object"
+   },
+   "CreateMandateBankDetailsSchema_Client": {
+    "description": "Details with the bank",
+    "properties": {
+     "bank_name": {
+      "description": "Name of the Bank",
+      "type": "string"
+     },
+     "shared_with_bank": {
+      "description": "Bank Email ID",
+      "type": "string"
+     },
+     "state": {
+      "description": "State with the bank",
+      "enum": [
+       "SIGNED",
+       "TRANSFER_FAILED",
+       "TRANSFER_SUCCESS",
+       "REJECT_SPO_BANK",
+       "ACCEPTED_SPO_BANK",
+       "AWAITING_ACK",
+       "NACK_RECEIVED",
+       "ACK_RECEIVED",
+       "AWAITING_RES",
+       "REGISTER_FAILED",
+       "REGISTER_SUCCESS",
+       "REVOKED"
+      ],
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "ExternalSubUserSchema_Client": {
+    "description": "Sub user details, if the request was containing sub-user identifier.",
+    "properties": {
+     "email_id": {
+      "description": "Sub-user's email id if registered.",
+      "type": "string"
+     },
+     "id": {
+      "description": "Sub-user id",
+      "type": "string"
+     },
+     "identifier": {
+      "description": "Type of identifier",
+      "enum": [
+       "EMAIL",
+       "MOBILE"
+      ],
+      "type": "string"
+     },
+     "identifier_value": {
+      "description": "Identifier used for sub-user",
+      "type": "string"
+     },
+     "mobile": {
+      "description": "Sub-user's mobile number",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "GenericBadRequestResponse_Client": {
+    "properties": {
+     "code": {
+      "description": "Error code",
+      "type": "string"
+     },
+     "details": {
+      "description": "Details about the exception. Usually contains the exception id for reference.",
+      "type": "string"
+     },
+     "message": {
+      "description": "Description of the error",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "MandateAmendFormRequestSchema_Client": {
+    "example": {
+     "auth_mode": "api",
+     "corporate_config_id": "TSE200929002036010ELLHEF2XKF9GSK",
+     "customer_identifier": "arunabh@digio.in",
+     "mandate_data": {
+      "first_collection_date": "2023-10-27",
+      "management_category": "U001",
+      "maximum_amount": "1",
+      "original_mandate_id": "UMRN3712542337772711",
+      "sponsor_bank_id": "YESB0000070"
+     },
+     "mandate_type": "amend"
+    },
+    "properties": {
+     "auth_mode": {
+      "description": "Authentication mode for mandate.",
+      "enum": [
+       "API",
+       "ESIGN",
+       "PHYSICAL"
+      ],
+      "type": "string"
+     },
+     "corporate_config_id": {
+      "description": "Corporate profile created from dashboard has below info and is auto populated during user authentication.<br>Utility Code<br>Service provider name<br>Sponsor bank name<br>Sponsor bank <br>Sponsor bank ifsc<br>",
+      "type": "string"
+     },
+     "customer_identifier": {
+      "description": "User email or mobile",
+      "type": "string"
+     },
+     "expire_in_days": {
+      "default": 10,
+      "description": "Please pass this value to allow the end user to be able to submit the mandate image (in case of physical mandate) or perform eSign authentication within \u2018X\u2019 days. X you can pass as the value.<br>",
+      "format": "int32",
+      "maximum": 90,
+      "minimum": 1,
+      "type": "integer"
+     },
+     "include_authentication_url": {
+      "description": "Pass True if authentication link is required in response payload based on above customer\u2019s identifier",
+      "type": "boolean"
+     },
+     "mandate_data": {
+      "$ref": "#/components/schemas/AmendMandateMetaSchema_Client"
+     },
+     "mandate_type": {
+      "description": "Type of mandate to be created",
+      "enum": [
+       "AMEND"
+      ],
+      "type": "string"
+     },
+     "notify_customer": {
+      "default": false,
+      "description": "Set true to send notification to customer with a gateway link to authenticate/sign the mandate. Else, false",
+      "enum": [
+       true,
+       false
+      ],
+      "type": "boolean"
+     },
+     "sub_user_identifier": {
+      "description": "If mandate needs to be reflected to specific sub-user",
+      "type": "string"
+     }
+    },
+    "required": [
+     "mandate_type",
+     "corporate_config_id"
+    ],
+    "type": "object"
+   },
+   "PublicCorporateConfigData_Client": {
+    "properties": {
+     "service_provider_name": {
+      "description": "Name of service provider",
+      "type": "string"
+     },
+     "service_provider_utility_code": {
+      "description": "Utility code for the given corporate config",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   }
+  },
+  "securitySchemes": {
+   "api_auth": {
+    "in": "header",
+    "scheme": "basic",
+    "type": "http"
+   }
+  }
+ },
+ "info": {
+  "contact": {
+   "email": "support@digio.in"
+  },
+  "description": "Getting started with Digio Rest Apis",
+  "title": "Digio Apis",
+  "x-provenance": "Fetched 2026-10-16 from https://documentation.digio.in/swagger/final_post_amendMandateForm.json (servers[] replaced with the hosts documented at https://documentation.digio.in/digienvironments/; the published spec ships a localhost placeholder)"
+ },
+ "openapi": "3.0.1",
+ "paths": {
+  "/v3/client/mandate/create_form": {
+   "post": {
+    "description": "This API is used to amend a mandate",
+    "operationId": "createMandateForm",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/MandateAmendFormRequestSchema_Client"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "examples": {
+         "Successful Request": {
+          "description": "Successful Request",
+          "value": {
+           "bank_details": {
+            "bank_name": "HDFC Bank Ltd",
+            "shared_with_bank": "test_bank@digio.in",
+            "state": "partial"
+           },
+           "created_at": "2024-01-15 15:31:15",
+           "id": "ENA240115153115331QD1NKFPQ8I21AP",
+           "mandate_id": "ENA240115153115331QD1NKFPQ8I21AP",
+           "mode": "api",
+           "service_provider_details": {
+            "service_provider_name": "Test Businesss",
+            "service_provider_utility_code": "DIGI0001",
+            "support_email": "support@corporate.com",
+            "support_mobile": "9900010034"
+           },
+           "state": "partial",
+           "type": "AMEND"
+          }
+         }
+        },
+        "schema": {
+         "$ref": "#/components/schemas/AmendExternalMandateSchema_Client"
+        }
+       }
+      }
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "examples": {
+         "Bad Request": {
+          "description": "Bad Request",
+          "value": {
+           "code": "REQUEST_VALIDATION_FAILED",
+           "details": "EX23297402937402",
+           "message": "Request Validation Failed"
+          }
+         }
+        },
+        "schema": {
+         "$ref": "#/components/schemas/GenericBadRequestResponse_Client"
+        }
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "api_auth": []
+     }
+    ],
+    "summary": "Amend Mandate Request"
+   }
+  }
+ },
+ "servers": [
+  {
+   "description": "Production",
+   "url": "https://api.digio.in"
+  },
+  {
+   "description": "Sandbox",
+   "url": "https://ext.digio.in:444"
+  }
+ ]
+}
