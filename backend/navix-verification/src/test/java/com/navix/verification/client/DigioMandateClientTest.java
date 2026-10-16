@@ -169,8 +169,11 @@ class DigioMandateClientTest {
 
         assertThatThrownBy(() -> c.register(req(1_000_000L)))
                 .isInstanceOf(BusinessException.class)
-                .satisfies(e -> assertThat(((BusinessException) e).getCode()).isEqualTo("SYSTEM_ERROR"));
+                .satisfies(e -> assertThat(((BusinessException) e).getCode()).isEqualTo("SYSTEM_ERROR"))
+                // Digio echoes request fields in its `message`, so it reaches neither the borrower...
+                .hasMessageNotContaining("Not entitled");
         assertThat(out.getAll()).contains("EX261016211743769WZU");
+        assertThat(out.getAll()).doesNotContain("Not entitled");   // ...nor a log line
         assertThat(out.getAll()).doesNotContain("123456789012");
         server.verify();
     }

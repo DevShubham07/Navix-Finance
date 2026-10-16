@@ -155,21 +155,20 @@ public class DigioMandateClient implements MandatePort {
     /** Classify on the body, never the status: Digio sends business errors as HTTP 500. */
     private static BusinessException classify(String op, RestClientResponseException e) {
         String code = null;
-        String message = null;
         String details = null;
         try {
             JsonNode b = JSON.readTree(e.getResponseBodyAsByteArray());
             code = text(b.path("code"));
-            message = text(b.path("message"));
             details = text(b.path("details"));
         } catch (Exception ignored) {
             // non-JSON body (a proxy error page): fall through to the status-based code
         }
-        // details is the exception id Digio support needs; it is the only handle on a SYSTEM_ERROR.
-        log.warn("Digio {} failed: http={} code={} message={} details={}",
-                op, e.getStatusCode().value(), code, message, details);
+        // Digio's `message` echoes request fields back in a business error, so it can carry the borrower's
+        // account number — it goes neither to a log line nor to the screen. `code` and `details` (the
+        // exception id Digio support needs, and the only handle on a SYSTEM_ERROR) are safe and enough.
+        log.warn("Digio {} failed: http={} code={} details={}", op, e.getStatusCode().value(), code, details);
         return new BusinessException(code != null ? code : "DIGIO_HTTP_" + e.getStatusCode().value(),
-                message != null ? message : "Digio " + op + " failed");
+                "We could not complete the mandate setup. Please try again.");
     }
 
     /** Digio rejects apostrophes and hyphens (and caps at 40); the name should still resemble the bank's. */
