@@ -459,7 +459,7 @@ endpoints, different httpOnly cookies, never shared.** This was an explicit requ
 `collections:manage`, `collections:interact`, `staff:manage`, `customer:view` (every staff role
 except **DSA** — see the note above), `customer:view:all`, `customer:assign` (Heads + TELECALLER +
 ADMIN), `customer:manage` (ADMIN — correct KYC, cancel, blocklist), `document:upload`,
-`verification:retry`, `mandate:override` (DISBURSEMENT_HEAD + ADMIN — override a `BANK_UNSUPPORTED` mandate attempt), `referral:payout` (DISBURSEMENT_HEAD + ADMIN), `leads:manage` (TELECALLER +
+`verification:retry`, `mandate:override` (DISBURSEMENT_HEAD + ADMIN — override **this application's own** newest `BANK_UNSUPPORTED` mandate attempt; an earlier advance's unsupported attempt says nothing about this account and is never overridable), `referral:payout` (DISBURSEMENT_HEAD + ADMIN), `leads:manage` (TELECALLER +
 ADMIN), `dsa:portal` (**DSA only** — the *only* token a DSA holds, and deliberately **not** granted to
 ADMIN, whose oversight goes through `dsa:manage`), `dsa:manage` (ADMIN).
 
@@ -678,7 +678,9 @@ What holds across all of it, and does not belong in that file:
   (**both off, V72** — neither product is provisioned, `412` on every call, so the adapter skips the leg
   entirely; flip a row when Digitap provisions it), `digio-mandate` (**off, V83** — the Digio eMandate step after the disbursal account; read with
   `defaultWhenMissing = FALSE` for the same reason as `bureau-auto-reject`: with `NAVIX_DIGIO_PROVIDER=digio` it
-  files a real, legally binding NPCI mandate and there is no sandbox, so a missing row must leave it off),
+  files a real, legally binding NPCI mandate and there is no sandbox, so a missing row must leave it off;
+  the `ProductionConfigGuard` refusal of `navix.digio.provider=mock` in prod is gated on **this flag**, so a
+  prod deploy is never blocked for a disabled feature),
   `employment-auto-retry` (on — the hourly re-run of
   EPFO checks a vendor outage parked), `global-search` (**on, V73** — the staff Cmd/Ctrl+K palette;
   the one flag read with `defaultWhenMissing = TRUE`, since search takes no money-affecting action

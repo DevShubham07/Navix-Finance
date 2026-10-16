@@ -213,11 +213,15 @@ export default function MandatePage() {
     <div>
       <div className="form-card">
         <p className="lead mb-1">Set up auto-repayment</p>
-        {/* PLACEHOLDER COPY — ceiling disclosure wording needs compliance sign-off. */}
+        {/*
+          COMPLIANCE: the ceiling disclosure below is factual and states no figure. Compliance still owes us
+          the final wording (and whether the amount itself must be shown) — change it HERE, never by leaving
+          a marker in the copy: the previous marker rendered to borrowers.
+        */}
         <p className="mb-4 text-sm text-muted">
           To receive your advance, authorise an eMandate with your bank so your repayment can be collected
           automatically on the due date. The mandate allows debits up to a maximum amount (ceiling) that is
-          higher than your advance. [Compliance to confirm the final ceiling wording.]
+          higher than your advance. You will only ever be debited what you owe.
         </p>
         {phase === "failed" ? (
           <p className="mb-3 flex items-start gap-2 text-sm text-error-600">
