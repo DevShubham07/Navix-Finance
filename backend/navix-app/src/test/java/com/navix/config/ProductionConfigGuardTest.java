@@ -3,6 +3,9 @@ package com.navix.config;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import static org.mockito.Mockito.mock;
+
+import com.navix.common.featureflag.FeatureFlagService;
 import com.navix.sms.SmsProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -22,12 +25,19 @@ class ProductionConfigGuardTest {
 
     private static ProductionConfigGuard guard(String env, String secret, boolean mock, boolean devEcho,
                                                String esignProvider) {
-        ProductionConfigGuard g = new ProductionConfigGuard(sms(mock, devEcho));
+        ProductionConfigGuard g = new ProductionConfigGuard(sms(mock, devEcho), flags(false));
         ReflectionTestUtils.setField(g, "env", env);
         ReflectionTestUtils.setField(g, "secret", secret);
         ReflectionTestUtils.setField(g, "esignProvider", esignProvider);
         ReflectionTestUtils.setField(g, "digioProvider", "digio");
         return g;
+    }
+
+    /** The digio clause reads the {@code digio-mandate} flag; everything else ignores it. */
+    private static FeatureFlagService flags(boolean digioMandate) {
+        FeatureFlagService f = mock(FeatureFlagService.class);
+        org.mockito.Mockito.lenient().when(f.isEnabled("digio-mandate", false)).thenReturn(digioMandate);
+        return f;
     }
 
     private static SmsProperties sms(boolean mock, boolean devEcho) {
@@ -77,20 +87,32 @@ class ProductionConfigGuardTest {
                 .hasMessageContaining("NAVIX_ESIGN_PROVIDER");
     }
 
-    @Test
-    void prod_rejectsMockDigio_whichFilesNoMandate() {
-        ProductionConfigGuard g = guard("prod", STRONG_SECRET, false, false);
+    private static ProductionConfigGuard digioGuard(String env, boolean flagOn) {
+        ProductionConfigGuard g = new ProductionConfigGuard(sms(false, false), flags(flagOn));
+        ReflectionTestUtils.setField(g, "env", env);
+        ReflectionTestUtils.setField(g, "secret", STRONG_SECRET);
+        ReflectionTestUtils.setField(g, "esignProvider", "signzy");
         ReflectionTestUtils.setField(g, "digioProvider", "mock");
-        assertThatThrownBy(g::check)
+        return g;
+    }
+
+    @Test
+    void prod_rejectsMockDigio_whenTheMandateFlagIsOn() {
+        assertThatThrownBy(digioGuard("prod", true)::checkDigio)
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("NAVIX_DIGIO_PROVIDER");
     }
 
+    /** The feature is off: nothing calls the adapter, so a prod deploy must not be blocked for it. */
+    @Test
+    void prod_bootsWithMockDigio_whenTheMandateFlagIsOff() {
+        assertThatCode(digioGuard("prod", false)::checkDigio).doesNotThrowAnyException();
+        assertThatCode(digioGuard("prod", false)::check).doesNotThrowAnyException();
+    }
+
     @Test
     void dev_bootsWithMockDigio() {
-        ProductionConfigGuard g = guard("dev", DEFAULT_SECRET, true, true);
-        ReflectionTestUtils.setField(g, "digioProvider", "mock");
-        assertThatCode(g::check).doesNotThrowAnyException();
+        assertThatCode(digioGuard("dev", true)::checkDigio).doesNotThrowAnyException();
     }
 
     @Test

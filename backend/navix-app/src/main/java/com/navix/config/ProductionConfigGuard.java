@@ -1,9 +1,12 @@
 package com.navix.config;
 
+import com.navix.common.featureflag.FeatureFlagService;
 import com.navix.sms.SmsProperties;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 /**
@@ -41,6 +44,7 @@ public class ProductionConfigGuard {
     private static final int MIN_SECRET_LENGTH = 32;
 
     private final SmsProperties sms;
+    private final FeatureFlagService featureFlags;
 
     @Value("${NAVIX_ENV:dev}")
     private String env;
@@ -84,12 +88,29 @@ public class ProductionConfigGuard {
                     + "agreement would be recorded as signed without a real Aadhaar e-signature. "
                     + "Unset NAVIX_ESIGN_PROVIDER.");
         }
-        if ("mock".equalsIgnoreCase(digioProvider)) {
-            // application.yml defaults to mock so CI and local runs boot, which is exactly why prod must
-            // not: a forgotten env var would record every mandate as registered with nothing filed at NPCI.
-            throw new IllegalStateException("NAVIX_ENV=prod with navix.digio.provider=mock — every "
-                    + "eMandate would be recorded as registered without a real NPCI filing. "
-                    + "Set NAVIX_DIGIO_PROVIDER=digio (and the NAVIX_DIGIO_* credentials).");
+    }
+
+    /**
+     * Digio is checked <b>only when the {@code digio-mandate} flag is actually on</b>, and after the
+     * context is up so the DB-backed flag can be read.
+     *
+     * <p>The eSign lesson above is about SILENT degradation: the mock reported agreements as signed while
+     * the journey ran. With {@code digio-mandate} off the mandate step does not exist, nothing calls the
+     * adapter, and nothing degrades — so an unconditional check only refused every unrelated prod deploy
+     * until five {@code NAVIX_DIGIO_*} values existed in SSM for a disabled feature. With the flag on the
+     * mock is exactly as dangerous as the eSign one (mandates recorded as registered, nothing filed at
+     * NPCI), and this still fails the boot.
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    void checkDigio() {
+        if (!"prod".equalsIgnoreCase(env) || !"mock".equalsIgnoreCase(digioProvider)) {
+            return;
+        }
+        if (featureFlags.isEnabled("digio-mandate", false)) {
+            throw new IllegalStateException("NAVIX_ENV=prod with navix.digio.provider=mock while the "
+                    + "digio-mandate flag is ON — every eMandate would be recorded as registered without a "
+                    + "real NPCI filing. Set NAVIX_DIGIO_PROVIDER=digio (and the NAVIX_DIGIO_* "
+                    + "credentials), or turn the flag off.");
         }
     }
 }
