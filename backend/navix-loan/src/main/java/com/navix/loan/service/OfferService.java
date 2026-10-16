@@ -70,6 +70,8 @@ public class OfferService {
     private final SanctionLetterPdfRenderer letterRenderer;
     private final DocumentStoragePort storage;
     private final LoanMath loanMath;
+    private final MandateService mandateService;
+    private final com.navix.common.featureflag.FeatureFlagService featureFlags;
 
     @Value("${navix.grievance.officer-name:Lalit Kumar}")
     private String grievanceOfficerName;
@@ -412,8 +414,7 @@ public class OfferService {
 
             verification.recordBankProofPending(appId, account, ifsc);
 
-            journey.advance(appId, JourneyService.OfferStep.OFFER_DONE);
-            return flow.acceptOffer(appId, app.getAmountRequested());
+            return afterAccountConfirmed(app);
         }
         boolean verified = Boolean.TRUE.equals(app.getDisbursalAccountVerified())
                 && matches(account, ifsc, app.getDisbursalAccountNumber(), app.getDisbursalIfsc());
@@ -444,9 +445,44 @@ public class OfferService {
         app.setDisbursalConfirmedAt(Instant.now());
         applicationRepo.save(app);
 
+        return afterAccountConfirmed(app);
+    }
+
+    /**
+     * Both exits of {@link #confirmDisbursalAccount} (bank-proof and penny-drop) route here. With the
+     * {@code digio-mandate} flag on the borrower registers an eMandate next; {@link #mandateStatus}
+     * is what hands the file off once a UMRN lands. Flag off: straight to the Disbursement Head.
+     */
+    private LoanApplication afterAccountConfirmed(LoanApplication app) {
+        Long appId = app.getId();
+        if (featureFlags.isEnabled("digio-mandate", false)
+                && mandateService.activeMandate(app.getCustomerId()).isEmpty()) {
+            journey.advance(appId, JourneyService.OfferStep.OFFER_MANDATE);
+            return app;
+        }
         journey.advance(appId, JourneyService.OfferStep.OFFER_DONE);
         // Hands off: SANCTIONED → DISBURSEMENT_PENDING, gated on the eSign row existing.
         return flow.acceptOffer(appId, app.getAmountRequested());
+    }
+
+    // ---------------------------------------------------------------- 11. eMandate
+
+    @Transactional
+    public StepResult mandateInit(Long appId) {
+        requireSanctioned(appId);
+        return mandateService.init(appId);
+    }
+
+    /** UMRN present means the borrower may proceed: that, and only that, hands the file off. */
+    @Transactional
+    public StepResult mandateStatus(Long appId) {
+        LoanApplication app = requireSanctioned(appId);
+        StepResult result = mandateService.status(appId);
+        if (mandateService.activeMandate(app.getCustomerId()).isPresent()) {
+            journey.advance(appId, JourneyService.OfferStep.OFFER_DONE);
+            flow.acceptOffer(appId, app.getAmountRequested());
+        }
+        return result;
     }
 
     // ---------------------------------------------------------------- helpers

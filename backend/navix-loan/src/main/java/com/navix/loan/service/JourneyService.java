@@ -84,6 +84,8 @@ public class JourneyService {
         OFFER_ESIGN("esign"),
         OFFER_SANCTIONED("sanctioned"),
         OFFER_DISBURSAL_ACCOUNT("disbursal-account"),
+        /** Digio NACH eMandate; gated by the {@code digio-mandate} flag, dropped for UMRN holders. */
+        OFFER_MANDATE("mandate"),
         OFFER_DONE(null);
 
         public final String seg;
@@ -113,6 +115,8 @@ public class JourneyService {
     private final ApplicationVerificationRepository verificationRepository;
     private final ApplicationReferenceRepository referenceRepository;
     private final ApplicationDocumentRepository documentRepository;
+    private final MandateService mandateService;
+    private final com.navix.common.featureflag.FeatureFlagService featureFlags;
 
     @Transactional(readOnly = true)
     public JourneyView current(Long appId) {
@@ -155,6 +159,11 @@ public class JourneyService {
         List<OfferStep> all = java.util.Arrays.stream(OfferStep.values())
                 .filter(s -> s != OfferStep.OFFER_DONE && s != OfferStep.OFFER_ESIGN)
                 .toList();
+        // Outside the reapply branch: a first-loan application for a customer who already holds a
+        // mandate (or any application while the flag is off) must skip the step too.
+        if (!mandateRequired(app)) {
+            all = all.stream().filter(s -> s != OfferStep.OFFER_MANDATE).toList();
+        }
         if (app.getReappliedFrom() == null) {
             return all;
         }
@@ -356,7 +365,19 @@ public class JourneyService {
         if (app.getDisbursalConfirmedAt() == null) {
             return OfferStep.OFFER_DISBURSAL_ACCOUNT;
         }
+        if (mandateRequired(app)) {
+            return OfferStep.OFFER_MANDATE;
+        }
         return OfferStep.OFFER_DONE;
+    }
+
+    private boolean hasMandate(LoanApplication app) {
+        return mandateService.activeMandate(app.getCustomerId()).isPresent();
+    }
+
+    /** The eMandate step applies: flag on and no ACTIVE mandate (UMRN) on file for the customer. */
+    private boolean mandateRequired(LoanApplication app) {
+        return featureFlags.isEnabled("digio-mandate", false) && !hasMandate(app);
     }
 
     /**

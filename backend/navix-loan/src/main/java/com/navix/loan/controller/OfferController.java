@@ -89,6 +89,20 @@ public class OfferController {
         return ApiResponse.ok(offer.esignStatus(id));
     }
 
+    /** Register (or reuse) the Digio eMandate — {@code derived.url} is where to send the borrower. */
+    @PostMapping("/mandate/init")
+    public ApiResponse<StepResult> mandateInit(@PathVariable Long id) {
+        authorize(id);
+        return ApiResponse.ok(offer.mandateInit(id));
+    }
+
+    /** Poll the eMandate; a UMRN hands the file to the Disbursement Head. */
+    @GetMapping("/mandate/status")
+    public ApiResponse<StepResult> mandateStatus(@PathVariable Long id) {
+        authorize(id);
+        return ApiResponse.ok(offer.mandateStatus(id));
+    }
+
     /** Fallback: record a signature the borrower drew in the app. */
     @PostMapping("/esign")
     public ApiResponse<StepResult> esign(@PathVariable Long id, @RequestBody ManualEsignRequest req) {

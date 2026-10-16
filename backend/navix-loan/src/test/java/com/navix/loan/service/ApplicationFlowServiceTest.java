@@ -83,6 +83,8 @@ class ApplicationFlowServiceTest {
     private com.navix.loan.repository.CustomerLimitOverrideRepository limitOverrideRepository;
     @Mock
     private com.navix.common.featureflag.FeatureFlagService featureFlags;
+    @Mock
+    private MandateService mandateService;
 
     private ApplicationFlowService flow;
     private final List<ApplicationEvent> events = new ArrayList<>();
@@ -94,7 +96,7 @@ class ApplicationFlowServiceTest {
                 loanService, staffDirectory,
                 loanRepository, paymentRepository, profileRepository, rejectionRepository,
                 documentRepository, verificationRepository, referenceRepository, new LoanMath(),
-                event -> {}, referralService, dsaCommissionService, featureFlags);
+                event -> {}, referralService, dsaCommissionService, featureFlags, mandateService);
         // Default: assignee passes activation gating; negative case overrides below.
         lenient().when(staffDirectory.isActiveWithRole(any(), any())).thenReturn(true);
         lenient().when(applicationRepository.save(any())).thenAnswer(i -> i.getArgument(0));
@@ -212,6 +214,21 @@ class ApplicationFlowServiceTest {
         assertThatThrownBy(() -> flow.acceptOffer(1L, 2_500_000L))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("exceeds the sanctioned amount");
+    }
+
+    @Test
+    void acceptOfferRefusesWithoutAMandateWhenTheFlagIsOn() {
+        actor("7", "BORROWER");
+        LoanApplication app = appAt(ApplicationStatus.SANCTIONED);
+        app.setSanctionedAmountPaise(2_000_000L);
+        esigned(1L);
+        when(featureFlags.isEnabled("digio-mandate", false)).thenReturn(true);
+        when(mandateService.activeMandate(7L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> flow.acceptOffer(1L, 2_000_000L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "MANDATE_REQUIRED");
+        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.SANCTIONED);
     }
 
     @Test

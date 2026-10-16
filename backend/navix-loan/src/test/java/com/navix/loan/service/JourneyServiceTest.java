@@ -39,6 +39,10 @@ class JourneyServiceTest {
     private com.navix.loan.repository.ApplicationReferenceRepository referenceRepository;
     @Mock
     private com.navix.loan.repository.ApplicationDocumentRepository documentRepository;
+    @Mock
+    private MandateService mandateService;
+    @Mock
+    private com.navix.common.featureflag.FeatureFlagService featureFlags;
 
     private JourneyService journey;
     private LoanApplication app;
@@ -46,7 +50,7 @@ class JourneyServiceTest {
     @BeforeEach
     void setUp() {
         journey = new JourneyService(applicationRepository, profileRepository, verificationRepository,
-                referenceRepository, documentRepository);
+                referenceRepository, documentRepository, mandateService, featureFlags);
         app = new LoanApplication();
         app.setId(APP);
         app.setCustomerId(7L);

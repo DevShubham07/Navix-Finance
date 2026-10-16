@@ -93,6 +93,7 @@ public class ApplicationFlowService {
     private final ReferralService referralService;
     private final DsaCommissionService dsaCommissionService;
     private final FeatureFlagService featureFlags;
+    private final MandateService mandateService;
 
     /** Loan statuses that mean money is still owed past the due date — never fully repaid. */
     private static final Set<LoanStatus> DELINQUENT_LOAN_STATUSES =
@@ -785,6 +786,11 @@ public class ApplicationFlowService {
                 .filter(v -> ApplicationVerificationService.PASS.equals(v.getStatus()))
                 .isEmpty()) {
             throw new BusinessException("ESIGN_REQUIRED", "Sign your sanction letter before continuing");
+        }
+        // UMRN present => may proceed. Flag off => the eMandate step does not exist.
+        if (featureFlags.isEnabled("digio-mandate", false)
+                && mandateService.activeMandate(app.getCustomerId()).isEmpty()) {
+            throw new BusinessException("MANDATE_REQUIRED", "Register your eMandate before continuing");
         }
         long ceiling = app.getSanctionedAmountPaise() != null ? app.getSanctionedAmountPaise() : 0L;
         long drawn = amountPaise != null ? amountPaise : ceiling;
