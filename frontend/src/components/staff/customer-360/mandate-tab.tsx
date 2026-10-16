@@ -55,7 +55,7 @@ export function MandateTab({
   }
 
   const rows: [string, string][] = [
-    ["Status", STATUS_LABEL[m.status] ?? m.status],
+    ["Status", (STATUS_LABEL[m.status] ?? m.status) + (m.carriedOver ? " (carried over from an earlier advance)" : "")],
     ["UMRN", m.umrn ?? "—"],
     ["Bank", m.bankName ?? "—"],
     ["Account", m.accountLast4 ? `•••• ${m.accountLast4}` : "—"],

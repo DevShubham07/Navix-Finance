@@ -1894,6 +1894,8 @@ export interface MandateView {
   rejectReason: string | null;
   attemptNo: number;
   overridable: boolean;
+  /** Registered on an earlier advance and reused; nothing was filed on this application. */
+  carriedOver: boolean;
 }
 
 const STAFF_BASE = "/api/staff/applications";

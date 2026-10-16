@@ -213,33 +213,49 @@ public class MandateService {
      */
     @Transactional(readOnly = true)
     public boolean hasUsableMandate(LoanApplication app) {
+        return usableMandate(app).isPresent();
+    }
+
+    /** The mandate {@link #hasUsableMandate} accepts for this application, if any. */
+    private Optional<Mandate> usableMandate(LoanApplication app) {
         String account = app.getDisbursalAccountNumber() == null ? "" : app.getDisbursalAccountNumber().trim();
         String ifsc = app.getDisbursalIfsc() == null ? "" : app.getDisbursalIfsc().trim().toUpperCase(Locale.ROOT);
         if (!ACCOUNT.matcher(account).matches() || ifsc.length() != 11) {
-            return false;
+            return Optional.empty();
         }
         CustomerProfile profile = profiles.findByApplicationId(app.getId()).orElse(null);
         if (profile == null) {
-            return false;
+            return Optional.empty();
         }
         try {
-            return reusable(app.getCustomerId(), account, ifsc, ceiling(app, profile)).isPresent();
+            return reusable(app.getCustomerId(), account, ifsc, ceiling(app, profile));
         } catch (BusinessException noCeiling) {
-            return false;
+            return Optional.empty();
         }
     }
 
     /** What staff see: no authentication url, no full account number (only the stored last four). */
     public record MandateView(String status, String umrn, String bankName, String accountLast4,
-                              Instant authenticatedAt, String rejectReason, int attemptNo, boolean overridable) {}
+                              Instant authenticatedAt, String rejectReason, int attemptNo, boolean overridable,
+                              boolean carriedOver) {}
 
-    /** Newest attempt made on THIS application, or empty when none was ever started. Same row the override gate checks. */
+    /**
+     * Newest attempt made on THIS application (same row the override gate checks). With none, a reborrower's
+     * usable mandate from an earlier advance is shown instead, marked {@code carriedOver} and never overridable.
+     */
     @Transactional(readOnly = true)
     public Optional<MandateView> staffView(Long appId) {
-        return mandates.findFirstByLoanApplicationIdOrderByAttemptNoDesc(appId)
-                .map(m -> new MandateView(m.getStatus().name(), m.getUmrn(), m.getBankName(), m.getAccountLast4(),
-                        m.getAuthenticatedAt(), m.getRejectReason(), m.getAttemptNo(),
-                        m.getStatus() == Mandate.Status.BANK_UNSUPPORTED));
+        Optional<MandateView> own = mandates.findFirstByLoanApplicationIdOrderByAttemptNoDesc(appId)
+                .map(m -> toView(m, m.getStatus() == Mandate.Status.BANK_UNSUPPORTED, false));
+        if (own.isPresent()) {
+            return own;
+        }
+        return applications.findById(appId).flatMap(this::usableMandate).map(m -> toView(m, false, true));
+    }
+
+    private static MandateView toView(Mandate m, boolean overridable, boolean carriedOver) {
+        return new MandateView(m.getStatus().name(), m.getUmrn(), m.getBankName(), m.getAccountLast4(),
+                m.getAuthenticatedAt(), m.getRejectReason(), m.getAttemptNo(), overridable, carriedOver);
     }
 
     /**

@@ -407,4 +407,19 @@ class MandateServiceTest {
         assertThat(v.rejectReason()).isNull();
         assertThat(v.overridable()).isEqualTo(service.isBankUnsupported(1L)).isTrue();
     }
+
+    @Test
+    void staffViewShowsCarriedOverMandateForAReborrowWithNoRowOnThisApplication() {
+        when(mandates.findFirstByLoanApplicationIdOrderByAttemptNoDesc(1L)).thenReturn(Optional.empty());
+        app.setId(1L); // usableMandate resolves the profile by app id
+        Mandate old = active("9012", 1_000_000_00L); // earlier advance, same account, ceiling covers this one
+
+        MandateService.MandateView v = service.staffView(1L).orElseThrow();
+
+        assertThat(v.status()).isEqualTo("ACTIVE");
+        assertThat(v.umrn()).isEqualTo(old.getUmrn());
+        assertThat(v.carriedOver()).isTrue();
+        assertThat(v.overridable()).isFalse();
+        assertThat(service.isBankUnsupported(1L)).isFalse();
+    }
 }
