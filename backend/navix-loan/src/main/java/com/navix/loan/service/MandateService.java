@@ -165,9 +165,13 @@ public class MandateService {
         String account = app.getDisbursalAccountNumber() == null ? "" : app.getDisbursalAccountNumber().trim();
         String ifsc = app.getDisbursalIfsc() == null ? "" : app.getDisbursalIfsc().trim().toUpperCase(Locale.ROOT);
         if (profile != null && ACCOUNT.matcher(account).matches() && ifsc.length() == 11) {
-            Optional<Mandate> done = reusable(customerId, account, ifsc, ceiling(app, profile));
-            if (done.isPresent()) {
-                return view(done.get(), null);
+            try {
+                Optional<Mandate> done = reusable(customerId, account, ifsc, ceiling(app, profile));
+                if (done.isPresent()) {
+                    return view(done.get(), null);
+                }
+            } catch (BusinessException noCeiling) {
+                // status() is a read: report the stored row below rather than throw. init() guards.
             }
         }
         Mandate m = mandates.findFirstByCustomerIdOrderByAttemptNoDesc(customerId).orElse(null);
@@ -197,9 +201,8 @@ public class MandateService {
     /** The customer's ACTIVE mandate, if it debits this account and covers this advance. */
     private Optional<Mandate> reusable(Long customerId, String account, String ifsc, long ceiling) {
         String last4 = account.substring(account.length() - 4);
-        return mandates.findFirstByCustomerIdAndUmrnIsNotNullOrderByIdDesc(customerId)
-                .filter(x -> x.getStatus() == Mandate.Status.ACTIVE
-                        && last4.equals(x.getAccountLast4()) && ifsc.equals(x.getIfsc())
+        return mandates.findFirstByCustomerIdAndStatusAndUmrnIsNotNullOrderByIdDesc(customerId, Mandate.Status.ACTIVE)
+                .filter(x -> x.getStatus() == Mandate.Status.ACTIVE && last4.equals(x.getAccountLast4()) && ifsc.equals(x.getIfsc())
                         && x.getMaximumAmountPaise() >= ceiling);
     }
 

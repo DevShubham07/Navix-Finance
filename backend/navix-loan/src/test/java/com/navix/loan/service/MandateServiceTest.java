@@ -223,7 +223,8 @@ class MandateServiceTest {
         m.setIfsc("HDFC0001234");
         m.setMaximumAmountPaise(max);
         m.setAttemptNo(1);
-        when(mandates.findFirstByCustomerIdAndUmrnIsNotNullOrderByIdDesc(4471L)).thenReturn(Optional.of(m));
+        org.mockito.Mockito.lenient().when(mandates.findFirstByCustomerIdAndStatusAndUmrnIsNotNullOrderByIdDesc(
+                4471L, Mandate.Status.ACTIVE)).thenReturn(Optional.of(m));
         return m;
     }
 
@@ -275,10 +276,36 @@ class MandateServiceTest {
 
     @Test
     void doesNotReuseRevokedMandateThatKeepsItsUmrn() {
-        active("9012", 20_000_00L).setStatus(Mandate.Status.AUTHORIZATION_FAILED);
+        Mandate revoked = active("9012", 20_000_00L);
+        revoked.setStatus(Mandate.Status.AUTHORIZATION_FAILED); // filter must still refuse a non-ACTIVE row
         bankOk();
         when(port.register(any())).thenReturn(new MandateSession("DID9", "partial", "https://z"));
         service.init(1L);
         verify(port).register(any());
+    }
+
+    @Test
+    void statusWithZeroCeilingReportsStateInsteadOfThrowing() {
+        profile.setMonthlySalaryPaise(null);
+        app.setSanctionedAmountPaise(null);
+        Mandate failed = new Mandate();
+        failed.setAttemptNo(1);
+        failed.setDigioMandateId("D");
+        failed.setStatus(Mandate.Status.AUTHORIZATION_FAILED);
+        when(mandates.findFirstByCustomerIdOrderByAttemptNoDesc(4471L)).thenReturn(Optional.of(failed));
+        assertThat(service.status(1L).status()).isEqualTo("FAIL");
+    }
+
+    @Test
+    void reusesOlderActiveMandateHiddenBehindNewerRevokedOne() {
+        Mandate older = active("9012", 20_000_00L);
+        Mandate revoked = new Mandate();
+        revoked.setUmrn("UMRN1");
+        revoked.setStatus(Mandate.Status.AUTHORIZATION_FAILED);
+        org.mockito.Mockito.lenient().when(mandates.findFirstByCustomerIdAndUmrnIsNotNullOrderByIdDesc(4471L))
+                .thenReturn(Optional.of(revoked));
+        assertThat(older.getStatus()).isEqualTo(Mandate.Status.ACTIVE);
+        assertThat(service.init(1L).status()).isEqualTo("PASS");
+        verify(port, never()).register(any());
     }
 }

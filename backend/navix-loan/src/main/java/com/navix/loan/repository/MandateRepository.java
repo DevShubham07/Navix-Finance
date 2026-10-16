@@ -12,6 +12,9 @@ public interface MandateRepository extends JpaRepository<Mandate, Long> {
     /** The customer's current mandate: newest attempt that the bank registered. */
     Optional<Mandate> findFirstByCustomerIdAndUmrnIsNotNullOrderByIdDesc(Long customerId);
 
+    /** The newest ACTIVE mandate with a UMRN; unlike the finder above, a newer revoked row cannot hide it. */
+    Optional<Mandate> findFirstByCustomerIdAndStatusAndUmrnIsNotNullOrderByIdDesc(Long customerId, Mandate.Status status);
+
     /** The latest attempt, whatever its outcome — its attemptNo seeds the next one. */
     Optional<Mandate> findFirstByCustomerIdOrderByAttemptNoDesc(Long customerId);
 
