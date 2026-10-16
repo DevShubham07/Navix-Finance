@@ -129,8 +129,12 @@ public class BankStatementAnalysisService {
                 .map(d -> new BsaFile(storage.presignDownload(d.getS3ObjectKey()), blankToNull(d.getFilePassword())))
                 .toList();
 
-        // The presigned URLs are credentials, so the audit row records the object keys instead; the
-        // passwords are never written down at all.
+        // The presigned URLs are credentials, so THIS row records the object keys instead; the
+        // passwords are not written here at all. The provider audit row and the PROVIDER_CALL log
+        // see the real request, so both strip these keys centrally — ProviderJson.record and
+        // ProviderLogRedactor.CREDENTIAL_KEYS. Without that the promise on this line was false:
+        // a presigned URL is a bearer token for a borrower's statement, and the PDF password is a
+        // borrower secret that, unlike the URL, never expires.
         Map<String, Object> request = new LinkedHashMap<>();
         request.put("objectKeys", statements.stream().map(ApplicationDocument::getS3ObjectKey).toList());
         request.put("customerName", p == null ? null : p.fullName());

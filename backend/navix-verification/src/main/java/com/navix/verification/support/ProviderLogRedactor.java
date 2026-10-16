@@ -46,6 +46,21 @@ final class ProviderLogRedactor {
     private static final Set<String> NOT_PERSONAL = Set.of(
             "filename", "templatename", "productname", "servicename", "username", "hostname", "maskedname");
 
+    /**
+     * Keys whose value is a <em>credential</em> rather than an identifier — masked in the log like
+     * everything else here, and also stripped from the stored {@code provider_api_execution} row
+     * (see {@link #redactCredentials}), which keeps identifiers but must never keep these.
+     *
+     * <p>{@code fileUrl} is here because Signzy's bank-statement analysis is handed presigned S3
+     * URLs: the query string IS the authorisation, so a logged URL hands a borrower's statement to
+     * whoever reads the log. {@code password} is the borrower's own PDF password, which — unlike a
+     * presigned URL — never expires.
+     */
+    private static final Set<String> CREDENTIAL_KEYS = Set.of(
+            "authtoken", "token", "accesstoken", "refreshtoken", "idtoken", "bearer",
+            "password", "filepassword", "passcode", "secret", "clientsecret", "apikey", "apisecret",
+            "fileurl", "signedurl", "presignedurl", "downloadurl", "authorization");
+
     private static final Pattern PAN = Pattern.compile("(?i)\\b[A-Z]{5}[0-9]{4}[A-Z]\\b");
     private static final Pattern MOBILE = Pattern.compile("(?<![0-9])(?:\\+?91[- ]?)?[6-9][0-9]{9}(?![0-9])");
     private static final Pattern EMAIL = Pattern.compile("(?i)\\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}\\b");
@@ -104,6 +119,9 @@ final class ProviderLogRedactor {
 
     static boolean isPersonalKey(String key) {
         String k = key.toLowerCase(Locale.ROOT).replace("_", "").replace("-", "");
+        if (CREDENTIAL_KEYS.contains(k)) {
+            return true; // checked before NOT_PERSONAL: "password" must win over any name rule
+        }
         if (NOT_PERSONAL.contains(k)) {
             return false;
         }
@@ -135,6 +153,54 @@ final class ProviderLogRedactor {
     /** A number that reads as a mobile, or as a 12–18 digit Aadhaar/account number. */
     private static boolean looksLikeAnIdentifier(String digits) {
         return MOBILE.matcher(digits).matches() || LONG_DIGITS.matcher(digits).matches();
+    }
+
+    /**
+     * Mask only {@link #CREDENTIAL_KEYS}, leaving every identifier in place — for the stored
+     * {@code provider_api_execution} payload, which is meant to be the verbatim record of what was
+     * exchanged and would be useless with the borrower data taken out of it.
+     *
+     * <p>Non-JSON or unparseable input is returned unchanged: there is no key structure to act on,
+     * and the free-text identifier pass that {@link #redact} uses for logs would corrupt a payload
+     * that is kept for diagnosis.
+     */
+    static String redactCredentials(String payload) {
+        if (payload == null || payload.isBlank()) {
+            return payload;
+        }
+        try {
+            JsonNode root = JSON.readTree(payload);
+            if (root != null && root.isContainerNode()) {
+                maskCredentials(root);
+                return JSON.writeValueAsString(root);
+            }
+        } catch (Exception notJson) {
+            // not JSON — no keys to mask, and mangling it would defeat the point of storing it
+        }
+        return payload;
+    }
+
+    private static void maskCredentials(JsonNode node) {
+        if (node instanceof ObjectNode object) {
+            List<String> keys = new ArrayList<>();
+            object.fieldNames().forEachRemaining(keys::add);
+            for (String key : keys) {
+                JsonNode value = object.get(key);
+                boolean credential = CREDENTIAL_KEYS.contains(
+                        key.toLowerCase(Locale.ROOT).replace("_", "").replace("-", ""));
+                if (credential && !value.isNull() && !value.asText().isBlank()) {
+                    object.put(key, MASK);
+                } else if (value.isContainerNode()) {
+                    maskCredentials(value);
+                }
+            }
+        } else if (node instanceof ArrayNode array) {
+            for (JsonNode value : array) {
+                if (value.isContainerNode()) {
+                    maskCredentials(value);
+                }
+            }
+        }
     }
 
     static String redactText(String text) {
