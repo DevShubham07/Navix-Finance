@@ -319,4 +319,18 @@ class MandateServiceTest {
                 .thenReturn(Optional.of(revoked));
         assertThat(service.activeMandate(4471L)).containsSame(older);
     }
+
+    @Test
+    void hasUsableMandateAppliesAccountAndCeilingNotJustCustomer() {
+        app.setId(1L);
+        active("9012", 20_000_00L);                       // bound to ...9012 (the app's account), ceiling ok
+        assertThat(service.hasUsableMandate(app)).isTrue();
+
+        app.setDisbursalAccountNumber("999988887777");    // borrower designates a different account
+        assertThat(service.hasUsableMandate(app)).isFalse();
+
+        app.setDisbursalAccountNumber("123456789012");
+        active("9012", 1_00L);                            // ceiling too low
+        assertThat(service.hasUsableMandate(app)).isFalse();
+    }
 }

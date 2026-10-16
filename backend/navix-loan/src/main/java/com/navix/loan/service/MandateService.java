@@ -206,6 +206,29 @@ public class MandateService {
                         && x.getMaximumAmountPaise() >= ceiling);
     }
 
+    /**
+     * The gate predicate: the customer holds an ACTIVE mandate (UMRN present) that debits THIS
+     * application's disbursal account and covers its ceiling. Same rule {@code init} reuses on.
+     * Anything unusable (no account yet, no ceiling) is simply "no".
+     */
+    @Transactional(readOnly = true)
+    public boolean hasUsableMandate(LoanApplication app) {
+        String account = app.getDisbursalAccountNumber() == null ? "" : app.getDisbursalAccountNumber().trim();
+        String ifsc = app.getDisbursalIfsc() == null ? "" : app.getDisbursalIfsc().trim().toUpperCase(Locale.ROOT);
+        if (!ACCOUNT.matcher(account).matches() || ifsc.length() != 11) {
+            return false;
+        }
+        CustomerProfile profile = profiles.findByApplicationId(app.getId()).orElse(null);
+        if (profile == null) {
+            return false;
+        }
+        try {
+            return reusable(app.getCustomerId(), account, ifsc, ceiling(app, profile)).isPresent();
+        } catch (BusinessException noCeiling) {
+            return false;
+        }
+    }
+
     public Optional<Mandate> activeMandate(Long customerId) {
         return mandates.findFirstByCustomerIdAndStatusAndUmrnIsNotNullOrderByIdDesc(customerId, Mandate.Status.ACTIVE);
     }

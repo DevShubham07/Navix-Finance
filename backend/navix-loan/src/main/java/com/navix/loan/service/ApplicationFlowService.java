@@ -610,6 +610,8 @@ public class ApplicationFlowService {
         app.setSalaryCreditDay(salaryCreditDay != null ? salaryCreditDay : app.getSalaryCreditDay());
         if (st == ApplicationStatus.PRE_APPROVED) {
             // Pre-approved returning borrower → straight to the Disbursement Head (skips credit).
+            // Second door to disbursement: it never passes acceptOffer, so it needs the same gate.
+            requireMandate(app);
             transition(app, ApplicationStatus.DISBURSEMENT_PENDING, "APPLY_FAST_TRACK",
                     "amountPaise=" + amountPaise);
         } else {
@@ -762,6 +764,13 @@ public class ApplicationFlowService {
         return applicationRepository.save(app);
     }
 
+    /** Flag on => the application's disbursal account must be covered by a usable ACTIVE mandate. */
+    private void requireMandate(LoanApplication app) {
+        if (featureFlags.isEnabled("digio-mandate", false) && !mandateService.hasUsableMandate(app)) {
+            throw new BusinessException("MANDATE_REQUIRED", "Register your eMandate before continuing");
+        }
+    }
+
     /**
      * The borrower accepts the sanctioned offer, ending the post-approval journey and handing the
      * file to the Disbursement Head. Phase 3's offer screens (amount → eSign → disbursal account) sit
@@ -788,10 +797,7 @@ public class ApplicationFlowService {
             throw new BusinessException("ESIGN_REQUIRED", "Sign your sanction letter before continuing");
         }
         // UMRN present => may proceed. Flag off => the eMandate step does not exist.
-        if (featureFlags.isEnabled("digio-mandate", false)
-                && mandateService.activeMandate(app.getCustomerId()).isEmpty()) {
-            throw new BusinessException("MANDATE_REQUIRED", "Register your eMandate before continuing");
-        }
+        requireMandate(app);
         long ceiling = app.getSanctionedAmountPaise() != null ? app.getSanctionedAmountPaise() : 0L;
         long drawn = amountPaise != null ? amountPaise : ceiling;
         if (drawn < LoanMath.MIN_LOAN_PAISE) {

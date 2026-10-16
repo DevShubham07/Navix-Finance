@@ -371,13 +371,9 @@ public class JourneyService {
         return OfferStep.OFFER_DONE;
     }
 
-    private boolean hasMandate(LoanApplication app) {
-        return mandateService.activeMandate(app.getCustomerId()).isPresent();
-    }
-
     /** The eMandate step applies: flag on and no ACTIVE mandate (UMRN) on file for the customer. */
     private boolean mandateRequired(LoanApplication app) {
-        return featureFlags.isEnabled("digio-mandate", false) && !hasMandate(app);
+        return featureFlags.isEnabled("digio-mandate", false) && !mandateService.hasUsableMandate(app);
     }
 
     /**

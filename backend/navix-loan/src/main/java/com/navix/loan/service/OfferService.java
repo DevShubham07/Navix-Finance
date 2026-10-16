@@ -455,8 +455,7 @@ public class OfferService {
      */
     private LoanApplication afterAccountConfirmed(LoanApplication app) {
         Long appId = app.getId();
-        if (featureFlags.isEnabled("digio-mandate", false)
-                && mandateService.activeMandate(app.getCustomerId()).isEmpty()) {
+        if (featureFlags.isEnabled("digio-mandate", false) && !mandateService.hasUsableMandate(app)) {
             journey.advance(appId, JourneyService.OfferStep.OFFER_MANDATE);
             return app;
         }
@@ -476,9 +475,15 @@ public class OfferService {
     /** UMRN present means the borrower may proceed: that, and only that, hands the file off. */
     @Transactional
     public StepResult mandateStatus(Long appId) {
-        LoanApplication app = requireSanctioned(appId);
+        LoanApplication app = applicationRepo.findById(appId)
+                .orElseThrow(() -> new ResourceNotFoundException("LoanApplication", String.valueOf(appId)));
+        if (app.getStatus() == ApplicationStatus.DISBURSEMENT_PENDING && mandateService.hasUsableMandate(app)) {
+            // A repeat poll after hand-off (second tab, retry): report success, don't throw.
+            return mandateService.status(appId);
+        }
+        requireSanctioned(appId);
         StepResult result = mandateService.status(appId);
-        if (mandateService.activeMandate(app.getCustomerId()).isPresent()) {
+        if (mandateService.hasUsableMandate(app)) {
             journey.advance(appId, JourneyService.OfferStep.OFFER_DONE);
             flow.acceptOffer(appId, app.getAmountRequested());
         }

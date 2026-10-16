@@ -140,7 +140,7 @@ class MandateJourneyTest {
     void mandateStatusWithUmrnCallsAcceptOffer() {
         flag(true);
         when(mandateService.status(APP)).thenReturn(new StepResult("EMANDATE", "PASS", "ok", Map.of()));
-        when(mandateService.activeMandate(CUSTOMER)).thenReturn(Optional.of(mandate()));
+        when(mandateService.hasUsableMandate(app)).thenReturn(true);
 
         offer.mandateStatus(APP);
 
@@ -170,7 +170,7 @@ class MandateJourneyTest {
     void deriveOfferReturnsDoneWhenCustomerAlreadyHasUmrn() {
         flag(true);
         everythingButMandateDone();
-        when(mandateService.activeMandate(CUSTOMER)).thenReturn(Optional.of(mandate()));
+        when(mandateService.hasUsableMandate(app)).thenReturn(true);
         assertThat(journey.current(APP).step()).isEqualTo("OFFER_DONE");
     }
 
@@ -178,7 +178,7 @@ class MandateJourneyTest {
     void stepIsDroppedForExistingUmrnHolderOnNonReborrowApplication() {
         flag(true);
         app.setReappliedFrom(null);
-        when(mandateService.activeMandate(CUSTOMER)).thenReturn(Optional.of(mandate()));
+        when(mandateService.hasUsableMandate(app)).thenReturn(true);
         assertThat(journey.current(APP).steps()).doesNotContain("OFFER_MANDATE");
     }
 
@@ -196,5 +196,26 @@ class MandateJourneyTest {
         verify(journeyMock).advance(APP, JourneyService.OfferStep.OFFER_DONE);
         verify(flow).acceptOffer(APP, 1_500_000L);
         assertThat(journey.current(APP).steps()).doesNotContain("OFFER_MANDATE");
+    }
+
+    /** F12: a second poll once the file is already at DISBURSEMENT_PENDING reports success, not an error. */
+    @Test
+    void repeatMandatePollAfterHandOffDoesNotThrow() {
+        flag(true);
+        app.setStatus(ApplicationStatus.DISBURSEMENT_PENDING);
+        when(mandateService.hasUsableMandate(app)).thenReturn(true);
+        when(mandateService.status(APP)).thenReturn(new StepResult("EMANDATE", "PASS", "ok", Map.of()));
+
+        assertThat(offer.mandateStatus(APP).status()).isEqualTo("PASS");
+        verify(flow, never()).acceptOffer(any(), any());
+    }
+
+    /** F10 (journey side): hasUsableMandate false (mandate bound to another account) keeps the step. */
+    @Test
+    void aMandateBoundToAnotherAccountDoesNotSkipTheStep() {
+        flag(true);
+        lenient().when(mandateService.activeMandate(CUSTOMER)).thenReturn(Optional.of(mandate()));
+        when(mandateService.hasUsableMandate(app)).thenReturn(false);
+        assertThat(journey.current(APP).steps()).contains("OFFER_MANDATE");
     }
 }
