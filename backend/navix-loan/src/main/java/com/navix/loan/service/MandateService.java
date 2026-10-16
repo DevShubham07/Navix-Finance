@@ -233,14 +233,13 @@ public class MandateService {
     public record MandateView(String status, String umrn, String bankName, String accountLast4,
                               Instant authenticatedAt, String rejectReason, int attemptNo, boolean overridable) {}
 
-    /** Latest attempt for the application's customer, or empty when none was ever started. */
+    /** Newest attempt made on THIS application, or empty when none was ever started. Same row the override gate checks. */
     @Transactional(readOnly = true)
     public Optional<MandateView> staffView(Long appId) {
-        return applications.findById(appId)
-                .flatMap(a -> mandates.findFirstByCustomerIdOrderByAttemptNoDesc(a.getCustomerId()))
+        return mandates.findFirstByLoanApplicationIdOrderByAttemptNoDesc(appId)
                 .map(m -> new MandateView(m.getStatus().name(), m.getUmrn(), m.getBankName(), m.getAccountLast4(),
                         m.getAuthenticatedAt(), m.getRejectReason(), m.getAttemptNo(),
-                        m.getStatus() == Mandate.Status.BANK_UNSUPPORTED && appId.equals(m.getLoanApplicationId())));
+                        m.getStatus() == Mandate.Status.BANK_UNSUPPORTED));
     }
 
     /**

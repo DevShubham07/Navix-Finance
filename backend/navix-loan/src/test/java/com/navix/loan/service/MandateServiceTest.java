@@ -343,7 +343,6 @@ class MandateServiceTest {
         m.setBankName("HDFC Bank");
         m.setDigioMandateId("NONE-4471-1");
         m.setLoanApplicationId(1L);
-        when(mandates.findFirstByCustomerIdOrderByAttemptNoDesc(4471L)).thenReturn(Optional.of(m));
         when(mandates.findFirstByLoanApplicationIdOrderByAttemptNoDesc(1L)).thenReturn(Optional.of(m));
 
         MandateService.MandateView v = service.staffView(1L).orElseThrow();
@@ -373,7 +372,7 @@ class MandateServiceTest {
                 .thenReturn(Optional.of(attempt(99L, Mandate.Status.BANK_UNSUPPORTED)));
 
         assertThat(service.isBankUnsupported(1L)).isFalse();
-        assertThat(service.staffView(1L).orElseThrow().overridable()).isFalse();
+        assertThat(service.staffView(1L)).isEmpty();
     }
 
     @Test
@@ -389,5 +388,23 @@ class MandateServiceTest {
             when(mandates.findFirstByLoanApplicationIdOrderByAttemptNoDesc(1L)).thenReturn(Optional.of(attempt(1L, st)));
             assertThat(service.isBankUnsupported(1L)).as(st.name()).isFalse();
         }
+    }
+
+    @Test
+    void staffViewShowsThisApplicationsAttemptNotAnotherApplications() {
+        Mandate mine = attempt(1L, Mandate.Status.BANK_UNSUPPORTED);
+        mine.setAttemptNo(1);
+        mine.setAccountLast4("9012");
+        Mandate theirs = attempt(2L, Mandate.Status.AUTHORIZATION_FAILED);
+        theirs.setAttemptNo(2);
+        theirs.setRejectReason("other advance");
+        lenient().when(mandates.findFirstByCustomerIdOrderByAttemptNoDesc(4471L)).thenReturn(Optional.of(theirs));
+        when(mandates.findFirstByLoanApplicationIdOrderByAttemptNoDesc(1L)).thenReturn(Optional.of(mine));
+
+        MandateService.MandateView v = service.staffView(1L).orElseThrow();
+
+        assertThat(v.status()).isEqualTo("BANK_UNSUPPORTED");
+        assertThat(v.rejectReason()).isNull();
+        assertThat(v.overridable()).isEqualTo(service.isBankUnsupported(1L)).isTrue();
     }
 }
