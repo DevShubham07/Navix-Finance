@@ -1471,6 +1471,12 @@ public class ApplicationFlowService {
         rejectionRepository.findFirstByMobileAndBlockedUntilAfterOrderByBlockedUntilDesc(mobile, Instant.now())
                 .ifPresent(block -> {
                     log.info("blocked application start customer={} until={}", customerId, block.getBlockedUntil());
+                    // A staff block has no date to promise (CustomerService.block, year 9999) — the
+                    // borrower is told to contact support rather than shown "apply again on 31 Dec 9999".
+                    if (block.isIndefinite()) {
+                        throw new BusinessException("NOT_ELIGIBLE",
+                                "Your account is not eligible for new loans. Please contact support.");
+                    }
                     throw new BusinessException("NOT_ELIGIBLE",
                             "You are not eligible at the moment. You can apply again on or after "
                                     + BLOCK_DATE.format(block.getBlockedUntil().atZone(IST)) + ".");

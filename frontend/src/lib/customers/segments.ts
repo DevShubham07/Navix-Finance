@@ -11,6 +11,8 @@ export type SegmentableCustomer = {
   ownerStaffId?: number | null;
   /** Returning borrower: the latest application was created after an earlier loan closed. */
   reloan?: boolean | null;
+  /** A live block on the customer's mobile (staff block or running cooling-off). */
+  blocked?: boolean | null;
 };
 
 export type CustomerSegment =
@@ -24,6 +26,7 @@ export type CustomerSegment =
   | "hold"
   | "rejected"
   | "closed"
+  | "blocked"
   | "reloan"
   | "unallocated"
   | "all";
@@ -40,6 +43,7 @@ export const SEGMENT_LABEL: Record<CustomerSegment, string> = {
   hold: "Hold",
   rejected: "Rejected",
   closed: "Closed",
+  blocked: "Blocked",
   reloan: "Reloan",
   unallocated: "Unallocated",
 };
@@ -55,6 +59,7 @@ export const SEGMENTS: CustomerSegment[] = [
   "overdue",
   "hold",
   "rejected",
+  "blocked",
   "closed",
   "reloan",
   "unallocated",
@@ -86,7 +91,7 @@ const CLOSED_APP = new Set(["CLOSED", "WRITTEN_OFF", "CANCELLED"]);
 /** Lifecycle segment for one customer row (loan status outranks application status). */
 export function segmentOf(
   c: Pick<SegmentableCustomer, "loanStatus" | "latestStatus">,
-): Exclude<CustomerSegment, "unallocated" | "reloan" | "all"> {
+): Exclude<CustomerSegment, "unallocated" | "reloan" | "blocked" | "all"> {
   const loan = c.loanStatus ?? null;
   const app = c.latestStatus ?? null;
 
@@ -112,6 +117,7 @@ export function inSegment(c: SegmentableCustomer, seg: CustomerSegment): boolean
   if (seg === "all") return true;
   if (seg === "unallocated") return c.ownerStaffId == null;
   if (seg === "reloan") return c.reloan === true;
+  if (seg === "blocked") return c.blocked === true;
   return segmentOf(c) === seg;
 }
 
@@ -131,6 +137,7 @@ export function segmentCounts(rows: SegmentableCustomer[]): SegmentCounts {
     hold: 0,
     rejected: 0,
     closed: 0,
+    blocked: 0,
     reloan: 0,
     unallocated: 0,
   };
@@ -138,6 +145,7 @@ export function segmentCounts(rows: SegmentableCustomer[]): SegmentCounts {
     counts[segmentOf(c)]++;
     if (c.ownerStaffId == null) counts.unallocated++;
     if (c.reloan === true) counts.reloan++;
+    if (c.blocked === true) counts.blocked++;
   }
   return counts;
 }

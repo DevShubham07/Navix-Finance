@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Briefcase, ExternalLink, IdCard, Pencil, Phone, ShieldCheck, User } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Field, FieldGrid } from "@/components/ui/field-grid";
 import { CreditBadge } from "@/components/staff/credit-badge";
 import { CustomerEditDialog } from "@/components/staff/customer-edit-dialog";
@@ -54,7 +55,11 @@ export function CustomerTab({ detail: c, customerId, app, onChanged }: TabCtx) {
   return (
     <div className="space-y-3">
       <div className="grid gap-3 md:grid-cols-3">
-        <Section title="Basic information" icon={User}>
+        <Section
+          title="Basic information"
+          icon={User}
+          pill={c.blocked ? <Badge variant="error" size="sm">Blocked</Badge> : undefined}
+        >
           <FieldGrid cols={2}>
             <Field label="Customer no" keyLabel mono>#{customerId}</Field>
             <Field label="Full name" tone="navy">{p?.fullName}</Field>
@@ -72,6 +77,11 @@ export function CustomerTab({ detail: c, customerId, app, onChanged }: TabCtx) {
                 />
               ) : null}
             </Field>
+            {c.blocked && (
+              <Field label="Future loans" tone="navy">
+                Blocked{c.blockedReason ? ` · ${c.blockedReason}` : ""}
+              </Field>
+            )}
           </FieldGrid>
         </Section>
 

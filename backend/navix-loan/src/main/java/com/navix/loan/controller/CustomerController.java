@@ -11,10 +11,12 @@ import com.navix.loan.dto.CustomerDtos.AddCallLogRequest;
 import com.navix.loan.dto.CustomerDtos.AddRemarkRequest;
 import com.navix.loan.dto.CustomerDtos.ApplicationDocumentGroup;
 import com.navix.loan.dto.CustomerDtos.AssignOwnerRequest;
+import com.navix.loan.dto.CustomerDtos.BlockCustomerRequest;
 import com.navix.loan.dto.CustomerDtos.BookStats;
 import com.navix.loan.dto.CustomerDtos.CallLogView;
 import com.navix.loan.dto.CustomerDtos.ChangeSanctionedAmountRequest;
 import com.navix.loan.dto.CustomerDtos.ConfirmMobileChangeRequest;
+import com.navix.loan.dto.CustomerDtos.CustomerBlockView;
 import com.navix.loan.dto.CustomerDtos.CustomerDetail;
 import com.navix.loan.dto.CustomerDtos.CustomerPage;
 import com.navix.loan.dto.CustomerDtos.CustomerSummary;
@@ -294,6 +296,21 @@ public class CustomerController {
                                                    @RequestBody AssignOwnerRequest req) {
         requireStaff();
         return ApiResponse.ok(customerService.assignOwner(customerId, req.staffId()));
+    }
+
+    /** ACCOUNTANT / ADMIN — block the customer for future loans (indefinite, reason required). */
+    @PostMapping("/{customerId}/block")
+    public ApiResponse<CustomerBlockView> block(@PathVariable Long customerId,
+                                                @Valid @RequestBody BlockCustomerRequest req) {
+        requireStaff();
+        return ApiResponse.ok(customerService.block(customerId, req.reason()));
+    }
+
+    /** ADMIN — lift a staff block. */
+    @DeleteMapping("/{customerId}/block")
+    public ApiResponse<CustomerBlockView> unblock(@PathVariable Long customerId) {
+        requireStaff();
+        return ApiResponse.ok(customerService.unblock(customerId));
     }
 
     /** Staff call logs on a customer, optionally narrowed to one loan via {@code ?loanId=}. */

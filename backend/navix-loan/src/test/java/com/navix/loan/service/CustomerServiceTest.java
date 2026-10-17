@@ -68,6 +68,8 @@ class CustomerServiceTest {
     @Mock private org.springframework.context.ApplicationEventPublisher eventPublisher;
     @Mock private LoanMath loanMath;
     @Mock private CustomerBookQuery bookQuery;
+    @Mock private com.navix.loan.repository.ApplicationRejectionRepository rejectionRepository;
+    @Mock private com.navix.common.blocklist.BlocklistMirror blocklistMirror;
 
     private CustomerService service;
 
@@ -80,7 +82,7 @@ class CustomerServiceTest {
                 staffDirectory, applicationActorDirectory, collectionCaseDirectory,
                 jdbc, creditBriefService, documentRepository, bureauStateService,
                 verificationFailureService, providerAttempts, verificationRepository, referenceRepository, otpVerifier, borrowerIdentity, eventPublisher,
-                loanMath, bookQuery, trustSignals);
+                loanMath, bookQuery, trustSignals, rejectionRepository, blocklistMirror);
         lenient().when(ownerRepository.findAll()).thenReturn(List.of());
         // Nothing outstanding by default: an unstubbed mock returns null, and the summary
         // dereferences the reason. Tests about a specific failure stub this themselves.
@@ -193,6 +195,168 @@ class CustomerServiceTest {
         assertThat(row.checks().get("BUREAU").derived()).isEmpty();
         assertThat(row.checks()).doesNotContainKey("AADHAAR_PHOTO");
         assertThat(row.references()).extracting("mobile").containsExactly("9876543210");
+    }
+
+    // ---- block() / unblock(): "should this customer borrow again?", decided at repayment verify ----
+
+    private CustomerProfile blockableProfile() {
+        CustomerProfile p = profile(2, "Asha Rao", "ABCDE1234F");
+        p.setMobile("9876543210");
+        when(applicationRepository.findByCustomerId(9000001L))
+                .thenReturn(List.of(app(2, 9000001L, ApplicationStatus.CLOSED)));
+        when(profileRepository.findByApplicationId(2L)).thenReturn(Optional.of(p));
+        return p;
+    }
+
+    @Test
+    void accountantBlockWritesAnIndefiniteRejectionMirrorsTheBlocklistAndAudits() {
+        ActorContext.set(new CurrentActor("7", "Acc", "ACCOUNTANT"));
+        blockableProfile();
+        when(rejectionRepository.findByMobileAndReasonCodeAndBlockedUntilAfter(
+                eq("9876543210"), eq(com.navix.loan.entity.ApplicationRejection.BLOCKED_BY_STAFF), any()))
+                .thenReturn(List.of());
+
+        var view = service.block(9000001L, "  Repeated bounced repayments  ");
+
+        assertThat(view.blocked()).isTrue();
+        assertThat(view.blockedReason()).isEqualTo("Repeated bounced repayments");
+        var saved = org.mockito.ArgumentCaptor.forClass(com.navix.loan.entity.ApplicationRejection.class);
+        verify(rejectionRepository).save(saved.capture());
+        assertThat(saved.getValue().getCustomerId()).isEqualTo(9000001L);
+        assertThat(saved.getValue().getMobile()).isEqualTo("9876543210");
+        assertThat(saved.getValue().getReasonCode())
+                .isEqualTo(com.navix.loan.entity.ApplicationRejection.BLOCKED_BY_STAFF);
+        assertThat(saved.getValue().getReasonDetail()).isEqualTo("Repeated bounced repayments");
+        assertThat(saved.getValue().getAuto()).isFalse();
+        assertThat(saved.getValue().getApplicationId()).isNull();
+        // Indefinite: year 9999, which assertNotBlocked compares against now() as usual.
+        assertThat(saved.getValue().isIndefinite()).isTrue();
+        assertThat(saved.getValue().getBlockedUntil())
+                .isEqualTo(com.navix.loan.entity.ApplicationRejection.INDEFINITE);
+        // Mirrored onto the fraud blocklist so dedupe flags a later signup on the same identifiers.
+        verify(blocklistMirror).block("PHONE", "9876543210", "Blocked by staff: Repeated bounced repayments");
+        verify(blocklistMirror).block("PAN", "ABCDE1234F", "Blocked by staff: Repeated bounced repayments");
+        // Audited the way assignOwner is.
+        var log = org.mockito.ArgumentCaptor.forClass(com.navix.loan.entity.ProfileChangeLog.class);
+        verify(changeLogRepository).save(log.capture());
+        assertThat(log.getValue().getCustomerId()).isEqualTo(9000001L);
+        assertThat(log.getValue().getField()).isEqualTo("blocked");
+        assertThat(log.getValue().getOldValue()).isNull();
+        assertThat(log.getValue().getNewValue()).isEqualTo("Repeated bounced repayments");
+    }
+
+    @Test
+    void blockRequiresAReason() {
+        ActorContext.set(new CurrentActor("7", "Acc", "ACCOUNTANT"));
+
+        assertThatThrownBy(() -> service.block(9000001L, "   "))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "REASON_REQUIRED");
+        verify(rejectionRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void blockRefusesToDoubleBlock() {
+        ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
+        blockableProfile();
+        var live = new com.navix.loan.entity.ApplicationRejection();
+        live.setBlockedUntil(com.navix.loan.entity.ApplicationRejection.INDEFINITE);
+        when(rejectionRepository.findByMobileAndReasonCodeAndBlockedUntilAfter(
+                eq("9876543210"), eq(com.navix.loan.entity.ApplicationRejection.BLOCKED_BY_STAFF), any()))
+                .thenReturn(List.of(live));
+
+        assertThatThrownBy(() -> service.block(9000001L, "again"))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "ALREADY_BLOCKED");
+        verify(rejectionRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void creditExecutiveCannotBlock() {
+        ActorContext.set(new CurrentActor("9", "Exec", "CREDIT_EXECUTIVE"));
+
+        assertThatThrownBy(() -> service.block(9000001L, "no"))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "FORBIDDEN_ROLE");
+        verify(rejectionRepository, org.mockito.Mockito.never()).save(any());
+        verify(blocklistMirror, org.mockito.Mockito.never()).block(any(), any(), any());
+    }
+
+    @Test
+    void unblockIsAdminOnly() {
+        // The accountant may close the door; only an ADMIN reopens it.
+        ActorContext.set(new CurrentActor("7", "Acc", "ACCOUNTANT"));
+
+        assertThatThrownBy(() -> service.unblock(9000001L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "FORBIDDEN_ROLE");
+        verify(rejectionRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void adminUnblockEndsTheStaffBlockNowAndLiftsOnlyTheMirroredEntries() {
+        ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
+        blockableProfile();
+        var live = new com.navix.loan.entity.ApplicationRejection();
+        live.setMobile("9876543210");
+        live.setReasonCode(com.navix.loan.entity.ApplicationRejection.BLOCKED_BY_STAFF);
+        live.setReasonDetail("Repeated bounced repayments");
+        live.setBlockedUntil(com.navix.loan.entity.ApplicationRejection.INDEFINITE);
+        when(rejectionRepository.findByMobileAndReasonCodeAndBlockedUntilAfter(
+                eq("9876543210"), eq(com.navix.loan.entity.ApplicationRejection.BLOCKED_BY_STAFF), any()))
+                .thenReturn(List.of(live));
+
+        var view = service.unblock(9000001L);
+
+        assertThat(view.blocked()).isFalse();
+        // The row stays as history; its block simply ended now rather than being deleted.
+        assertThat(live.getBlockedUntil()).isBeforeOrEqualTo(java.time.Instant.now());
+        assertThat(live.isIndefinite()).isFalse();
+        verify(rejectionRepository).save(live);
+        // Exact-reason unblock: an entry an ADMIN added separately for the same PAN is left alone.
+        verify(blocklistMirror).unblock("PHONE", "9876543210", "Blocked by staff: Repeated bounced repayments");
+        verify(blocklistMirror).unblock("PAN", "ABCDE1234F", "Blocked by staff: Repeated bounced repayments");
+        var log = org.mockito.ArgumentCaptor.forClass(com.navix.loan.entity.ProfileChangeLog.class);
+        verify(changeLogRepository).save(log.capture());
+        assertThat(log.getValue().getField()).isEqualTo("blocked");
+        assertThat(log.getValue().getOldValue()).isEqualTo("Repeated bounced repayments");
+        assertThat(log.getValue().getNewValue()).isNull();
+    }
+
+    @Test
+    void unblockOfAnUnblockedCustomerIsNotBlocked() {
+        ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
+        blockableProfile();
+        when(rejectionRepository.findByMobileAndReasonCodeAndBlockedUntilAfter(any(), any(), any()))
+                .thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.unblock(9000001L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "NOT_BLOCKED");
+    }
+
+    @Test
+    void listRowsCarryTheLiveBlockFromOneBatchedQuery() {
+        ActorContext.set(new CurrentActor("31", "Credit Head", "CREDIT_HEAD"));
+        CustomerProfile p = profile(2, "Asha Rao", "ABCDE1234F");
+        p.setMobile("9876543210");
+        when(applicationRepository.findByCustomerIdIn(List.of(9000001L)))
+                .thenReturn(List.of(app(2, 9000001L, ApplicationStatus.CLOSED)));
+        when(profileRepository.findByApplicationIdIn(any())).thenReturn(List.of(p));
+        var live = new com.navix.loan.entity.ApplicationRejection();
+        live.setMobile("9876543210");
+        live.setReasonCode(com.navix.loan.entity.ApplicationRejection.BLOCKED_BY_STAFF);
+        live.setReasonDetail("Repeated bounced repayments");
+        live.setBlockedUntil(com.navix.loan.entity.ApplicationRejection.INDEFINITE);
+        when(rejectionRepository.findByMobileInAndBlockedUntilAfter(eq(List.of("9876543210")), any()))
+                .thenReturn(List.of(live));
+
+        List<CustomerSummary> rows = service.byIds(List.of(9000001L));
+
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0).blocked()).isTrue();
+        assertThat(rows.get(0).blockedReason()).isEqualTo("Repeated bounced repayments");
+        verify(rejectionRepository, org.mockito.Mockito.times(1)).findByMobileInAndBlockedUntilAfter(any(), any());
     }
 
     // ---- page() / summary() / export(): filtering, sorting and paging live in CustomerBookQuery ----

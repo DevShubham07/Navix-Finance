@@ -167,6 +167,31 @@ class ApplicationFlowServiceTest {
                 .hasMessageContaining("not eligible");
     }
 
+    /** A staff block (CustomerService.block, year 9999) has no date to promise the borrower. */
+    @Test
+    void staffBlockedMobile_isToldToContactSupportNotADate() {
+        actor("7", "BORROWER");
+        CustomerProfile prior = new CustomerProfile();
+        prior.setApplicationId(1L);
+        prior.setMobile("9876543210");
+        LoanApplication closed = new LoanApplication();
+        closed.setId(1L);
+        closed.setCustomerId(7L);
+        closed.setStatus(ApplicationStatus.CLOSED);
+        when(applicationRepository.findByCustomerId(7L)).thenReturn(List.of(closed));
+        when(profileRepository.findByApplicationId(1L)).thenReturn(Optional.of(prior));
+        ApplicationRejection block = new ApplicationRejection();
+        block.setReasonCode(ApplicationRejection.BLOCKED_BY_STAFF);
+        block.setBlockedUntil(ApplicationRejection.INDEFINITE);
+        when(rejectionRepository.findFirstByMobileAndBlockedUntilAfterOrderByBlockedUntilDesc(
+                eq("9876543210"), any())).thenReturn(Optional.of(block));
+
+        assertThatThrownBy(() -> flow.createDraft(7L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "NOT_ELIGIBLE")
+                .hasMessage("Your account is not eligible for new loans. Please contact support.");
+    }
+
     @Test
     void creditToActiveHappyPath() {
         LoanApplication app = appAt(ApplicationStatus.KYC_PENDING);
