@@ -17,6 +17,13 @@ shipped disabled) was designed and planned in:
 
 Debit presentation, webhooks, and mandate amendment/cancellation are explicit non-goals of that build.
 
+Debit presentation was built afterwards, behind the separate `digio-debit` flag (V85, **shipped disabled**):
+- Scheduled at **DPD 1, 3, 5, 9** by `MandateDebitScheduler` (`NAVIX_DIGIO_DEBIT_CRON`, default 10:00 Asia/Kolkata) plus a manual `POST /api/collections/loans/{loanId}/debit` for collections staff (`mandate:debit`; an executive may debit only their own cases).
+- A successful debit is credited through `LoanDirectory.creditCollectionPayment` and auto-verifies — no Accountant step.
+- **There is still no webhook receiver.** Outcomes come from a polling reconcile pass capped at 50 rows per run (a deliberate stopgap).
+- Still not built: UPI AutoPay debit, mandate amendment/cancellation, consolidated settlement reconciliation.
+- **GO-LIVE BLOCKER:** the re-presentable reject-code allowlist in `DebitService` is invented — no debit has ever been presented, so Digio's real `failure_code` format is unobserved. It fails closed; if the real codes are numeric, nothing is ever re-presented and the DPD 3/5/9 retries never fire. Confirm against one real failure before enabling the flag.
+
 ## Contents
 
 | File | Covers |

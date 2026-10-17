@@ -132,7 +132,7 @@ navix_final/
 │   ├── navix-storage/            # S3 abstraction (presign)
 │   ├── navix-notification/       # ★ notification engine: events→dispatcher→in-app/SMS/email
 │   ├── navix-app/                # ★ the only bootable module; JwtAuthFilter, SecurityConfig, Flyway
-│   │   └── src/main/resources/db/migration/   # V1..V83 (the REAL schema lives here — see §10)
+│   │   └── src/main/resources/db/migration/   # V1..V85 (the REAL schema lives here — see §10)
 │   └── pom.xml                   # parent BOM
 ├── frontend/
 │   └── src/
@@ -286,8 +286,20 @@ Digio eMandate first (`OFFER_MANDATE`, §6) and the mandate hands the file off. 
 sanction never expires.
 
 **Repay → close:** repayments are recorded by the borrower (PENDING_VERIFICATION) and confirmed by
-the Accountant (`…/repayments/{pid}/verify`); when Σ verified payments ≥ total the loan closes and
+the Accountant (`…/repayments/{pid}/verify`) — except a **NACH debit** (below), which auto-verifies; when Σ verified payments ≥ total the loan closes and
 `ApplicationFlowService.closeForLoan` transitions the application `ACTIVE/OVERDUE → CLOSED`.
+
+**NACH debit presentation (`digio-debit`, ships OFF — nothing here is live):** against a registered mandate,
+`MandateDebitScheduler` presents at **DPD 1, 3, 5, 9** (counted from the due date) and collections staff can
+present manually (`POST /api/collections/loans/{loanId}/debit`, `mandate:debit`). `DebitService` owns the
+double-debit guards (`uq_mandate_debit_in_flight`, V84, plus an advisory lock). **Outcomes are read by a
+polling reconcile pass, capped at 50 rows per run — there is no Digio webhook receiver; that is a deliberate
+stopgap.** A successful debit is credited through `LoanDirectory.creditCollectionPayment` and is recorded
+**VERIFIED in one step — no Accountant step for NACH money**: a bank-confirmed debit carrying a UTR is
+stronger evidence than the screenshot the manual flow accepts, and `outstandingAsOf` counts only `VERIFIED`
+payments. Note `mandate_debit.updated_at` on an open row means **"last attempted"**, not "last status
+change" — the reconcile sweep touches it to rotate the queue; do not read it as an audit timestamp. Not
+built: UPI AutoPay debit, mandate amendment/cancellation, consolidated settlement reconciliation.
 
 **Reborrow (returning borrower):** `ApplicationFlowService.reborrow` mints a **new** application for an
 existing borrower, reusing their saved profile (no re-collection — **salary day carried over from the
@@ -459,7 +471,7 @@ endpoints, different httpOnly cookies, never shared.** This was an explicit requ
 `collections:manage`, `collections:interact`, `staff:manage`, `customer:view` (every staff role
 except **DSA** — see the note above), `customer:view:all`, `customer:assign` (Heads + TELECALLER +
 ADMIN), `customer:manage` (ADMIN — correct KYC, cancel, blocklist), `document:upload`,
-`verification:retry`, `mandate:override` (DISBURSEMENT_HEAD + ADMIN — override **this application's own** newest `BANK_UNSUPPORTED` mandate attempt; an earlier advance's unsupported attempt says nothing about this account and is never overridable), `referral:payout` (DISBURSEMENT_HEAD + ADMIN), `leads:manage` (TELECALLER +
+`verification:retry`, `mandate:override` (DISBURSEMENT_HEAD + ADMIN — override **this application's own** newest `BANK_UNSUPPORTED` mandate attempt; an earlier advance's unsupported attempt says nothing about this account and is never overridable), `mandate:debit` (COLLECTION_EXECUTIVE + COLLECTION_HEAD + ADMIN — manually present a NACH debit via `POST /api/collections/loans/{loanId}/debit`; an executive may debit only their own assigned cases), `referral:payout` (DISBURSEMENT_HEAD + ADMIN), `leads:manage` (TELECALLER +
 ADMIN), `dsa:portal` (**DSA only** — the *only* token a DSA holds, and deliberately **not** granted to
 ADMIN, whose oversight goes through `dsa:manage`), `dsa:manage` (ADMIN).
 
@@ -593,7 +605,7 @@ Flyway migrations live in **`backend/navix-app/src/main/resources/db/migration/`
 navix-common). Applied on every boot:
 
 Flyway migrations live in **`backend/navix-app/src/main/resources/db/migration/`** (not
-navix-common) and are applied on every boot — **V1..V83** today. Each file carries a header comment
+navix-common) and are applied on every boot — **V1..V85** today. Each file carries a header comment
 explaining *why* it exists; that is the source of truth. The index is
 [`docs/MIGRATIONS.md`](docs/MIGRATIONS.md).
 
@@ -681,6 +693,13 @@ What holds across all of it, and does not belong in that file:
   files a real, legally binding NPCI mandate and there is no sandbox, so a missing row must leave it off;
   the `ProductionConfigGuard` refusal of `navix.digio.provider=mock` in prod is gated on **this flag**, so a
   prod deploy is never blocked for a disabled feature),
+  `digio-debit` (**off, V85** — NACH debit presentation: the scheduled sweep at DPD 1/3/5/9 plus the manual
+  collections debit; `defaultWhenMissing = FALSE` because it **moves real money** out of a borrower's account
+  with no sandbox and no idempotency key. **GO-LIVE BLOCKER: do not enable** until the re-presentable
+  reject-code allowlist in `DebitService` (`BALANCE_INSUFFICIENT` + two siblings) is confirmed against one
+  real Digio `failure_code` — those strings are invented, no debit has ever been presented, and the list
+  fails closed, so if the real codes are numeric nothing is ever re-presented and the DPD 3/5/9 retries
+  silently never fire),
   `employment-auto-retry` (on — the hourly re-run of
   EPFO checks a vendor outage parked), `global-search` (**on, V73** — the staff Cmd/Ctrl+K palette;
   the one flag read with `defaultWhenMissing = TRUE`, since search takes no money-affecting action
@@ -700,7 +719,7 @@ What holds across all of it, and does not belong in that file:
   `NAVIX_ESIGN_*` (`PROVIDER` signzy|mock · `CALLBACK_URL` + `CALLBACK_SECRET` — **both mandatory when
   the provider is `signzy`**; the app refuses to start otherwise, SSM `/navix/<env>/navix/esign/…`),
   `NAVIX_DIGIO_*` (`PROVIDER` mock|digio · `BASE_URL` · `CLIENT_ID` · `CLIENT_SECRET` · `WEBHOOK_SECRET` ·
-  `CORPORATE_CONFIG_ID` · `NARRATION` · `EXPIRE_IN_DAYS` — the Digio eMandate; the app **refuses to start**
+  `CORPORATE_CONFIG_ID` · `NARRATION` · `EXPIRE_IN_DAYS` · `DEBIT_CRON` — the Digio eMandate; `NAVIX_DIGIO_DEBIT_CRON` is the debit sweep schedule, default 10:00 `Asia/Kolkata`; the app **refuses to start**
   with provider `digio` unless the five credentials are set, SSM `/navix/<env>/navix/digio/…`; `.env.example`
   ships `mock`), `NAVIX_S3_*`, `NAVIX_SMS_*` (incl. `NAVIX_SMS_MOCK`),
   `NAVIX_WHATSAPP_*` (`TOKEN` — SSM `/navix/<env>/navix/whatsapp/token` · `ENABLED` · `MOCK` · `OTP_TEMPLATE`),
@@ -769,7 +788,7 @@ The rules that survive outside that file:
 - **[`docs/API_SURFACE.md`](docs/API_SURFACE.md)** — the full endpoint map (controllers still win).
 - **[`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md)** — Signzy / Digitap / Fintrix / SES / UltronSMS:
   capability routing, auth, hosts, live-test status, per-API gotchas.
-- **[`docs/MIGRATIONS.md`](docs/MIGRATIONS.md)** — the V1..V83 Flyway catalog.
+- **[`docs/MIGRATIONS.md`](docs/MIGRATIONS.md)** — the V1..V85 Flyway catalog.
 - **[`docs/whatsapp/WHATSAPP_GUIDE.md`](docs/whatsapp/WHATSAPP_GUIDE.md)** — borrower messaging: WhatsApp
   (SmartChat — API quirks, template catalogue, backlog), SMS (UltronSMS) and DLT in one place.
 
