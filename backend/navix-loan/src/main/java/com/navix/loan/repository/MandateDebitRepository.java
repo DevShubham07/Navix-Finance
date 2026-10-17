@@ -21,6 +21,9 @@ public interface MandateDebitRepository extends JpaRepository<MandateDebit, Long
 
     boolean existsByLoanIdAndStatusIn(Long loanId, Collection<MandateDebit.Status> statuses);
 
+    /** Attempts that ended without collecting money; the retry cap counts only these. */
+    long countByLoanIdAndStatusIn(Long loanId, Collection<MandateDebit.Status> statuses);
+
     /**
      * Serialises debit presentation for one loan until the transaction commits (taken before the in-flight
      * check). The caller passes a key already offset away from the customer-keyed lock in MandateRepository.

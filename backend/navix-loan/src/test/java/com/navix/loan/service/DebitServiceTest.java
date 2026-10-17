@@ -299,8 +299,18 @@ class DebitServiceTest {
         when(debits.findFirstByLoanIdOrderByAttemptNoDesc(LOAN)).thenReturn(Optional.of(failed));
         service.present(LOAN, null, Trigger.SCHEDULED, null);
         verify(port, times(1)).presentDebit(any());
-        failed.setAttemptNo(4);
+        when(debits.countByLoanIdAndStatusIn(eq(LOAN), anyCollection())).thenReturn(4L);
         assertCode(() -> service.present(LOAN, null, Trigger.SCHEDULED, null), "DEBIT_ATTEMPTS_EXHAUSTED");
+        verify(port, times(1)).presentDebit(any());
+    }
+
+    @Test
+    void succeededAttemptsDoNotConsumeTheRetryCap() {
+        MandateDebit paid = row(Status.SUCCEEDED, null);
+        paid.setAttemptNo(5);
+        when(debits.findFirstByLoanIdOrderByAttemptNoDesc(LOAN)).thenReturn(Optional.of(paid));
+        when(debits.countByLoanIdAndStatusIn(eq(LOAN), anyCollection())).thenReturn(0L);
+        service.present(LOAN, 100_000L, Trigger.MANUAL, 9L);
         verify(port, times(1)).presentDebit(any());
     }
 

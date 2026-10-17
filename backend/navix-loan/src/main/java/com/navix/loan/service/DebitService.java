@@ -49,6 +49,7 @@ public class DebitService {
     /** ECS runs UTC; all dates here are Indian calendar dates (see RepaymentService.IST). */
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final Set<Status> IN_FLIGHT = EnumSet.of(Status.SCHEDULED, Status.IN_PROGRESS);
+    private static final Set<Status> UNSUCCESSFUL = EnumSet.of(Status.FAILED, Status.FAILED_TECHNICAL);
     private static final Set<String> LIVE_LOAN = Set.of("ACTIVE", "OVERDUE", "IN_COLLECTIONS");
     private static final Pattern NARRATION = Pattern.compile("^[0-9A-Za-z& .]{1,20}$");
     private static final Pattern UNIQUE_KEY = Pattern.compile("^[A-Za-z0-9_-]{1,30}$");
@@ -198,7 +199,8 @@ public class DebitService {
             if (latest.getStatus() == Status.FAILED && !eligibleForRepresentation(latest)) {
                 throw new BusinessException("DEBIT_NOT_REPRESENTABLE", "The last debit failed in a way that cannot be retried");
             }
-            if (latest.getAttemptNo() >= MAX_ATTEMPTS) {
+            // Only fruitless attempts consume the cap; a SUCCEEDED part payment, a CANCELLED or a SKIPPED row does not.
+            if (debits.countByLoanIdAndStatusIn(loanId, UNSUCCESSFUL) >= MAX_ATTEMPTS) {
                 throw new BusinessException("DEBIT_ATTEMPTS_EXHAUSTED", "The maximum number of debit attempts has been reached");
             }
         }
