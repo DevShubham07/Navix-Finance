@@ -9,6 +9,7 @@ import com.navix.verification.config.DigioProperties;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -115,6 +116,66 @@ public class DigioMandateClient implements MandatePort {
             out.add(new BankCapability(text(b.path("ifsc_prefix")), b.path("api_mandate").asBoolean(false), subs));
         }
         return out;
+    }
+
+    @Override
+    public DebitPlan presentDebit(DebitRequest r) {
+        ObjectNode body = JSON.createObjectNode();
+        body.put("umrn", r.umrn());
+        body.put("corporate_account_number", r.corporateAccountNumber());
+        body.put("frequency", "adhoc");   // lowercase on the debit API, unlike registration
+        body.put("payment_count", 1);
+        // amount_in_paise is int32; exact conversion throws rather than silently wrapping a huge amount.
+        body.put("amount_in_paise", Math.toIntExact(r.amountPaise()));
+        body.put("settlement_date", r.settlementDate().toString());
+        body.put("unique_key", r.uniqueKey());
+        if (r.narration() != null) {
+            body.put("narration", r.narration());
+        }
+        JsonNode root = call("debit_register", http.post().uri("/v3/client/nach_debit/scheduled/register")
+                .contentType(MediaType.APPLICATION_JSON).body(body.toString()));
+        JsonNode up = root.path("upcoming_transaction");
+        LocalDate settle = date(text(up.path("scheduled_settlement_date")));
+        // ponytail: the spec's create response carries no NPT id; read upcoming_transaction.id if Digio
+        // adds it, else null and the caller recovers the transaction by plan. Confirm on the first live debit.
+        return new DebitPlan(text(root.path("id")), text(root.path("status")), text(up.path("id")),
+                settle != null ? settle : r.settlementDate());
+    }
+
+    @Override
+    public DebitOutcome debitStatus(String txnId) {
+        JsonNode root = call("debit_status", http.get().uri("/v3/client/nach_debit/transaction/{id}", txnId));
+        JsonNode d = root.path("details");
+        return new DebitOutcome(text(root.path("id")) != null ? text(root.path("id")) : txnId,
+                text(d.path("status")), text(d.path("utr")), text(d.path("failure_code")),
+                text(d.path("failure_reason")), d.path("amount_in_paise").asLong(0));
+    }
+
+    @Override
+    public boolean cancelDebit(String txnId) {
+        ObjectNode body = JSON.createObjectNode();
+        body.put("transaction_id", txnId);
+        body.put("action", "cancel");
+        try {
+            call("debit_cancel", http.post().uri("/v3/client/nach_debit/transaction/action")
+                    .contentType(MediaType.APPLICATION_JSON).body(body.toString()));
+            return true;
+        } catch (BusinessException e) {
+            // Digio refuses a cancel once the debit is initiated, as a body-coded error (often HTTP 500).
+            // Auth/transport failures carry other codes and still propagate.
+            if ("SYSTEM_ERROR".equals(e.getCode()) || "DIGIO_HTTP_400".equals(e.getCode())) {
+                return false;
+            }
+            throw e;
+        }
+    }
+
+    private static LocalDate date(String s) {
+        try {
+            return s == null ? null : LocalDate.parse(s.substring(0, 10));
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private static MandateResult result(JsonNode m) {

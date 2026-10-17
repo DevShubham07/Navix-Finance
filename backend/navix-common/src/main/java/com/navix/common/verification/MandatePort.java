@@ -28,6 +28,35 @@ public interface MandatePort {
     List<BankCapability> liveBanks();
 
     /**
+     * Schedule one NACH debit against a registered mandate. Moves <b>real money</b> and is not retry-safe:
+     * after an unknown outcome (timeout) do not re-present; the {@code uniqueKey} is the only handle.
+     */
+    DebitPlan presentDebit(DebitRequest request);
+
+    /** Read a debit transaction by the provider's {@code NPT...} id. Read-only and retry-safe. */
+    DebitOutcome debitStatus(String txnId);
+
+    /** Cancel a debit; {@code false} when the provider refuses (it is only allowed before initiation). */
+    boolean cancelDebit(String txnId);
+
+    /**
+     * @param amountPaise     integer paise, sent as Digio's {@code amount_in_paise}
+     * @param uniqueKey       at most 30 of {@code [A-Za-z0-9-_]}; the recovery handle for a timed-out create
+     * @param narration       at most 20 chars; what the borrower reads on their bank statement
+     */
+    record DebitRequest(String umrn, long amountPaise, LocalDate settlementDate, String uniqueKey,
+                        String corporateAccountNumber, String narration) {
+    }
+
+    /** @param txnId the {@code NPT...} id; null when Digio has not yet minted one (the plan id then stands in) */
+    record DebitPlan(String planId, String status, String txnId, LocalDate scheduledSettlementDate) {
+    }
+
+    record DebitOutcome(String txnId, String status, String utr, String failureCode, String failureReason,
+                        long amountPaise) {
+    }
+
+    /**
      * @param customerRefNumber    our unique reconciliation key (at most 20 alphanumerics)
      * @param maximumAmountPaise   per-instruction ceiling in integer paise; converted to rupees once, in the adapter
      * @param finalCollectionDate  nullable; the provider defaults it to 40 years out

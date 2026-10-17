@@ -55,4 +55,23 @@ public class MockMandateAdapter implements MandatePort {
         refuseInProd();
         return List.of(new BankCapability("MOCK", true, List.of("net_banking", "aadhaar", "debit")));
     }
+
+    @Override
+    public DebitPlan presentDebit(DebitRequest request) {
+        refuseInProd();
+        return new DebitPlan("NSPMOCK" + request.uniqueKey(), "active", "NPTMOCK" + request.uniqueKey(),
+                request.settlementDate());
+    }
+
+    @Override
+    public DebitOutcome debitStatus(String txnId) {
+        refuseInProd();
+        return new DebitOutcome(txnId, "SUCCESS", "MOCKUTR" + txnId, null, null, 0L);
+    }
+
+    @Override
+    public boolean cancelDebit(String txnId) {
+        refuseInProd();
+        return true;
+    }
 }

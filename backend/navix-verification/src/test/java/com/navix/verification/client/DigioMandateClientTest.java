@@ -196,4 +196,88 @@ class DigioMandateClientTest {
         assertThat(banks.get(0).allowedAuthSubTypes()).containsExactly("aadhaar", "debit");
         assertThat(banks.get(1).apiMandate()).isFalse();
     }
+
+    private static final com.navix.common.verification.MandatePort.DebitRequest DEBIT =
+            new com.navix.common.verification.MandatePort.DebitRequest("UMRN1", 1_270_000L,
+                    LocalDate.of(2026, 11, 30), "L42-R1", "9999888877776666", "DhanBoost");
+
+    @Test
+    void presentDebitSendsAmountInPaiseAndAdhocFrequency() throws Exception {
+        DigioMandateClient c = client();
+        AtomicReference<String> sent = new AtomicReference<>();
+        server.expect(requestTo(BASE + "/v3/client/nach_debit/scheduled/register"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(r -> sent.set(((org.springframework.mock.http.client.MockClientHttpRequest) r).getBodyAsString()))
+                .andRespond(withSuccess("{\"id\":\"NSP1\"}", MediaType.APPLICATION_JSON));
+
+        c.presentDebit(DEBIT);
+
+        JsonNode b = JSON.readTree(sent.get());
+        assertThat(b.path("amount_in_paise").isInt()).isTrue();
+        assertThat(b.path("amount_in_paise").asInt()).isEqualTo(1_270_000);
+        assertThat(b.has("amount")).isFalse();
+        assertThat(b.path("frequency").asText()).isEqualTo("adhoc");
+        assertThat(b.path("payment_count").asInt()).isEqualTo(1);
+        assertThat(b.path("umrn").asText()).isEqualTo("UMRN1");
+        assertThat(b.path("unique_key").asText()).isEqualTo("L42-R1");
+        assertThat(b.path("settlement_date").asText()).isEqualTo("2026-11-30");
+        server.verify();
+    }
+
+    @Test
+    void presentDebitParsesPlanAndTransactionId() {
+        DigioMandateClient c = client();
+        server.expect(requestTo(BASE + "/v3/client/nach_debit/scheduled/register"))
+                .andRespond(withSuccess("""
+                        {"id":"NSP1","status":"active","upcoming_transaction":{"id":"NPT1","state":"scheduled",
+                        "scheduled_settlement_date":"2026-12-01 00:00:00"}}""", MediaType.APPLICATION_JSON));
+
+        var plan = c.presentDebit(DEBIT);
+
+        assertThat(plan.planId()).isEqualTo("NSP1");
+        assertThat(plan.status()).isEqualTo("active");
+        assertThat(plan.txnId()).isEqualTo("NPT1");
+        assertThat(plan.scheduledSettlementDate()).isEqualTo(LocalDate.of(2026, 12, 1));
+    }
+
+    @Test
+    void debitStatusParsesUtrAndFailureCode() {
+        DigioMandateClient c = client();
+        server.expect(requestTo(BASE + "/v3/client/nach_debit/transaction/NPT1"))
+                .andRespond(withSuccess("""
+                        {"id":"NPT1","details":{"status":"FAILED","amount_in_paise":1270000,"utr":"U9",
+                        "failure_code":"51","failure_reason":"Insufficient funds"}}""", MediaType.APPLICATION_JSON));
+
+        var o = c.debitStatus("NPT1");
+
+        assertThat(o.status()).isEqualTo("FAILED");
+        assertThat(o.utr()).isEqualTo("U9");
+        assertThat(o.failureCode()).isEqualTo("51");
+        assertThat(o.failureReason()).isEqualTo("Insufficient funds");
+        assertThat(o.amountPaise()).isEqualTo(1_270_000L);
+    }
+
+    @Test
+    void debitBusinessErrorOnFiveHundredIsNotRetryable(CapturedOutput out) {
+        DigioMandateClient c = client();
+        server.expect(requestTo(BASE + "/v3/client/nach_debit/scheduled/register"))
+                .andRespond(withServerError().contentType(MediaType.APPLICATION_JSON).body("""
+                        {"code":"SYSTEM_ERROR","message":"acct 9999888877776666","details":"EX1"}"""));
+
+        assertThatThrownBy(() -> c.presentDebit(DEBIT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getCode()).isEqualTo("SYSTEM_ERROR"));
+        assertThat(out.getAll()).contains("EX1").doesNotContain("9999888877776666");
+        server.verify();
+    }
+
+    @Test
+    void cancelDebitReturnsFalseWhenAlreadyInitiated() {
+        DigioMandateClient c = client();
+        server.expect(requestTo(BASE + "/v3/client/nach_debit/transaction/action"))
+                .andRespond(withServerError().contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"code\":\"SYSTEM_ERROR\",\"message\":\"x\",\"details\":\"EX2\"}"));
+
+        assertThat(c.cancelDebit("NPT1")).isFalse();
+    }
 }
