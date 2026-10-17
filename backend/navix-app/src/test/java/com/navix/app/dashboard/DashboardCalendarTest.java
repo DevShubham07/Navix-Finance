@@ -20,7 +20,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-/** Month totals: a sum of the days for DUE/DISBURSED/BIRTHDAY, the last day's snapshot for ACTIVE. */
+/** Month totals: a sum of the days for DUE/DUE_OPEN/DISBURSED/BIRTHDAY, the last day's case count for ACTIVE. */
 @ExtendWith(MockitoExtension.class)
 class DashboardCalendarTest {
 
@@ -51,10 +51,11 @@ class DashboardCalendarTest {
         assertThat(c.snapshot()).isTrue();
         assertThat(c.daysWithData()).isEqualTo(3);
         assertThat(c.totalCount()).isEqualTo(2);
-        assertThat(c.totalAmountPaise()).isEqualTo(1_500_000L);
+        // A count of open cases, no money.
+        assertThat(c.totalAmountPaise()).isNull();
         assertThat(c.days()).hasSize(30);
         assertThat(c.days().get(14).count()).isEqualTo(5);
-        assertThat(c.days().get(14).amountPaise()).isEqualTo(5_000_000L);
+        assertThat(c.days().get(14).amountPaise()).isNull();
     }
 
     @Test
@@ -69,7 +70,30 @@ class DashboardCalendarTest {
         Calendar c = service.calendar(admin, ym.toString(), "ACTIVE");
         assertThat(c.snapshot()).isTrue();
         assertThat(c.totalCount()).isEqualTo(4);
-        assertThat(c.totalAmountPaise()).isEqualTo(4_000_000L);
+        assertThat(c.totalAmountPaise()).isNull();
+    }
+
+    @Test
+    void dueOpenIsPricedAtWhatTheOpenLoansOweToday() {
+        when(metrics.aggregateByGrp(eq(Metric.CALENDAR_DUE_OPEN), eq(admin), any(), any())).thenReturn(Map.of(
+                "2026-09-10", agg(2, 2_600_000)));   // the contractual total_repayable — not what is shown
+        when(metrics.groupLoans(eq(Metric.CALENDAR_DUE_OPEN), eq(admin), any(), any(), eq(null))).thenReturn(List.of(
+                new MetricQueries.GroupLoan("2026-09-10", 1), new MetricQueries.GroupLoan("2026-09-10", 2)));
+        com.navix.loan.entity.Loan l1 = new com.navix.loan.entity.Loan();
+        l1.setId(1L);
+        com.navix.loan.entity.Loan l2 = new com.navix.loan.entity.Loan();
+        l2.setId(2L);
+        when(loanRepository.findAllById(any())).thenReturn(List.of(l1, l2));
+        when(repayments.outstandingBreakdownsForAll(any(), any())).thenReturn(Map.of(
+                1L, new com.navix.loan.service.RepaymentService.OutstandingBreakdown(1_400_000, 0, 0, 0, null, 0, 0),
+                2L, new com.navix.loan.service.RepaymentService.OutstandingBreakdown(300_000, 0, 0, 0, null, 0, 0)));
+
+        Calendar c = service.calendar(admin, "2026-09", "DUE_OPEN");
+
+        assertThat(c.days().get(9).count()).isEqualTo(2);
+        assertThat(c.days().get(9).amountPaise()).isEqualTo(1_700_000L);
+        assertThat(c.totalAmountPaise()).isEqualTo(1_700_000L);
+        assertThat(c.snapshot()).isFalse();
     }
 
     @Test

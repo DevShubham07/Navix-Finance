@@ -238,6 +238,12 @@ public final class MetricSql {
                         + " and (l.closed_on is null or l.closed_on > cast(d.day as date))"
                         + " where l.disbursed_on is not null %LOAN%"),
 
+        // Loans due on the day that are still open (not closed). The calendar and the drawer price each
+        // one at what is owed today (owedSum), not the contractual total_repayable carried here.
+        CALENDAR_DUE_OPEN(ADMIN_ONLY, KeyKind.DAY, true,
+                sel("l.total_repayable", "cast(l.due_date as text)", NIL) + LOAN_JOIN
+                        + "where l.due_date between :from and :to and l.status <> 'CLOSED' %LOAN%"),
+
         // ---- staff ----
         STAFF_FILES(ADMIN_CREDIT, KeyKind.OTHER, false,
                 sel(REQUESTED, "cast(x.staff_id as text)", NIL)

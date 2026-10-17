@@ -16,6 +16,7 @@ const rgbOf = (hex: string) => hexToRgb(hex).join(",");
 
 const MODES: Record<DashCalendarMode, { label: string; color: string; rgb: string; metric: DashMetric; noun: string }> = {
   DUE: { label: "Due Amount", color: NAVY, rgb: rgbOf(NAVY), metric: "CALENDAR_DUE", noun: "due" },
+  DUE_OPEN: { label: "Due (open)", color: TONE_SOLID.red, rgb: rgbOf(TONE_SOLID.red), metric: "CALENDAR_DUE_OPEN", noun: "open loans due" },
   DISBURSED: { label: "Disbursed Amount", color: TONE_SOLID.emerald, rgb: rgbOf(TONE_SOLID.emerald), metric: "CALENDAR_DISBURSED", noun: "disbursed" },
   BIRTHDAY: { label: "Customer Birthday", color: TONE_SOLID.violet, rgb: rgbOf(TONE_SOLID.violet), metric: "CALENDAR_BIRTHDAY", noun: "birthdays" },
   ACTIVE: { label: "Active loans", color: TONE_SOLID.sky, rgb: rgbOf(TONE_SOLID.sky), metric: "CALENDAR_ACTIVE", noun: "open loans" },
@@ -38,7 +39,7 @@ function shiftMonth(m: string, by: number): string {
 }
 
 /**
- * Admin "Calendar": month grid with Due / Disbursed / Birthday / Active modes. Sundays are styled, never
+ * Admin "Calendar": month grid with Due / Due (open) / Disbursed / Birthday / Active modes. Sundays are styled, never
  * blocked. Active is a daily snapshot of the open book, so its header totals are "open at month end"
  * (`snapshot`), not a sum of the days.
  */
@@ -51,7 +52,9 @@ export function CalendarTab({ params, open }: DashTabProps) {
   const today = todayIso();
 
   const byDate = new Map((cal?.days ?? []).map((d) => [d.date, d]));
-  const value = (d: { count: number; amountPaise: number | null }) => (mode === "BIRTHDAY" ? d.count : (d.amountPaise ?? d.count));
+  // Count-only modes (birthdays, open cases) heat on the count; money modes on the amount.
+  const countOnly = mode === "BIRTHDAY" || mode === "ACTIVE";
+  const value = (d: { count: number; amountPaise: number | null }) => (countOnly ? d.count : (d.amountPaise ?? d.count));
   const max = Math.max(0, ...(cal?.days ?? []).map(value));
 
   const [y, mo] = month.split("-").map(Number);
@@ -73,7 +76,7 @@ export function CalendarTab({ params, open }: DashTabProps) {
         </span>
       }
       subtitle="Sundays are shaded for orientation only — loans can fall due on any day."
-      info="Due: loans by due date (count and total repayable). Disbursed: loans by disbursal date (count and principal). Birthday: distinct customers with a disbursed loan, by birthday. Active loans: loans open on each day (count and principal); the totals are the open book at month end, or today for the current month."
+      info="Due: every loan by due date (count and total repayable), closed ones included. Due (open): only loans due that day that are not yet closed, with what they still owe today. Disbursed: loans by disbursal date (count and principal). Birthday: distinct customers with a disbursed loan, by birthday. Active loans: number of loans open on each day; the total is the open count at month end, or today for the current month."
       accent={cfg.color}
       controls={
         <Segmented
@@ -81,7 +84,7 @@ export function CalendarTab({ params, open }: DashTabProps) {
           value={mode}
           onChange={setMode}
           options={(Object.keys(MODES) as DashCalendarMode[]).map((k) => [k, MODES[k].label] as const)}
-          colors={{ DUE: MODES.DUE.color, DISBURSED: MODES.DISBURSED.color, BIRTHDAY: MODES.BIRTHDAY.color, ACTIVE: MODES.ACTIVE.color }}
+          colors={{ DUE: MODES.DUE.color, DUE_OPEN: MODES.DUE_OPEN.color, DISBURSED: MODES.DISBURSED.color, BIRTHDAY: MODES.BIRTHDAY.color, ACTIVE: MODES.ACTIVE.color }}
         />
       }
       loading={q.isLoading}
@@ -125,10 +128,10 @@ export function CalendarTab({ params, open }: DashTabProps) {
             label={mode === "BIRTHDAY" ? "Customers" : cal?.snapshot ? "Open at month end" : "Total cases"}
             value={nf(cal?.totalCount)}
           />
-          {mode !== "BIRTHDAY" && (
+          {!countOnly && (
             <StatChip
               {...STAT_CHIP.green}
-              label={cal?.snapshot ? "Principal open at month end" : "Total amount"}
+              label={mode === "DUE_OPEN" ? "Still owed" : "Total amount"}
               value={paiseToINR(cal?.totalAmountPaise)}
             />
           )}

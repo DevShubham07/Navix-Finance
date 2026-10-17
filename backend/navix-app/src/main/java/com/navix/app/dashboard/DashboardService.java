@@ -498,26 +498,37 @@ public class DashboardService {
             case "DISBURSED" -> Metric.CALENDAR_DISBURSED;
             case "BIRTHDAY" -> Metric.CALENDAR_BIRTHDAY;
             case "ACTIVE" -> Metric.CALENDAR_ACTIVE;
-            default -> throw new BusinessException("INVALID_MODE", "mode must be DUE, DISBURSED, BIRTHDAY or ACTIVE");
+            case "DUE_OPEN" -> Metric.CALENDAR_DUE_OPEN;
+            default -> throw new BusinessException("INVALID_MODE",
+                    "mode must be DUE, DUE_OPEN, DISBURSED, BIRTHDAY or ACTIVE");
         };
-        boolean money = m != Metric.CALENDAR_BIRTHDAY;
+        // Birthdays and the open-book count are counts only; every other mode carries money.
+        boolean money = m != Metric.CALENDAR_BIRTHDAY && m != Metric.CALENDAR_ACTIVE;
         // ACTIVE is a daily snapshot of the open book: summing its days would count one loan once per
         // day it was open, so the month's totals are the figure on its last day (today, this month).
         boolean snapshot = m == Metric.CALENDAR_ACTIVE;
         LocalDate anchor = ym.equals(YearMonth.from(today())) ? today() : ym.atEndOfMonth();
         Map<String, Agg> byDay = metrics.aggregateByGrp(m, scope, ym.atDay(1), ym.atEndOfMonth());
+        // DUE_OPEN: what those open loans still owe today (penalty-aware), not their contract amount.
+        Map<String, Long> owedByDay = new HashMap<>();
+        if (m.owedSum()) {
+            List<GroupLoan> due = metrics.groupLoans(m, scope, ym.atDay(1), ym.atEndOfMonth(), null);
+            Map<Long, OutstandingBreakdown> priced = price(loadLoans(due.stream().map(GroupLoan::loanId).toList()), today());
+            for (GroupLoan gl : due) owedByDay.merge(gl.grp(), owed(priced, gl.loanId()), Long::sum);
+        }
         List<CalendarDay> days = new ArrayList<>();
         long withData = 0;
         long totalCount = 0;
         long totalAmount = 0;
         for (LocalDate d = ym.atDay(1); !d.isAfter(ym.atEndOfMonth()); d = d.plusDays(1)) {
             Agg a = byDay.getOrDefault(d.toString(), Agg.ZERO);
+            long amount = m.owedSum() ? owedByDay.getOrDefault(d.toString(), 0L) : a.amount();
             if (a.count() > 0) withData++;
             if (!snapshot || d.equals(anchor)) {
                 totalCount += a.count();
-                totalAmount += a.amount();
+                totalAmount += amount;
             }
-            days.add(new CalendarDay(d.toString(), a.count(), money ? a.amount() : null));
+            days.add(new CalendarDay(d.toString(), a.count(), money ? amount : null));
         }
         return new Calendar(ym.toString(), md, days, withData, totalCount, money ? totalAmount : null, snapshot);
     }

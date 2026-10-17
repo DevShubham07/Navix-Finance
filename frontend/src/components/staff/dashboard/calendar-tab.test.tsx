@@ -21,7 +21,16 @@ const calendar = (mode: string, extra: Partial<DashCalendar> = {}): DashCalendar
 const byMode: Record<string, DashCalendar> = {
   DUE: calendar("DUE"),
   DISBURSED: calendar("DISBURSED"),
-  ACTIVE: calendar("ACTIVE", { totalCount: 2, totalAmountPaise: 1_500_000, snapshot: true }),
+  ACTIVE: calendar("ACTIVE", {
+    days: [
+      { date: `${month}-10`, count: 3, amountPaise: null },
+      { date: `${month}-30`, count: 2, amountPaise: null },
+    ],
+    totalCount: 2,
+    totalAmountPaise: null,
+    snapshot: true,
+  }),
+  DUE_OPEN: calendar("DUE_OPEN", { totalCount: 4, totalAmountPaise: 2_100_000 }),
 };
 vi.mock("./use-dash-query", () => ({
   useDashQuery: (_key: string, _params: unknown, extra: readonly unknown[]) => ({
@@ -65,21 +74,30 @@ describe("CalendarTab", () => {
     expect(chip("Total amount")).toHaveTextContent(paiseToINR(4_500_000));
   });
 
-  it("labels the Active snapshot as the open book at month end and drills into CALENDAR_ACTIVE", async () => {
+  it("shows Active as a count of open cases only, and drills into CALENDAR_ACTIVE", async () => {
     const open = vi.fn();
     render(<CalendarTab {...props(open)} />);
     await userEvent.click(screen.getByRole("button", { name: "Active loans" }));
     expect(chip("Open at month end")).toHaveTextContent("2");
-    expect(chip("Principal open at month end")).toHaveTextContent(paiseToINR(1_500_000));
     expect(screen.queryByText("Total cases")).toBeNull();
     expect(screen.queryByText("Total amount")).toBeNull();
 
-    const cell = screen.getByRole("gridcell", { name: /open loans, .*₹15,000/ });
+    const cell = screen.getByRole("gridcell", { name: /: 2 open loans$/ });
     expect(cell).toHaveTextContent("2");
     await userEvent.click(cell);
     expect(open).toHaveBeenCalledWith(
       expect.objectContaining({ metric: "CALENDAR_ACTIVE", key: `${month}-30`, range: { from: `${month}-30`, to: `${month}-30` } }),
     );
+  });
+});
+
+describe("CalendarTab · Due (open)", () => {
+  it("is its own pill, totalling what the open loans still owe", async () => {
+    render(<CalendarTab {...props()} />);
+    expect(screen.getByRole("group", { name: "Calendar mode" })).toHaveTextContent("Due (open)");
+    await userEvent.click(screen.getByRole("button", { name: "Due (open)" }));
+    expect(chip("Total cases")).toHaveTextContent("4");
+    expect(chip("Still owed")).toHaveTextContent(paiseToINR(2_100_000));
   });
 });
 
