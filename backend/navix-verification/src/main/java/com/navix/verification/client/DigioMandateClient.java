@@ -134,22 +134,41 @@ public class DigioMandateClient implements MandatePort {
         }
         JsonNode root = call("debit_register", http.post().uri("/v3/client/nach_debit/scheduled/register")
                 .contentType(MediaType.APPLICATION_JSON).body(body.toString()));
-        return plan(root, r.settlementDate());
+        return plan(root, r.settlementDate(), false);
     }
 
     @Override
     public Optional<DebitPlan> findDebitByRef(String uniqueKey) {
-        // 404 / empty body = no plan under this key; every other failure throws ("unknown" must never read as "none").
-        JsonNode root = call("debit_by_ref",
-                http.get().uri("/v3/client/nach_debit/scheduled/by_reference_id/{ref}", uniqueKey), true);
-        return root.isMissingNode() || root.isNull() || root.isEmpty() ? Optional.empty()
-                : Optional.of(plan(root, null));
+        // empty() means ONE thing: Digio answered 404, no such debit. An empty or unreadable 2xx is "we don't
+        // know" and must throw, because the caller's response to empty() is to present a second real debit.
+        byte[] bytes;
+        try {
+            bytes = http.get().uri("/v3/client/nach_debit/scheduled/by_reference_id/{ref}", uniqueKey)
+                    .retrieve().body(byte[].class);
+        } catch (RestClientResponseException e) {
+            if (e.getStatusCode().value() == 404) {
+                return Optional.empty();
+            }
+            throw classify("debit_by_ref", e);
+        }
+        JsonNode root;
+        try {
+            root = bytes == null || bytes.length == 0 ? JSON.missingNode() : JSON.readTree(bytes);
+        } catch (java.io.IOException e) {
+            throw new BusinessException("DIGIO_UNREADABLE", "Digio debit_by_ref returned an unreadable body");
+        }
+        if (!root.isObject() || text(root.path("id")) == null) {
+            throw new BusinessException("DIGIO_UNREADABLE", "Digio debit_by_ref returned no usable debit plan");
+        }
+        return Optional.of(plan(root, null, true));
     }
 
-    private static DebitPlan plan(JsonNode root, LocalDate fallbackSettle) {
+    private static DebitPlan plan(JsonNode root, LocalDate fallbackSettle, boolean readBack) {
         JsonNode up = root.path("upcoming_transaction");
         String txn = text(up.path("id"));
-        if (txn == null) {
+        // Only a read-back may fall back to last_transaction: on a create against a re-debited UMRN it can be
+        // a previous attempt's id, and debitStatus would then report a stale outcome.
+        if (txn == null && readBack) {
             txn = text(root.path("last_transaction").path("id"));
         }
         LocalDate settle = date(text(up.path("scheduled_settlement_date")));

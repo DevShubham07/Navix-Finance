@@ -315,4 +315,23 @@ class DigioMandateClientTest {
                 .body("{\"code\":\"SYSTEM_ERROR\",\"details\":\"EX3\"}"));
         assertThatThrownBy(() -> c.findDebitByRef("L42-R1")).isInstanceOf(BusinessException.class);
     }
+
+    @Test
+    void findDebitByRefThrowsOnEmptyOrUnparseableSuccess() {
+        for (String body : new String[] {"", "not json", "{}", "[]"}) {
+            DigioMandateClient c = client();
+            server.expect(requestTo(BY_REF)).andRespond(withSuccess(body, MediaType.APPLICATION_JSON));
+            assertThatThrownBy(() -> c.findDebitByRef("L42-R1"))
+                    .as("body '%s' must not read as 'no debit'", body)
+                    .isInstanceOf(BusinessException.class);
+        }
+    }
+
+    @Test
+    void presentDebitDoesNotTakeTxnIdFromLastTransaction() {
+        DigioMandateClient c = client();
+        server.expect(requestTo(BASE + "/v3/client/nach_debit/scheduled/register")).andRespond(withSuccess("""
+                {"id":"NSP1","status":"active","last_transaction":{"id":"NPT_OLD"}}""", MediaType.APPLICATION_JSON));
+        assertThat(c.presentDebit(DEBIT).txnId()).isNull();
+    }
 }
