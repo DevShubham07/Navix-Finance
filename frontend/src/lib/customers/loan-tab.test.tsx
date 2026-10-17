@@ -68,7 +68,12 @@ describe("Loan tab", () => {
     renderLoan({ loans: [loan("ACTIVE"), early, late], applications: [app()] });
     const earlyPill = screen.getByTitle("Loan #169 · ₹5,000 · Closed — Paid 5 days early");
     expect(earlyPill).toHaveClass("lb-pill", "lb-early");
-    expect(earlyPill).toHaveTextContent("#169₹5,0005d early");
+    // A small card: number + the date that matters, the amount, and the behaviour badge.
+    expect(earlyPill.querySelector(".lb-id")).toHaveTextContent("Loan #169");
+    expect(earlyPill.querySelector(".lb-date")).toHaveTextContent(/^Closed /);
+    expect(earlyPill.querySelector(".lb-amt")).toHaveTextContent("₹5,000");
+    expect(earlyPill.querySelector(".lb-badge")).toHaveTextContent("5d early");
+    expect(screen.getByTitle(/^Loan #208 · ₹5,000 · Active — /).querySelector(".lb-date")).toHaveTextContent(/^Due /);
     expect(screen.getByTitle("Loan #170 · ₹5,000 · Closed — Paid 4 days late")).toHaveClass("lb-late");
     expect(screen.getByTitle(/^Loan #208 · ₹5,000 · Active — /)).toHaveClass("lb-pill", "on");
     const legend = screen.getByLabelText("Loan pill colour legend");
