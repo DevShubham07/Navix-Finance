@@ -16,6 +16,7 @@ import {
   SanctionedRejectAction,
 } from "@/components/staff/live-pipeline";
 import { CUSTOMER_TABS, CustomerTabBody } from "@/components/staff/customer-tabs";
+import { CustomerExportMenu } from "@/components/staff/customer-export-menu";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
 import { CreditScoreGauge } from "@/components/staff/credit-score-gauge";
 import { LimitBasisBadge } from "@/components/staff/detail-parts";
@@ -73,6 +74,8 @@ export default function CustomerDetailPage() {
         <button onClick={() => q.refetch()} className="flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs text-muted hover:bg-grey-100 hover:text-ink">
           {q.isFetching ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Refresh
         </button>
+        {/* ADMIN-only full-profile export (CSV / PDF) — renders nothing for every other working role. */}
+        <CustomerExportMenu customerId={id} detail={c} />
       </PageHeader>
 
       <PermissionGate permission="customer:view" fallback={<NoAccessNotice />}>
