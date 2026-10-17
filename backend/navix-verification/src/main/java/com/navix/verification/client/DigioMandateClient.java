@@ -229,7 +229,8 @@ public class DigioMandateClient implements MandatePort {
         // exception id Digio support needs, and the only handle on a SYSTEM_ERROR) are safe and enough.
         log.warn("Digio {} failed: http={} code={} details={}", op, e.getStatusCode().value(), code, details);
         return new BusinessException(code != null ? code : "DIGIO_HTTP_" + e.getStatusCode().value(),
-                "We could not complete the mandate setup. Please try again.");
+                op.startsWith("debit_") ? "We could not complete the debit request. Please check the case and try again."
+                        : "We could not complete the mandate setup. Please try again.");
     }
 
     /** Digio rejects apostrophes and hyphens (and caps at 40); the name should still resemble the bank's. */

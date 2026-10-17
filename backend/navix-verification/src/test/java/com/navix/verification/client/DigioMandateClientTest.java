@@ -266,6 +266,7 @@ class DigioMandateClientTest {
 
         assertThatThrownBy(() -> c.presentDebit(DEBIT))
                 .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("debit").hasMessageNotContaining("mandate setup")
                 .satisfies(e -> assertThat(((BusinessException) e).getCode()).isEqualTo("SYSTEM_ERROR"));
         assertThat(out.getAll()).contains("EX1").doesNotContain("9999888877776666");
         server.verify();

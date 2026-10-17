@@ -48,7 +48,11 @@ public interface MandatePort {
                         String corporateAccountNumber, String narration) {
     }
 
-    /** @param txnId the {@code NPT...} id; null when Digio has not yet minted one (the plan id then stands in) */
+    /**
+     * @param txnId the {@code NPT...} id. <b>May be null</b>: Digio's create response is not documented to carry
+     *              one. It is never substituted with the plan id ({@code NSP...}), which {@link #debitStatus}
+     *              would reject; resolve it later from the plan read-back.
+     */
     record DebitPlan(String planId, String status, String txnId, LocalDate scheduledSettlementDate) {
     }
 
