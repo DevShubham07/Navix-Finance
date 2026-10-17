@@ -13,8 +13,8 @@ export const BRAND = {
   /** Grievance Redressal Officer under the Consumer Protection Act, 2019. */
   grievanceOfficer: {
     name: "Lalit Kumar",
-    phone: "+91 92113 31167",
-    phoneHref: "tel:+919211331167",
+    phone: "+91 92113 31168",
+    phoneHref: "tel:+919211331168",
     email: "grievance@dhanboost.com",
   },
   fraudEmail: "support@dhanboost.com",

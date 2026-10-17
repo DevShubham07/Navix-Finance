@@ -21,13 +21,13 @@ WhatsApp or SMS is a `FAILED` row in `notification_delivery`, never a failed bus
 | | |
 |---|---|
 | Portal | https://smartchatapi.live/portal (user **`dhanboost26`**; the password is with the operator, never in the repo) |
-| Business number | **+91 92113 31167** (display name "Navix" in the portal header) |
+| Business number | **+91 92113 31168** (display name "Navix" in the portal header) |
 | Wallet | prepaid INR; ₹2,977.96 on 2026-09-23. Check: `GET /Api/getuserbalance?token=…` |
 | API token | SSM SecureString **`/navix/dev/navix/whatsapp/token`** (ap-south-1) → `navix.whatsapp.token`. Also shown in the portal under *API → View API (For GET,POST)*. |
 
 ### A1b. Business profile (logo / About / description) — NOT editable in SmartChat
 
-Messages arrive with no logo and no bio because the WhatsApp **Business Profile** of +91 92113 31167 is
+Messages arrive with no logo and no bio because the WhatsApp **Business Profile** of +91 92113 31168 is
 empty. Templates can't fix that. The SmartChat portal has no profile screen, and its API has no profile
 call (checked 2026-09-28). The profile is set on Meta's side, by either:
 1. **SmartChat support** (they host the WABA; they call Meta's

@@ -16,6 +16,7 @@ import {
 import { formatApiError } from "@/lib/api/errors";
 import { formatDate } from "@/lib/utils";
 import { CustomerDetailDialog } from "@/components/staff/customer-detail-dialog";
+import { PostVerifyBlockDialog, type PostVerifyTarget } from "@/components/staff/post-verify-block-dialog";
 import { PaymentProofLink } from "@/components/ui/payment-proof-link";
 import { PaginationBar } from "@/components/staff/pipeline/pagination";
 import { type FilterColumn } from "@/components/staff/column-filter";
@@ -62,6 +63,8 @@ const COLUMN_LABEL: Record<string, string> = {
 export function RepaymentVerifyQueue() {
   const [openCustomerId, setOpenCustomerId] = React.useState<number | null>(null);
   const [rejectTarget, setRejectTarget] = React.useState<PaymentView | null>(null);
+  // Set by a successful verify: the "should they borrow again?" prompt (PostVerifyBlockDialog).
+  const [postVerify, setPostVerify] = React.useState<PostVerifyTarget | null>(null);
   const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["staff-pending-repayments"],
@@ -80,7 +83,10 @@ export function RepaymentVerifyQueue() {
   };
   const verify = useMutation({
     mutationFn: (p: PaymentView) => staffApi.verifyRepayment(p.loanId, p.id),
-    onSuccess: invalidateAfterDecision,
+    onSuccess: (_result, p) => {
+      invalidateAfterDecision();
+      if (p.customerId != null) setPostVerify({ customerId: p.customerId, customerName: p.customerName });
+    },
   });
   const reject = useMutation({
     mutationFn: (vars: { p: PaymentView; reason: RejectionReasonCode; note: string }) =>
@@ -266,6 +272,7 @@ export function RepaymentVerifyQueue() {
         closes the loan at zero. Reject if the proof doesn&apos;t match — the balance is left unchanged.
       </p>
       <CustomerDetailDialog customerId={openCustomerId} onClose={() => setOpenCustomerId(null)} />
+      <PostVerifyBlockDialog target={postVerify} onClose={() => setPostVerify(null)} onBlocked={invalidateAfterDecision} />
       <RejectDialog
         payment={rejectTarget}
         pending={reject.isPending}

@@ -7,6 +7,7 @@ import com.navix.app.dashboard.BusinessQueries.MonthCollection;
 import com.navix.app.dashboard.CollectionQueries.AnalysisAgg;
 import com.navix.app.dashboard.CollectionQueries.CaseRow;
 import com.navix.app.dashboard.CollectionQueries.Collected;
+import com.navix.app.dashboard.CollectionQueries.CountAmount;
 import com.navix.app.dashboard.CollectionQueries.PtpTotals;
 import com.navix.app.dashboard.DashboardDtos.*;
 import com.navix.app.dashboard.MetricQueries.Agg;
@@ -69,6 +70,11 @@ public class DashboardService {
     private final StaffDirectory staffDirectory;
     private final RepaymentService repayments;
     private final LoanRepository loanRepository;
+
+    /** The collection SQL, for the integration test that pins each day query against the real schema. */
+    CollectionQueries collection() {
+        return collection;
+    }
 
     // ---- scope & period ---------------------------------------------------------------------
 
@@ -497,22 +503,40 @@ public class DashboardService {
             case "DUE" -> Metric.CALENDAR_DUE;
             case "DISBURSED" -> Metric.CALENDAR_DISBURSED;
             case "BIRTHDAY" -> Metric.CALENDAR_BIRTHDAY;
-            default -> throw new BusinessException("INVALID_MODE", "mode must be DUE, DISBURSED or BIRTHDAY");
+            case "ACTIVE" -> Metric.CALENDAR_ACTIVE;
+            case "DUE_OPEN" -> Metric.CALENDAR_DUE_OPEN;
+            default -> throw new BusinessException("INVALID_MODE",
+                    "mode must be DUE, DUE_OPEN, DISBURSED, BIRTHDAY or ACTIVE");
         };
-        boolean money = m != Metric.CALENDAR_BIRTHDAY;
+        // Birthdays and the open-book count are counts only; every other mode carries money.
+        boolean money = m != Metric.CALENDAR_BIRTHDAY && m != Metric.CALENDAR_ACTIVE;
+        // ACTIVE is a daily snapshot of the open book: summing its days would count one loan once per
+        // day it was open, so the month's totals are the figure on its last day (today, this month).
+        boolean snapshot = m == Metric.CALENDAR_ACTIVE;
+        LocalDate anchor = ym.equals(YearMonth.from(today())) ? today() : ym.atEndOfMonth();
         Map<String, Agg> byDay = metrics.aggregateByGrp(m, scope, ym.atDay(1), ym.atEndOfMonth());
+        // DUE_OPEN: what those open loans still owe today (penalty-aware), not their contract amount.
+        Map<String, Long> owedByDay = new HashMap<>();
+        if (m.owedSum()) {
+            List<GroupLoan> due = metrics.groupLoans(m, scope, ym.atDay(1), ym.atEndOfMonth(), null);
+            Map<Long, OutstandingBreakdown> priced = price(loadLoans(due.stream().map(GroupLoan::loanId).toList()), today());
+            for (GroupLoan gl : due) owedByDay.merge(gl.grp(), owed(priced, gl.loanId()), Long::sum);
+        }
         List<CalendarDay> days = new ArrayList<>();
         long withData = 0;
         long totalCount = 0;
         long totalAmount = 0;
         for (LocalDate d = ym.atDay(1); !d.isAfter(ym.atEndOfMonth()); d = d.plusDays(1)) {
             Agg a = byDay.getOrDefault(d.toString(), Agg.ZERO);
+            long amount = m.owedSum() ? owedByDay.getOrDefault(d.toString(), 0L) : a.amount();
             if (a.count() > 0) withData++;
-            totalCount += a.count();
-            totalAmount += a.amount();
-            days.add(new CalendarDay(d.toString(), a.count(), money ? a.amount() : null));
+            if (!snapshot || d.equals(anchor)) {
+                totalCount += a.count();
+                totalAmount += amount;
+            }
+            days.add(new CalendarDay(d.toString(), a.count(), money ? amount : null));
         }
-        return new Calendar(ym.toString(), md, days, withData, totalCount, money ? totalAmount : null);
+        return new Calendar(ym.toString(), md, days, withData, totalCount, money ? totalAmount : null, snapshot);
     }
 
     // ---- geo & companies --------------------------------------------------------------------
@@ -620,6 +644,64 @@ public class DashboardService {
 
     private static AllocRow allocRow(Long id, String name, long[] v) {
         return new AllocRow(id, name, v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7]);
+    }
+
+    // ---- collection head desk: team today / tomorrow ----------------------------------------
+
+    /**
+     * One day of the collections team, for the Head's desk: every active Collection Executive always
+     * has a row (a zero day is information), and a Head appears only when they hold figures of their
+     * own that day. The roster is the whole collections team for a COLLECTION_HEAD view -- they are a
+     * Head -- narrowed by an explicit {@code staffIds} request the way the allocation table is.
+     */
+    public TeamDay collectionsTeamDay(DashboardScope scope, LocalDate date) {
+        scope.require("ADMIN", "COLLECTION_HEAD");
+        List<StaffSummary> executives = scope.filterStaff(staffDirectory.listActive("COLLECTION_EXECUTIVE"),
+                StaffSummary::id);
+        List<StaffSummary> heads = scope.filterStaff(staffDirectory.listActive("COLLECTION_HEAD"), StaffSummary::id);
+
+        Map<Long, Long> calls = collection.callsLoggedByOfficer(scope, date);
+        Map<Long, CountAmount> promises = collection.promisesDueByOfficer(scope, date);
+        Map<Long, CountAmount> parts = collection.partPaymentsByOfficer(scope, date);
+        Map<Long, Long> collected = new HashMap<>();
+        for (Collected c : collection.collectedByOfficer(scope, date, date)) {
+            collected.merge(c.staffId(), c.paise(), Long::sum);
+        }
+        Map<Long, Long> closed = collection.closedByOfficer(scope, date, date);
+        Map<Long, Long> due = collection.dueOnByOfficer(scope, date);
+
+        List<TeamDayRow> rows = new ArrayList<>();
+        for (StaffSummary s : executives) rows.add(teamDayRow(s, calls, promises, parts, collected, closed, due));
+        for (StaffSummary s : heads) {
+            TeamDayRow r = teamDayRow(s, calls, promises, parts, collected, closed, due);
+            if (r.calls() + r.promisesDue() + r.partPayments() + r.collectedPaise() + r.closed() + r.dueCount() > 0) {
+                rows.add(r);
+            }
+        }
+        rows.sort(java.util.Comparator.comparing(TeamDayRow::name, String.CASE_INSENSITIVE_ORDER));
+        long[] t = new long[8];
+        for (TeamDayRow r : rows) {
+            t[0] += r.calls();
+            t[1] += r.promisesDue();
+            t[2] += r.promisesDuePaise();
+            t[3] += r.partPayments();
+            t[4] += r.partPaymentsPaise();
+            t[5] += r.collectedPaise();
+            t[6] += r.closed();
+            t[7] += r.dueCount();
+        }
+        TeamDayRow totals = new TeamDayRow(null, "Total", null, t[0], t[1], t[2], t[3], t[4], t[5], t[6], t[7]);
+        return new TeamDay(date.toString(), rows, totals);
+    }
+
+    private static TeamDayRow teamDayRow(StaffSummary s, Map<Long, Long> calls, Map<Long, CountAmount> promises,
+                                         Map<Long, CountAmount> parts, Map<Long, Long> collected, Map<Long, Long> closed,
+                                         Map<Long, Long> due) {
+        CountAmount p = promises.getOrDefault(s.id(), new CountAmount(0, 0));
+        CountAmount pp = parts.getOrDefault(s.id(), new CountAmount(0, 0));
+        return new TeamDayRow(s.id(), s.name(), s.role(), calls.getOrDefault(s.id(), 0L), p.count(), p.paise(),
+                pp.count(), pp.paise(), collected.getOrDefault(s.id(), 0L), closed.getOrDefault(s.id(), 0L),
+                due.getOrDefault(s.id(), 0L));
     }
 
     // ---- leaderboard ------------------------------------------------------------------------

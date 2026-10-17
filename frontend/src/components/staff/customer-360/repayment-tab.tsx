@@ -11,6 +11,7 @@ import { PaymentProofLink } from "@/components/ui/payment-proof-link";
 import { Section } from "@/components/staff/detail-parts";
 import { AdminLogPaymentButton } from "@/components/staff/admin-log-payment";
 import { RejectDialog } from "@/components/staff/repayment-verify-queue";
+import { PostVerifyBlockDialog, type PostVerifyTarget } from "@/components/staff/post-verify-block-dialog";
 import {
   FinancialSummaryStrip,
   LoanCardHeader,
@@ -104,6 +105,8 @@ function PaymentsPanel({ ctx, loan }: { ctx: TabCtx; loan: LoanView }) {
   const canRecord = role != null && can("customer:manage");
   const [addOpen, setAddOpen] = React.useState(false);
   const [rejectTarget, setRejectTarget] = React.useState<PaymentView | null>(null);
+  // Set by a successful verify: the "should they borrow again?" prompt (PostVerifyBlockDialog).
+  const [postVerify, setPostVerify] = React.useState<PostVerifyTarget | null>(null);
   const { outstanding } = useLoanData(ctx, loan.id);
   const closed = loan.status === "CLOSED";
   const settled = outstanding?.settledAmountPaise ?? null;
@@ -124,7 +127,13 @@ function PaymentsPanel({ ctx, loan }: { ctx: TabCtx; loan: LoanView }) {
     qc.invalidateQueries({ queryKey: ["staff-transactions"] });
     ctx.onChanged();
   };
-  const verify = useMutation({ mutationFn: (p: PaymentView) => staffApi.verifyRepayment(loan.id, p.id), onSuccess: done });
+  const verify = useMutation({
+    mutationFn: (p: PaymentView) => staffApi.verifyRepayment(loan.id, p.id),
+    onSuccess: () => {
+      done();
+      setPostVerify({ customerId: ctx.customerId, customerName: ctx.detail.profile?.fullName });
+    },
+  });
   const reject = useMutation({
     mutationFn: (v: { p: PaymentView; reason: RejectionReasonCode; note: string }) =>
       staffApi.rejectRepayment(loan.id, v.p.id, { reason: v.reason, note: v.note.trim() || undefined }),
@@ -310,6 +319,7 @@ function PaymentsPanel({ ctx, loan }: { ctx: TabCtx; loan: LoanView }) {
         onClose={() => setRejectTarget(null)}
         onSubmit={(reason, note) => rejectTarget && reject.mutate({ p: rejectTarget, reason, note })}
       />
+      <PostVerifyBlockDialog target={postVerify} onClose={() => setPostVerify(null)} onBlocked={ctx.onChanged} />
     </>
   );
 }

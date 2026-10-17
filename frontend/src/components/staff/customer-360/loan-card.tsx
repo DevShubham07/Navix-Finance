@@ -4,12 +4,14 @@
 
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronUp, ExternalLink, Download, IndianRupee, Loader2, Lock } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Clock, Download, ExternalLink, Handshake, IndianRupee, Loader2, Lock, Siren, type LucideIcon } from "lucide-react";
 import { StatusBadge } from "@/components/ui";
 import { Field, FieldGrid } from "@/components/ui/field-grid";
 import type { TabCtx } from "@/components/staff/customer-360/types";
 import { istCalendarToday } from "@/lib/customers/customer-360";
+import { LOAN_BEHAVIOUR_CLASS, LOAN_BEHAVIOUR_LEGEND, loanBehaviour } from "@/lib/customers/loan-behaviour";
 import { formatDate } from "@/lib/utils";
+import type { LoanBehaviourKind } from "@/lib/customers/loan-behaviour";
 import {
   customersApi,
   openDocument,
@@ -48,31 +50,83 @@ export function useLoanData(ctx: TabCtx, loanId: number | null) {
   return { loan, outstanding };
 }
 
+/**
+ * One pill per loan, filled in its repayment-behaviour colour (`loanBehaviour`) with the facts on
+ * its face — "#169 · ₹3,000 · 5d early" — so the row reads the customer's history at a glance
+ * without opening anything: green early / on time, amber late, red very late or settled, grey
+ * running, solid red overdue. The full sentence is in the tooltip.
+ */
 export function LoanSelector({
   loans,
   value,
   onChange,
+  outstandingByLoanId,
+  today = istCalendarToday(),
 }: {
   loans: LoanView[];
   value: number | null;
   onChange: (id: number) => void;
+  outstandingByLoanId?: Record<string, OutstandingView>;
+  today?: Date;
 }) {
   if (loans.length < 2) return null;
   return (
-    <div className="flex flex-wrap gap-2" role="group" aria-label="Select loan">
-      {loans.map((l) => (
-        <button
-          key={l.id}
-          type="button"
-          className={`cal-preset${l.id === value ? " on" : ""}`}
-          aria-pressed={l.id === value}
-          onClick={() => onChange(l.id)}
-        >
-          Loan #{l.id} · {humanStatus(l.status)}
-        </button>
-      ))}
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Select loan">
+        {loans.map((l) => {
+          const b = loanBehaviour(l, today, outstandingByLoanId?.[String(l.id)]);
+          const status = humanStatus(l.status);
+          return (
+            <button
+              key={l.id}
+              type="button"
+              className={`lb-pill ${LOAN_BEHAVIOUR_CLASS[b.kind]}${l.id === value ? " on" : ""}`}
+              aria-pressed={l.id === value}
+              aria-label={`Loan #${l.id} · ${paiseToINR(l.principalPaise)} · ${status} — ${b.label}`}
+              title={`Loan #${l.id} · ${paiseToINR(l.principalPaise)} · ${status} — ${b.label}`}
+              onClick={() => onChange(l.id)}
+            >
+              <span className="lb-top">
+                <span className="lb-id">Loan #{l.id}</span>
+                <span className="lb-date">{cardDate(l)}</span>
+              </span>
+              <span className="lb-amt">{paiseToINR(l.principalPaise)}</span>
+              <span className="lb-badge">
+                <BehaviourIcon kind={b.kind} settled={b.short === "settled"} />
+                {b.short}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <p className="lb-legend" aria-label="Loan pill colour legend">
+        {LOAN_BEHAVIOUR_LEGEND.map((e) => (
+          <span key={e.kind} className={`lb-key ${LOAN_BEHAVIOUR_CLASS[e.kind]}`}>{e.label}</span>
+        ))}
+      </p>
     </div>
   );
+}
+
+/** The date that matters on the card: when it closed, else when it falls due. */
+function cardDate(l: LoanView): string {
+  if (l.closedOn) return `Closed ${formatDate(l.closedOn)}`;
+  if (l.dueDate) return `Due ${formatDate(l.dueDate)}`;
+  return "Not yet due";
+}
+
+const BEHAVIOUR_ICON: Record<LoanBehaviourKind, LucideIcon> = {
+  early: CheckCircle2,
+  onTime: CheckCircle2,
+  late: AlertTriangle,
+  veryLate: AlertTriangle,
+  open: Clock,
+  overdue: Siren,
+};
+
+function BehaviourIcon({ kind, settled }: { kind: LoanBehaviourKind; settled: boolean }) {
+  const Icon = settled ? Handshake : BEHAVIOUR_ICON[kind];
+  return <Icon aria-hidden size={11} strokeWidth={2.5} />;
 }
 
 const humanStatus = (s: string) => s.charAt(0) + s.slice(1).toLowerCase().replace(/_/g, " ");

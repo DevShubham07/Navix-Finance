@@ -39,6 +39,7 @@ import { ExportMenu } from "@/components/staff/export-menu";
 import { useQueueSelection } from "@/components/staff/pipeline/bulk-actions";
 import { useStaffMe, useCan } from "@/components/staff/pipeline/hooks";
 import { BulkAssignOfficerDialog, InlineOfficerSelect } from "@/components/staff/collections-assign";
+import { CollectionsHeadDesk } from "@/components/staff/collections/head-desk";
 import { pageTitleFor } from "@/components/staff/staff-nav";
 import { AdminLogPaymentButton } from "@/components/staff/admin-log-payment";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
@@ -557,6 +558,12 @@ export default function CollectionsBucketPage() {
           {cr.isPlaceholderData || q.isFetching ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Refresh
         </button>
       </PageHeader>
+
+      {/* The Head's desk — unassigned loans and the team's day — renders only for `collections:manage`
+          (COLLECTION_HEAD / ADMIN); a count narrows the register through the officer column filter. */}
+      <CollectionsHeadDesk
+        onFilterOfficer={(staffId) => rq.setFilter("officerName", { type: "in", values: [String(staffId)] })}
+      />
 
       {/* Bucket cards double as the switcher — the old page hid a <select> behind `lg:hidden`, so on
           desktop there was no way to move between buckets from the page itself. */}

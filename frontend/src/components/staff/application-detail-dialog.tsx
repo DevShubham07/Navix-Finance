@@ -24,7 +24,7 @@ import { CUSTOMER_TABS, CustomerTabBody } from "@/components/staff/customer-tabs
 import { stageActionTab } from "@/components/staff/customer-360/stage-actions";
 import { MobileMatchDrawer, MobileReuseStrip } from "@/components/staff/mobile-matches";
 import { customerPageHref } from "@/lib/customers/customer-page";
-import { ErrorState, Skeleton, StatusBadge } from "@/components/ui";
+import { Badge, ErrorState, Skeleton, StatusBadge } from "@/components/ui";
 import { StageSignal } from "@/components/staff/stage-signal";
 import { staffApi, customersApi, type ApplicationStatus } from "@/lib/api/applications";
 import { useStaffMe, useCan, REVIEW_PERMS } from "@/components/staff/pipeline/hooks";
@@ -190,6 +190,11 @@ export function ApplicationDetailDialog({
                 {p?.pan && <span>· PAN {p.pan}</span>}
                 {p?.riskCategory && <span>· risk {p.riskCategory}</span>}
                 {app && <StatusBadge kind="application" value={app.status} />}
+                {detailQ.data?.blocked && (
+                  <Badge variant="error" size="sm" title={detailQ.data.blockedReason ?? "Blocked for future loans"}>
+                    Blocked
+                  </Badge>
+                )}
                 {app && <StageSignal status={app.status} loanStatus={app.loanStatus} journeyStep={app.journeyStep} />}
                 {briefQ.data?.available && (
                   <CreditBadge
@@ -231,9 +236,9 @@ export function ApplicationDetailDialog({
 
         {canReview && customerId != null && <MobileReuseStrip customerId={customerId} onOpen={() => setMatchesOpen(true)} />}
 
-        <PillTabs tabs={CUSTOMER_TABS} active={tab} onChange={setTab} className="mt-2 shrink-0" />
-
-        <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1 text-[10.4px]">
+        <div className="mt-3 flex flex-col sm:flex-row min-h-0 flex-1 gap-3">
+          <PillTabs tabs={CUSTOMER_TABS} active={tab} onChange={setTab} />
+          <div className="min-h-0 min-w-0 flex-1 overflow-y-auto pr-1 text-[10.4px]">
           {resolving || (ready && appQ.isLoading) ? (
             <Skeleton variant="line" rows={6} className="py-6" />
           ) : resolveError ? (
@@ -262,6 +267,7 @@ export function ApplicationDetailDialog({
               onTabChange={setTab}
             />
           ) : null}
+          </div>
         </div>
       </Dialog>
 

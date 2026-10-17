@@ -84,30 +84,25 @@ export function exportCsv<Row>(fileBase: string, columns: ExportColumn<Row>[], r
   const esc = csvCell;
   const header = columns.map((c) => esc(c.header)).join(",");
   const body = rows.map((r) => columns.map((c) => esc(c.value(r))).join(",")).join("\n");
-  // BOM so Excel reads UTF-8 (₹ etc.) correctly.
-  triggerDownload("﻿" + header + "\n" + body, `${fileBase}.csv`, "text/csv;charset=utf-8;");
+  exportCsvText(fileBase, header + "\n" + body);
 }
 
 /**
- * Write rows to a DhanBoost-branded PDF download (landscape A4), stamped with who downloaded it. Wide
- * column sets paginate horizontally (key column repeated) instead of being crushed into one page.
+ * Download already-assembled CSV text (one whose rows are not a single uniform table — e.g. the
+ * sectioned customer export). The caller is responsible for having passed every cell through
+ * `csvCell`.
  */
-export function exportPdf<Row>(opts: {
-  fileBase: string;
-  title: string;
-  subtitle?: string;
-  columns: ExportColumn<Row>[];
-  rows: Row[];
-  actor: ExportActor;
-  /** ISO-ish timestamp string; the caller passes one so this stays deterministic/testable. */
-  generatedAt: string;
-  /** Optional statement-period block (period label + from/to + timezone). */
-  meta?: ExportMeta;
-}): void {
-  const { fileBase, title, subtitle, columns, rows, actor, generatedAt, meta } = opts;
-  const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+export function exportCsvText(fileBase: string, csv: string): void {
+  // BOM so Excel reads UTF-8 (₹ etc.) correctly.
+  triggerDownload("﻿" + csv, `${fileBase}.csv`, "text/csv;charset=utf-8;");
+}
+
+/** Height of the navy header band plus its gold rule, below which a page's content starts. */
+const PDF_HEADER_BOTTOM = 61;
+
+/** The DhanBoost header band — emblem, wordmark, document title/subtitle — on the current page. */
+function drawPdfHeader(doc: jsPDF, title: string, subtitle?: string): void {
   const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
 
   // --- header band + gold rule ---
   doc.setFillColor(NAVY[0], NAVY[1], NAVY[2]);
@@ -134,13 +129,51 @@ export function exportPdf<Row>(opts: {
   doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(14);
-  doc.text(title, pageWidth - 40, 28, { align: "right" });
+  doc.text(pdfText(title), pageWidth - 40, 28, { align: "right" });
   if (subtitle) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
     doc.setTextColor(210, 220, 230);
-    doc.text(subtitle, pageWidth - 40, 44, { align: "right" });
+    doc.text(pdfText(subtitle), pageWidth - 40, 44, { align: "right" });
   }
+}
+
+/** "DhanBoost · Confidential" + "Page i of n" on every page of the document. */
+function drawPdfFooter(doc: jsPDF): void {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const pageCount = doc.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(130, 130, 130);
+    doc.text("DhanBoost · Confidential", 40, pageHeight - 18);
+    doc.text(`Page ${i} of ${pageCount}`, pageWidth - 40, pageHeight - 18, { align: "right" });
+  }
+}
+
+/**
+ * Write rows to a DhanBoost-branded PDF download (landscape A4), stamped with who downloaded it. Wide
+ * column sets paginate horizontally (key column repeated) instead of being crushed into one page.
+ */
+export function exportPdf<Row>(opts: {
+  fileBase: string;
+  title: string;
+  subtitle?: string;
+  columns: ExportColumn<Row>[];
+  rows: Row[];
+  actor: ExportActor;
+  /** ISO-ish timestamp string; the caller passes one so this stays deterministic/testable. */
+  generatedAt: string;
+  /** Optional statement-period block (period label + from/to + timezone). */
+  meta?: ExportMeta;
+}): void {
+  const { fileBase, title, subtitle, columns, rows, actor, generatedAt, meta } = opts;
+  const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+
+  drawPdfHeader(doc, title, subtitle);
 
   // --- provenance line ---
   doc.setFont("helvetica", "normal");
@@ -214,16 +247,86 @@ export function exportPdf<Row>(opts: {
       : { columnStyles, horizontalPageBreak: true, horizontalPageBreakRepeat: 0 }),
   });
 
-  // --- per-page confidential footer ---
-  const pageCount = doc.getNumberOfPages();
-  for (let i = 1; i <= pageCount; i++) {
-    doc.setPage(i);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.5);
-    doc.setTextColor(130, 130, 130);
-    doc.text("DhanBoost · Confidential", 40, pageHeight - 18);
-    doc.text(`Page ${i} of ${pageCount}`, pageWidth - 40, pageHeight - 18, { align: "right" });
+  drawPdfFooter(doc);
+
+  doc.save(`${fileBase}.pdf`);
+}
+
+/** One table of a multi-section PDF: a heading, a header row and its body rows. */
+export interface PdfSection {
+  title: string;
+  header: string[];
+  rows: (string | number | null | undefined)[][];
+}
+
+/**
+ * Write several titled tables to one DhanBoost-branded PDF download (portrait A4) — the shape a
+ * single customer's full profile takes: profile, applications, loans, repayments, verifications,
+ * documents, each under its own heading. Same header band, provenance line and per-page footer as
+ * `exportPdf`; a section that would start within a few lines of the page foot moves to a new page
+ * so a heading is never orphaned from its table.
+ */
+export function exportPdfSections(opts: {
+  fileBase: string;
+  title: string;
+  subtitle?: string;
+  sections: PdfSection[];
+  actor: ExportActor;
+  /** ISO-ish timestamp string; the caller passes one so this stays deterministic/testable. */
+  generatedAt: string;
+}): void {
+  const { fileBase, title, subtitle, sections, actor, generatedAt } = opts;
+  const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  drawPdfHeader(doc, title, subtitle);
+
+  // --- provenance line ---
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(90, 90, 90);
+  doc.text(`Downloaded by ${actor.name} · ${actor.role}  ·  Generated ${generatedAt}`, 40, 78);
+
+  let y = 96;
+  for (const section of sections) {
+    // A heading needs room for itself plus a header row and one body row beneath it.
+    if (y > pageHeight - 110) {
+      doc.addPage();
+      y = PDF_HEADER_BOTTOM + 30;
+    }
+    doc.setTextColor(NAVY[0], NAVY[1], NAVY[2]);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text(pdfText(section.title), 40, y);
+    y += 8;
+
+    const head = section.header.map(pdfText);
+    const body = section.rows.map((r) => r.map((v) => pdfText(cell(v))));
+    // Money columns (header carries the currency) read right-aligned, as in `exportPdf`.
+    const money = head.map(
+      (h, i) => /Rs\./.test(h) && body.every((row) => row[i] === "" || row[i] === "—" || NUMERIC.test(row[i])),
+    );
+    const columnStyles = Object.fromEntries(money.map((m, i) => [i, m ? { halign: "right" as const } : {}]));
+
+    autoTable(doc, {
+      startY: y,
+      head: [head],
+      // An empty section still prints its header row with a single "—" so the reader sees it was
+      // looked at and found empty, not skipped.
+      body: body.length > 0 ? body : [head.map((_, i) => (i === 0 ? "—" : ""))],
+      styles: { fontSize: PDF_FONT_SIZE, cellPadding: PDF_CELL_PAD, overflow: "linebreak", valign: "top" },
+      headStyles: { fillColor: NAVY, textColor: 255, fontStyle: "bold" },
+      alternateRowStyles: { fillColor: ROW_ALT },
+      columnStyles,
+      margin: { left: 40, right: 40, top: PDF_HEADER_BOTTOM + 20, bottom: 36 },
+      didParseCell: (d) => {
+        if (d.section === "head" && money[d.column.index]) d.cell.styles.halign = "right";
+      },
+    });
+    y = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y) + 22;
   }
+
+  drawPdfFooter(doc);
 
   doc.save(`${fileBase}.pdf`);
 }

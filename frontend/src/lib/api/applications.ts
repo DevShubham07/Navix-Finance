@@ -674,6 +674,11 @@ export interface CustomerSummary {
   journeyStep?: string | null;
   /** Returning borrower: the latest file was created after a prior loan closed. */
   reloan?: boolean | null;
+  /** A live block on the customer's mobile in the rejection register — a staff block or a running
+   *  cooling-off. The borrower cannot start a new application while it holds. */
+  blocked?: boolean | null;
+  /** The staff-entered reason for a staff block, the reason code otherwise; null when not blocked. */
+  blockedReason?: string | null;
   totalOutstandingPaise: number;
   /** Latest credit headline for the customer (staff-only). */
   creditScore?: number | null;
@@ -765,6 +770,16 @@ export interface CustomerDetail {
   /** The itemised interest/penalty/paid breakdown per loan id, computed with the rest of this
    *  payload. The Loans tab used to fetch one `/outstanding` per loan card to get it. */
   outstandingByLoanId?: Record<string, OutstandingView>;
+  /** Same rule as `CustomerSummary.blocked`: a live rejection-register block on the mobile. */
+  blocked?: boolean | null;
+  blockedReason?: string | null;
+}
+
+/** The customer's block state after `customersApi.block` / `unblock` (mirrors backend CustomerBlockView). */
+export interface CustomerBlockView {
+  customerId: number;
+  blocked: boolean;
+  blockedReason: string | null;
 }
 
 /**
@@ -961,6 +976,8 @@ export interface CreditBriefView {
   bureauSource?: string | null;
   /** The bureau's own PDF (BUREAU_REPORT — Fintrix CRIF), null when none was returned (Experian, KBA). */
   bureauReportDocumentId?: number | null;
+  /** Why the stars are what they are: the score band, then each BRE deduction or cap applied. */
+  ratingReasons?: string[];
 }
 
 /** Admin edit of a customer's KYC / salary data (identity fields excluded — they stay locked). */
@@ -2259,6 +2276,8 @@ export type CustomerSummaryCounts = {
   closed: number;
   /** Overlay segment; absent until the backend ships it. */
   reloan?: number;
+  /** Overlay segment: customers with a live block on their mobile. */
+  blocked?: number;
   unallocated: number;
 };
 
@@ -2415,6 +2434,14 @@ export const customersApi = {
   /** Assign (or clear) the staff owner. staffId null → unallocate. */
   assignOwner: (customerId: number, staffId: number | null) =>
     bff<CustomerDetail>(`${CUSTOMERS_BASE}/${customerId}/owner`, "POST", { staffId }),
+
+  /** ACCOUNTANT / ADMIN — block the customer for future loans (indefinite; reason required, ≤300 chars). */
+  block: (customerId: number, reason: string) =>
+    bff<CustomerBlockView>(`${CUSTOMERS_BASE}/${customerId}/block`, "POST", { reason }),
+
+  /** ADMIN — lift a staff block. */
+  unblock: (customerId: number) =>
+    bff<CustomerBlockView>(`${CUSTOMERS_BASE}/${customerId}/block`, "DELETE"),
 
   /** Staff call logs on a customer, optionally narrowed to one of their loans. */
   callLogs: (customerId: number, loanId?: number) =>
@@ -3085,7 +3112,8 @@ export type DashMetric =
   | "APPLICATIONS" | "DISBURSED" | "PENDING" | "REJECTED" | "PENDING_SANCTIONED" | "PENDING_DISBURSAL"
   | "CLOSED" | "SETTLED" | "PART_PAID" | "DUE_ON" | "PRECLOSED_ON" | "PENDING_ON" | "RECEIVED_ON"
   | "AUM_BUCKET" | "COLLECTION_MONTH" | "COLLECTION_GROUP" | "RELOAN_RETENTION" | "STATE" | "PINCODE"
-  | "COMPANY" | "CALENDAR_DUE" | "CALENDAR_DISBURSED" | "CALENDAR_BIRTHDAY" | "STAFF_FILES"
+  | "COMPANY" | "CALENDAR_DUE" | "CALENDAR_DISBURSED" | "CALENDAR_BIRTHDAY" | "CALENDAR_ACTIVE"
+  | "CALENDAR_DUE_OPEN" | "STAFF_FILES"
   | "STAFF_CASES" | "PF_RATE" | "ROI_RATE"
   | "POSITION_PRINCIPAL" | "POSITION_NET" | "POSITION_RECEIVABLE" | "POSITION_PENALTY" | "POSITION_RECEIVED"
   | "POSITION_PENDING";
@@ -3269,7 +3297,7 @@ export interface DashTeam {
   heads: { staffId: number; name: string; role: string; score: number | null }[];
 }
 
-export type DashCalendarMode = "DUE" | "DISBURSED" | "BIRTHDAY";
+export type DashCalendarMode = "DUE" | "DISBURSED" | "BIRTHDAY" | "ACTIVE" | "DUE_OPEN";
 export interface DashCalendar {
   month: string;
   mode: string;
@@ -3277,6 +3305,8 @@ export interface DashCalendar {
   daysWithData: number;
   totalCount: number;
   totalAmountPaise: number | null;
+  /** True when the totals are the open book on the month's last day (ACTIVE), not a sum of the days. */
+  snapshot?: boolean;
 }
 
 export interface DashGeoRow {
@@ -3424,6 +3454,34 @@ export interface DashTarget {
   collectionTargetBp: number;
 }
 
+/**
+ * One officer's day on the Collection Head's desk (`GET /dashboard/collections/team`). `staffId` is
+ * null only on the totals row. `calls` is every interaction logged that day; `promisesDue` the cases
+ * whose LATEST promise-to-pay falls on the day (with the cached outstanding on them); `partPayments`
+ * verified partial payments paid that day; `collectedPaise` every verified rupee that day on the
+ * officer's cases; `closed` loans closed that day; `dueCount` live loans falling due that day.
+ */
+export interface DashTeamDayRow {
+  staffId: number | null;
+  name: string;
+  role: string | null;
+  calls: number;
+  promisesDue: number;
+  promisesDuePaise: number;
+  partPayments: number;
+  partPaymentsPaise: number;
+  collectedPaise: number;
+  closed: number;
+  dueCount: number;
+}
+
+export interface DashTeamDay {
+  /** yyyy-MM-dd (IST). */
+  date: string;
+  rows: DashTeamDayRow[];
+  totals: DashTeamDayRow;
+}
+
 const DASH_BASE = "/api/staff/dashboard";
 
 function dashQs(p: DashParams, extra?: Record<string, string | number | undefined | null>): string {
@@ -3449,6 +3507,9 @@ export const dashboardApi = {
   collectionAnalysis: (p: DashParams, date: string | undefined, groupBy: DashGroupBy) =>
     bff<DashCollectionAnalysis>(`${DASH_BASE}/collection-analysis${dashQs(p, { date, groupBy })}`, "GET"),
   team: (p: DashParams) => bff<DashTeam>(`${DASH_BASE}/team${dashQs(p)}`, "GET"),
+  /** The Collection Head's team tracker for one IST day (`date` yyyy-MM-dd; omitted = today). */
+  collectionsTeam: (view: DashView, date?: string) =>
+    bff<DashTeamDay>(`${DASH_BASE}/collections/team${dashQs({ view }, { date })}`, "GET"),
   calendar: (p: DashParams, month: string, mode: DashCalendarMode) =>
     bff<DashCalendar>(`${DASH_BASE}/calendar${dashQs(p, { month, mode })}`, "GET"),
   geo: (p: DashParams) => bff<DashGeo>(`${DASH_BASE}/geo${dashQs(p)}`, "GET"),

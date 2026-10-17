@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, RefreshCw, Pencil, Ban, Trash2, AlertTriangle, Gauge, Send, Phone, IndianRupee, Calendar } from "lucide-react";
+import { ArrowLeft, Loader2, RefreshCw, Pencil, Ban, Trash2, AlertTriangle, Gauge, Send, Phone, IndianRupee, Calendar, ShieldOff } from "lucide-react";
 import { ErrorState, Input, Select, Skeleton, toast } from "@/components/ui";
 import { PillTabs } from "@/components/ui/pill-tabs";
 import { PageHeader } from "@/components/staff/staff-ui";
@@ -16,6 +16,7 @@ import {
   SanctionedRejectAction,
 } from "@/components/staff/live-pipeline";
 import { CUSTOMER_TABS, CustomerTabBody } from "@/components/staff/customer-tabs";
+import { CustomerExportMenu } from "@/components/staff/customer-export-menu";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
 import { CreditScoreGauge } from "@/components/staff/credit-score-gauge";
 import { LimitBasisBadge } from "@/components/staff/detail-parts";
@@ -73,6 +74,8 @@ export default function CustomerDetailPage() {
         <button onClick={() => q.refetch()} className="flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs text-muted hover:bg-grey-100 hover:text-ink">
           {q.isFetching ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Refresh
         </button>
+        {/* ADMIN-only full-profile export (CSV / PDF) — renders nothing for every other working role. */}
+        <CustomerExportMenu customerId={id} detail={c} />
       </PageHeader>
 
       <PermissionGate permission="customer:view" fallback={<NoAccessNotice />}>
@@ -87,8 +90,9 @@ export default function CustomerDetailPage() {
         ) : (
           <div className="grid gap-6 lg:grid-cols-[1fr_minmax(0,340px)]">
             <div className="min-w-0 rounded border border-line bg-white p-4 shadow-sm">
+              <div className="flex flex-col sm:flex-row max-h-[68vh] gap-3">
               <PillTabs tabs={CUSTOMER_TABS} active={tab} onChange={setTab} />
-              <div className="mt-3 max-h-[68vh] overflow-y-auto text-[10.4px]">
+              <div className="min-w-0 flex-1 overflow-y-auto text-[10.4px]">
                 <CustomerTabBody
                   tab={tab}
                   detail={c}
@@ -98,6 +102,7 @@ export default function CustomerDetailPage() {
                   onChanged={invalidate}
                   onOpenApplication={setSelectedAppId}
                 />
+              </div>
               </div>
             </div>
             <div className="space-y-6">
@@ -139,6 +144,7 @@ export default function CustomerDetailPage() {
                 )}
                 <AdminEditCard detail={c} onSaved={invalidate} />
                 <MobileChangeCard detail={c} onSaved={invalidate} />
+                {c.blocked && <UnblockCard customerId={id} reason={c.blockedReason ?? null} onDone={invalidate} />}
                 <BlocklistCard customerId={id} />
                 <DeleteCustomerCard
                   customerId={id}
@@ -599,6 +605,34 @@ function SalaryDayCard({
         className="btn btn-sm btn-navy btn-block disabled:opacity-50"
       >
         {save.isPending ? <Loader2 size={13} className="animate-spin" /> : null} Save
+      </button>
+    </Card>
+  );
+}
+
+/**
+ * ADMIN lifts a staff block (set at repayment verify, or by the accountant/admin elsewhere). The
+ * block itself is a rejection-register row keyed on the mobile, so this is the customer's way back
+ * in — not a blocklist edit.
+ */
+function UnblockCard({ customerId, reason, onDone }: { customerId: number; reason: string | null; onDone: () => void }) {
+  const m = useMutation({
+    mutationFn: () => customersApi.unblock(customerId),
+    onSuccess: () => {
+      toast.success("Customer unblocked — they may apply again");
+      onDone();
+    },
+  });
+  return (
+    <Card title="Blocked for future loans" icon={<ShieldOff size={16} />}>
+      <p className="mb-3 text-xs text-muted">
+        {reason ? <>Reason on file: <span className="font-semibold text-ink">{reason}</span>. </> : null}
+        The borrower cannot start a new application or reborrow while this holds. Unblocking also lifts the
+        mirrored blocklist entries this block added.
+      </p>
+      {m.error && <p className="mb-2 text-sm text-error-700">{errMessage(m.error)}</p>}
+      <button onClick={() => m.mutate()} disabled={m.isPending} className="btn btn-sm btn-navy btn-block disabled:opacity-50">
+        {m.isPending ? <Loader2 size={13} className="animate-spin" /> : <ShieldOff size={13} />} Unblock customer
       </button>
     </Card>
   );

@@ -50,15 +50,19 @@ public class CustomerBookQuery {
             LocalDate today) {
     }
 
-    public record SegmentCount(String segment, long count, long unallocated, long reloan) {
+    public record SegmentCount(String segment, long count, long unallocated, long reloan, long blocked) {
         public SegmentCount(String segment, long count, long unallocated) {
-            this(segment, count, unallocated, 0);
+            this(segment, count, unallocated, 0, 0);
+        }
+
+        public SegmentCount(String segment, long count, long unallocated, long reloan) {
+            this(segment, count, unallocated, reloan, 0);
         }
     }
 
     public static final Set<String> SEGMENTS = Set.of(
             "incomplete", "pending", "review", "approved", "disbursementPending",
-            "active", "overdue", "hold", "rejected", "closed", "unallocated", "reloan");
+            "active", "overdue", "hold", "rejected", "closed", "unallocated", "reloan", "blocked");
 
     private static final String BOOK_CTE = """
             with latest_app as (
@@ -91,6 +95,9 @@ public class CustomerBookQuery {
                             select 1 from loan cl
                             where cl.customer_id = la.customer_id and cl.status = 'CLOSED'
                               and cl.closed_on <= cast(la.created_at at time zone 'Asia/Kolkata' as date))) as reloan,
+                       exists (
+                            select 1 from application_rejection r
+                            where r.mobile = pr.mobile and r.blocked_until > now()) as blocked,
                        coalesce(s.at, la.created_at) as status_changed_at,
                        pr.full_name, pr.pan, pr.mobile,
                        case
@@ -220,10 +227,12 @@ public class CustomerBookQuery {
         String where = where(filter, false, spec.without(STAGE_COLUMN), params);
         String sql = BOOK_CTE + "select b.segment, count(*) as n,"
                 + " count(*) filter (where b.owner_staff_id is null) as unallocated,"
-                + " count(*) filter (where b.reloan) as reloan"
+                + " count(*) filter (where b.reloan) as reloan,"
+                + " count(*) filter (where b.blocked) as blocked"
                 + " from book b" + where + " group by b.segment";
         return jdbc.query(sql, params, (rs, i) ->
-                new SegmentCount(rs.getString("segment"), rs.getLong("n"), rs.getLong("unallocated"), rs.getLong("reloan")));
+                new SegmentCount(rs.getString("segment"), rs.getLong("n"), rs.getLong("unallocated"),
+                        rs.getLong("reloan"), rs.getLong("blocked")));
     }
 
     /**
@@ -280,6 +289,8 @@ public class CustomerBookQuery {
                 clauses.add("b.owner_staff_id is null");
             } else if ("reloan".equals(f.segment())) {
                 clauses.add("b.reloan");
+            } else if ("blocked".equals(f.segment())) {
+                clauses.add("b.blocked");
             } else {
                 p.addValue("seg", f.segment());
                 clauses.add("b.segment = :seg");

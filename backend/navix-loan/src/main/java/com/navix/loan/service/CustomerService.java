@@ -1,5 +1,6 @@
 package com.navix.loan.service;
 
+import com.navix.common.blocklist.BlocklistMirror;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.exception.ResourceNotFoundException;
 import com.navix.common.notification.event.LoanLimitRevisedEvent;
@@ -27,6 +28,7 @@ import com.navix.loan.dto.CustomerDtos.HandoverCheck;
 import com.navix.loan.dto.CustomerDtos.HandoverReference;
 import com.navix.loan.dto.CustomerDtos.DpdBuckets;
 import com.navix.loan.dto.CreditBriefDtos.CreditBriefView;
+import com.navix.loan.dto.CustomerDtos.CustomerBlockView;
 import com.navix.loan.dto.CustomerDtos.CustomerDetail;
 import com.navix.loan.dto.CustomerDtos.CustomerPage;
 import com.navix.loan.dto.CustomerDtos.CustomerSummary;
@@ -40,6 +42,7 @@ import com.navix.loan.dto.LoanDtos.PaymentView;
 import com.navix.loan.dto.ReviewDtos.DocumentView;
 import com.navix.loan.dto.ReviewDtos.ProfileView;
 import com.navix.loan.entity.ApplicationDocument;
+import com.navix.loan.entity.ApplicationRejection;
 import com.navix.loan.entity.ApplicationEvent;
 import com.navix.loan.entity.ApplicationReference;
 import com.navix.loan.entity.ApplicationVerification;
@@ -55,6 +58,7 @@ import com.navix.loan.entity.ProfileChangeLog;
 import com.navix.loan.repository.ApplicationDocumentRepository;
 import com.navix.loan.repository.ApplicationEventRepository;
 import com.navix.loan.repository.ApplicationReferenceRepository;
+import com.navix.loan.repository.ApplicationRejectionRepository;
 import com.navix.loan.repository.ApplicationVerificationRepository;
 import com.navix.loan.repository.CustomerCallLogRepository;
 import com.navix.loan.repository.CustomerLimitOverrideRepository;
@@ -131,6 +135,8 @@ public class CustomerService {
     private final LoanMath loanMath;
     private final CustomerBookQuery bookQuery;
     private final CustomerTrustSignalsService trustSignals;
+    private final ApplicationRejectionRepository rejectionRepository;
+    private final BlocklistMirror blocklistMirror;
 
     /**
      * Roles that see the ENTIRE customer book. Everyone else who holds {@code customer:view} is
@@ -753,12 +759,14 @@ public class CustomerService {
         long all = 0;
         long unallocated = 0;
         long reloan = 0;
+        long blocked = 0;
         for (CustomerBookQuery.SegmentCount c : spec.isEmpty()
                 ? bookQuery.segmentCounts(filter) : bookQuery.segmentCounts(filter, spec)) {
             bySegment.merge(c.segment(), c.count(), Long::sum);
             all += c.count();
             unallocated += c.unallocated();
             reloan += c.reloan();
+            blocked += c.blocked();
         }
         return new CustomerSummaryCounts(
                 all,
@@ -773,7 +781,8 @@ public class CustomerService {
                 bySegment.getOrDefault("rejected", 0L),
                 bySegment.getOrDefault("closed", 0L),
                 unallocated,
-                reloan);
+                reloan,
+                blocked);
     }
 
     private CustomerBookQuery.BookFilter bookFilter(String q, LocalDate from, LocalDate to, String seg,
@@ -860,6 +869,9 @@ public class CustomerService {
             }
         }
         Map<Long, BureauState> bureauStates = bureauStateService.states(bureauAppIdByCustomer.values());
+        // Live rejection-register blocks, one query for every mobile on the page.
+        Map<String, ApplicationRejection> blockByMobile = activeBlocks(profileByCustomer.values().stream()
+                .filter(Objects::nonNull).map(CustomerProfile::getMobile).toList());
         // Same application ids the bureau state is read from, so the Failure column always
         // describes the SAME file the Bureau column does.
         Map<Long, VerificationFailureService.CaseFailure> failures =
@@ -930,6 +942,7 @@ public class CustomerService {
                             com.navix.common.loan.ApplicationActorDirectory.HandledBy.NONE);
             String collectionOfficerName = latestLoan == null ? null
                     : collectionOfficerNameByLoanId.get(latestLoan.getId());
+            ApplicationRejection block = profile != null ? blockByMobile.get(profile.getMobile()) : null;
             CustomerSummary cs = new CustomerSummary(
                     customerId,
                     profile != null ? profile.getFullName() : null,
@@ -967,7 +980,9 @@ public class CustomerService {
                     failure.reason().retryable(),
                     trustByCustomer.get(customerId),
                     latestApp != null ? latestApp.getJourneyStep() : null,
-                    isReloan(latestApp, loans));
+                    isReloan(latestApp, loans),
+                    block != null,
+                    blockReason(block));
             out.add(cs);
         }
         return out;
@@ -982,6 +997,35 @@ public class CustomerService {
         LocalDate createdOn = latestApp.getCreatedAt().atZone(IST).toLocalDate();
         return loans.stream().anyMatch(l -> l.getStatus() == com.navix.loan.domain.LoanStatus.CLOSED
                 && l.getClosedOn() != null && !l.getClosedOn().isAfter(createdOn));
+    }
+
+    /**
+     * mobile → its live block (the one ending last when several overlap), for every mobile given,
+     * in one query. Null/blank mobiles are skipped; an empty input never reaches the database
+     * ({@code in ()} is invalid SQL).
+     */
+    private Map<String, ApplicationRejection> activeBlocks(Collection<String> mobiles) {
+        // A mutable map so a caller may `.get(null)` for a profile with no mobile — `Map.of()` throws.
+        Map<String, ApplicationRejection> out = new HashMap<>();
+        List<String> keys = mobiles.stream().filter(m -> m != null && !m.isBlank()).distinct().toList();
+        if (keys.isEmpty()) {
+            return out;
+        }
+        for (ApplicationRejection r : nullSafe(rejectionRepository.findByMobileInAndBlockedUntilAfter(keys, Instant.now()))) {
+            out.merge(r.getMobile(), r, (a, b) -> a.getBlockedUntil().isAfter(b.getBlockedUntil()) ? a : b);
+        }
+        return out;
+    }
+
+    /** The staff-entered reason for a staff block; the reason code for an automatic one; null for none. */
+    private static String blockReason(ApplicationRejection block) {
+        if (block == null) {
+            return null;
+        }
+        if (ApplicationRejection.BLOCKED_BY_STAFF.equals(block.getReasonCode())) {
+            return block.getReasonDetail();
+        }
+        return block.getReasonCode();
     }
 
     /**
@@ -1085,10 +1129,107 @@ public class CustomerService {
         // Report tab always agree.
         Long latestAppId = appViews.isEmpty() ? null : appViews.get(0).id();
         CreditBriefView creditBrief = latestAppId != null ? creditBriefService.view(latestAppId) : null;
+        ApplicationRejection block = profile != null && profile.getMobile() != null
+                ? activeBlocks(List.of(profile.getMobile())).get(profile.getMobile()) : null;
         return new CustomerDetail(customerId, profileView, appViews, loanViews, payments,
                 ownerStaffId, ownerName, creditBrief,
                 eligibilityService.overrideOf(customerId).orElse(null),
-                outstandingByLoanId);
+                outstandingByLoanId,
+                block != null,
+                blockReason(block));
+    }
+
+    /**
+     * Block a customer for future loans — the "should they be able to borrow again?" decision taken
+     * when a repayment is verified, so ACCOUNTANT (the verifier) and ADMIN. Writes one
+     * {@link ApplicationRejection#BLOCKED_BY_STAFF} row keyed on the customer's current mobile with an
+     * {@link ApplicationRejection#INDEFINITE} {@code blocked_until}, which {@code
+     * ApplicationFlowService.assertNotBlocked} already honours on every new application and reborrow;
+     * and mirrors the mobile + PAN onto the fraud blocklist so dedupe flags them on a later signup.
+     * Audited to {@code profile_change_log} like {@link #assignOwner}.
+     */
+    @Transactional
+    public CustomerBlockView block(Long customerId, String reason) {
+        requireRole("ACCOUNTANT");
+        rejectDsa();
+        requireVisible(customerId);
+        String detail = trimToNull(reason);
+        if (detail == null) {
+            throw new BusinessException("REASON_REQUIRED", "A reason is required to block a customer");
+        }
+        CustomerProfile profile = requireProfileWithMobile(customerId);
+        String mobile = profile.getMobile();
+        if (!rejectionRepository.findByMobileAndReasonCodeAndBlockedUntilAfter(
+                mobile, ApplicationRejection.BLOCKED_BY_STAFF, Instant.now()).isEmpty()) {
+            throw new BusinessException("ALREADY_BLOCKED", "This customer is already blocked");
+        }
+        ApplicationRejection row = new ApplicationRejection();
+        row.setApplicationId(null);
+        row.setCustomerId(customerId);
+        row.setMobile(mobile);
+        row.setReasonCode(ApplicationRejection.BLOCKED_BY_STAFF);
+        row.setReasonDetail(detail);
+        row.setAuto(Boolean.FALSE);
+        row.setBlockedUntil(ApplicationRejection.INDEFINITE);
+        rejectionRepository.save(row);
+
+        String mirrorReason = mirrorReason(detail);
+        blocklistMirror.block("PHONE", mobile, mirrorReason);
+        if (trimToNull(profile.getPan()) != null) {
+            blocklistMirror.block("PAN", profile.getPan(), mirrorReason);
+        }
+        logIfChanged(customerId, null, "blocked", null, detail);
+        return new CustomerBlockView(customerId, true, detail);
+    }
+
+    /**
+     * Lift a staff block (ADMIN only). Ends every live {@code BLOCKED_BY_STAFF} row on the customer's
+     * mobile now — the row stays in the register as history — and deactivates the mirrored blocklist
+     * entries that carry this block's reason, leaving any independently added entry alone. A
+     * cooling-off from a credit reject is not a staff block and is not touched.
+     */
+    @Transactional
+    public CustomerBlockView unblock(Long customerId) {
+        requireAdmin();
+        rejectDsa();
+        requireVisible(customerId);
+        CustomerProfile profile = requireProfileWithMobile(customerId);
+        String mobile = profile.getMobile();
+        List<ApplicationRejection> live = rejectionRepository.findByMobileAndReasonCodeAndBlockedUntilAfter(
+                mobile, ApplicationRejection.BLOCKED_BY_STAFF, Instant.now());
+        if (live.isEmpty()) {
+            throw new BusinessException("NOT_BLOCKED", "This customer is not blocked by staff");
+        }
+        Instant now = Instant.now();
+        for (ApplicationRejection r : live) {
+            r.setBlockedUntil(now);
+            rejectionRepository.save(r);
+            String mirrorReason = mirrorReason(r.getReasonDetail());
+            blocklistMirror.unblock("PHONE", mobile, mirrorReason);
+            if (trimToNull(profile.getPan()) != null) {
+                blocklistMirror.unblock("PAN", profile.getPan(), mirrorReason);
+            }
+        }
+        logIfChanged(customerId, null, "blocked", live.get(0).getReasonDetail(), null);
+        return new CustomerBlockView(customerId, false, null);
+    }
+
+    /** The reason the mirrored blocklist entries carry — exact-matched again on unblock. */
+    private static String mirrorReason(String detail) {
+        return "Blocked by staff: " + detail;
+    }
+
+    /** The customer's latest profile, which must carry the mobile every block is keyed on. */
+    private CustomerProfile requireProfileWithMobile(Long customerId) {
+        CustomerProfile profile = latestProfile(applicationRepository.findByCustomerId(customerId));
+        if (profile == null) {
+            throw new ResourceNotFoundException("Customer", String.valueOf(customerId));
+        }
+        if (trimToNull(profile.getMobile()) == null) {
+            throw new BusinessException("NO_MOBILE_ON_FILE",
+                    "This customer has no mobile on file to key the block on");
+        }
+        return profile;
     }
 
     /**

@@ -31,6 +31,15 @@ public class ApplicationRejection extends BaseAuditEntity {
      * documents disagree with each other, so the file is rejected outright rather than parked.
      */
     public static final String FRAUD_REJECTED = "FRAUD_REJECTED";
+    /**
+     * A staffer blocked the customer for future loans (decided when a repayment is verified, or from
+     * the customer page). Not a cooling-off: {@link #blockedUntil} is {@link #INDEFINITE} until an
+     * ADMIN lifts it, which sets it to the moment of the unblock.
+     */
+    public static final String BLOCKED_BY_STAFF = "BLOCKED_BY_STAFF";
+    /** The far-future {@link #blockedUntil} that means "until a staffer says otherwise". */
+    public static final Instant INDEFINITE =
+            java.time.LocalDate.of(9999, 12, 31).atStartOfDay(java.time.ZoneOffset.UTC).toInstant();
 
     @Column(name = "application_id")
     private Long applicationId;
@@ -54,4 +63,9 @@ public class ApplicationRejection extends BaseAuditEntity {
     /** When the borrower may apply again; null = recorded but not blocking. */
     @Column(name = "blocked_until")
     private Instant blockedUntil;
+
+    /** True for a staff block with no end date (year 9999), as opposed to a dated cooling-off. */
+    public boolean isIndefinite() {
+        return blockedUntil != null && blockedUntil.atZone(java.time.ZoneOffset.UTC).getYear() >= 9999;
+    }
 }

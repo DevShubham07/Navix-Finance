@@ -228,6 +228,21 @@ public final class MetricSql {
                         + " where cp.dob is not null %LOAN% order by a.customer_id, l.id desc) b"
                         + " join generate_series(cast(:from as date), cast(:to as date), interval '1 day') d(day)"
                         + " on to_char(b.dob, 'MM-DD') = to_char(d.day, 'MM-DD')"),
+        // One row per (loan, day) the loan was open: disbursed on or before the day, not yet closed on it.
+        // A DAY key narrows :from/:to to that one day, so the drill-down lists the loans open that day.
+        CALENDAR_ACTIVE(ADMIN_ONLY, KeyKind.DAY, false,
+                sel("l.principal", "cast(cast(d.day as date) as text)", NIL)
+                        + "from seg a join loan l on l.id = a.loan_id"
+                        + " join generate_series(cast(:from as date), cast(:to as date), interval '1 day') d(day)"
+                        + " on l.disbursed_on <= cast(d.day as date)"
+                        + " and (l.closed_on is null or l.closed_on > cast(d.day as date))"
+                        + " where l.disbursed_on is not null %LOAN%"),
+
+        // Loans due on the day that are still open (not closed). The calendar and the drawer price each
+        // one at what is owed today (owedSum), not the contractual total_repayable carried here.
+        CALENDAR_DUE_OPEN(ADMIN_ONLY, KeyKind.DAY, true,
+                sel("l.total_repayable", "cast(l.due_date as text)", NIL) + LOAN_JOIN
+                        + "where l.due_date between :from and :to and l.status <> 'CLOSED' %LOAN%"),
 
         // ---- staff ----
         STAFF_FILES(ADMIN_CREDIT, KeyKind.OTHER, false,

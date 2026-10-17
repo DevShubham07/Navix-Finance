@@ -68,21 +68,21 @@ import {
 export const CUSTOMER_TABS: PillTabDef[] = [
   { key: "customer", label: "Customer", icon: User },
   { key: "loan", label: "Loan", icon: Landmark },
-  { key: "sanction", label: "Sanction", icon: FileSignature },
   { key: "disbursal", label: "Disbursal", icon: Banknote },
   { key: "repayment", label: "Repayment", icon: IndianRupee },
   { key: "collections", label: "Collections", icon: HandCoins },
-  { key: "third-party", label: "Third-party logs", icon: Plug },
+  { key: "third-party", label: "Third-party logs", icon: Plug, groupStart: true },
   { key: "banking", label: "Banking", icon: Building2 },
   { key: "credit", label: "Credit report", icon: Gauge },
   { key: "bre", label: "BRE", icon: ListChecks },
-  { key: "journey", label: "Journey", icon: Route },
+  { key: "journey", label: "Journey", icon: Route, groupStart: true },
   { key: "references", label: "References", icon: Users },
   { key: "documents", label: "Documents", icon: Files },
   { key: "addresses", label: "Addresses", icon: MapPin },
   { key: "dedupe", label: "Dedupe", icon: Copy },
   { key: "communication", label: "Communication", icon: MessageSquare },
   { key: "activity", label: "Activity", icon: History },
+  { key: "sanction", label: "Sanction", icon: FileSignature, groupStart: true },
   { key: "followups", label: "Follow-ups", icon: CalendarClock },
   {
     key: "mandate",
@@ -195,7 +195,7 @@ export function CustomerTabBody({
   return (
     <>
       <NeedsManualReviewBadge customerId={customerId} className="mb-3" />
-      {(tab === "loan" || tab === "repayment" || tab === "disbursal") && <BureauMobilesStrip customerId={customerId} />}
+      {(tab === "repayment" || tab === "disbursal") && <BureauMobilesStrip customerId={customerId} />}
       {content}
     </>
   );
