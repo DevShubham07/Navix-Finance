@@ -236,9 +236,9 @@ export function ApplicationDetailDialog({
 
         {canReview && customerId != null && <MobileReuseStrip customerId={customerId} onOpen={() => setMatchesOpen(true)} />}
 
-        <PillTabs tabs={CUSTOMER_TABS} active={tab} onChange={setTab} className="mt-2 shrink-0" />
-
-        <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1 text-[10.4px]">
+        <div className="mt-3 flex min-h-0 flex-1 gap-3">
+          <PillTabs tabs={CUSTOMER_TABS} active={tab} onChange={setTab} />
+          <div className="min-h-0 min-w-0 flex-1 overflow-y-auto pr-1 text-[10.4px]">
           {resolving || (ready && appQ.isLoading) ? (
             <Skeleton variant="line" rows={6} className="py-6" />
           ) : resolveError ? (
@@ -267,6 +267,7 @@ export function ApplicationDetailDialog({
               onTabChange={setTab}
             />
           ) : null}
+          </div>
         </div>
       </Dialog>
 

@@ -90,8 +90,9 @@ export default function CustomerDetailPage() {
         ) : (
           <div className="grid gap-6 lg:grid-cols-[1fr_minmax(0,340px)]">
             <div className="min-w-0 rounded border border-line bg-white p-4 shadow-sm">
+              <div className="flex max-h-[68vh] gap-3">
               <PillTabs tabs={CUSTOMER_TABS} active={tab} onChange={setTab} />
-              <div className="mt-3 max-h-[68vh] overflow-y-auto text-[10.4px]">
+              <div className="min-w-0 flex-1 overflow-y-auto text-[10.4px]">
                 <CustomerTabBody
                   tab={tab}
                   detail={c}
@@ -101,6 +102,7 @@ export default function CustomerDetailPage() {
                   onChanged={invalidate}
                   onOpenApplication={setSelectedAppId}
                 />
+              </div>
               </div>
             </div>
             <div className="space-y-6">

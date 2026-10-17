@@ -73,9 +73,9 @@ export function CustomerDetailDialog({
         </button>
       </div>
 
-      <PillTabs tabs={CUSTOMER_TABS} active={tab} onChange={setTab} className="mt-2" />
-
-      <div className="mt-3 max-h-[68vh] overflow-y-auto pr-1 text-[10.4px]">
+      <div className="mt-3 flex max-h-[68vh] gap-3">
+        <PillTabs tabs={CUSTOMER_TABS} active={tab} onChange={setTab} />
+        <div className="min-w-0 flex-1 overflow-y-auto pr-1 text-[10.4px]">
         {detailQ.isLoading ? (
           <Skeleton variant="line" rows={6} className="py-6" />
         ) : detailQ.error ? (
@@ -97,6 +97,7 @@ export function CustomerDetailDialog({
             />
           </>
         )}
+        </div>
       </div>
     </Dialog>
   );
