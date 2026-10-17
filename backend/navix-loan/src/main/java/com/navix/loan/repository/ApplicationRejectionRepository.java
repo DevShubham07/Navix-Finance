@@ -31,4 +31,8 @@ public interface ApplicationRejectionRepository extends JpaRepository<Applicatio
     /** The live staff block(s) on one mobile — what an ADMIN unblock lifts. */
     List<ApplicationRejection> findByMobileAndReasonCodeAndBlockedUntilAfter(
             String mobile, String reasonCode, Instant now);
+
+    /** A live block of this kind on the customer id itself — survives a correction of the mobile on file. */
+    Optional<ApplicationRejection> findFirstByCustomerIdAndReasonCodeAndBlockedUntilAfter(
+            Long customerId, String reasonCode, Instant now);
 }

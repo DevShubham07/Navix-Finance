@@ -212,6 +212,8 @@ class CustomerServiceTest {
     void accountantBlockWritesAnIndefiniteRejectionMirrorsTheBlocklistAndAudits() {
         ActorContext.set(new CurrentActor("7", "Acc", "ACCOUNTANT"));
         blockableProfile();
+        // The Accountant's book is every customer with a loan (scope()), which includes this one.
+        when(loanRepository.findAllCustomerIds()).thenReturn(java.util.Set.of(9000001L));
         when(rejectionRepository.findByMobileAndReasonCodeAndBlockedUntilAfter(
                 eq("9876543210"), eq(com.navix.loan.entity.ApplicationRejection.BLOCKED_BY_STAFF), any()))
                 .thenReturn(List.of());
@@ -248,6 +250,7 @@ class CustomerServiceTest {
     @Test
     void blockRequiresAReason() {
         ActorContext.set(new CurrentActor("7", "Acc", "ACCOUNTANT"));
+        when(loanRepository.findAllCustomerIds()).thenReturn(java.util.Set.of(9000001L));
 
         assertThatThrownBy(() -> service.block(9000001L, "   "))
                 .isInstanceOf(BusinessException.class)
@@ -269,6 +272,19 @@ class CustomerServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("code", "ALREADY_BLOCKED");
         verify(rejectionRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void accountantCannotBlockACustomerOutsideTheirBook() {
+        // No loan on file, so not in the Accountant's book: answered 404 like every other customer
+        // read outside scope, never written.
+        ActorContext.set(new CurrentActor("7", "Acc", "ACCOUNTANT"));
+        when(loanRepository.findAllCustomerIds()).thenReturn(java.util.Set.of());
+
+        assertThatThrownBy(() -> service.block(9000001L, "no loan, no business here"))
+                .isInstanceOf(com.navix.common.exception.ResourceNotFoundException.class);
+        verify(rejectionRepository, org.mockito.Mockito.never()).save(any());
+        verify(blocklistMirror, org.mockito.Mockito.never()).block(any(), any(), any());
     }
 
     @Test

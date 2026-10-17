@@ -28,6 +28,13 @@ public class BlocklistMirrorAdapter implements BlocklistMirror {
         }
         BlocklistEntry entry = blocklistRepository.findByTypeAndValue(parsed, value)
                 .orElseGet(BlocklistEntry::new);
+        // An entry that is already active belongs to whoever created it (usually an ADMIN on the
+        // blocklist page): leave it alone. Rewriting its reason would make it look like ours, and a
+        // later unblock — which only lifts entries carrying this block's reason — would then switch
+        // off the ADMIN's entry too.
+        if (entry.getId() != null && entry.isActive()) {
+            return;
+        }
         entry.setType(parsed);
         entry.setValue(value);
         entry.setReason(reason);

@@ -1151,6 +1151,8 @@ public class CustomerService {
     @Transactional
     public CustomerBlockView block(Long customerId, String reason) {
         requireRole("ACCOUNTANT");
+        rejectDsa();
+        requireVisible(customerId);
         String detail = trimToNull(reason);
         if (detail == null) {
             throw new BusinessException("REASON_REQUIRED", "A reason is required to block a customer");
@@ -1189,6 +1191,8 @@ public class CustomerService {
     @Transactional
     public CustomerBlockView unblock(Long customerId) {
         requireAdmin();
+        rejectDsa();
+        requireVisible(customerId);
         CustomerProfile profile = requireProfileWithMobile(customerId);
         String mobile = profile.getMobile();
         List<ApplicationRejection> live = rejectionRepository.findByMobileAndReasonCodeAndBlockedUntilAfter(

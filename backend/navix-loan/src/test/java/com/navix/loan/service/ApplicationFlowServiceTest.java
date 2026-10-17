@@ -192,6 +192,22 @@ class ApplicationFlowServiceTest {
                 .hasMessage("Your account is not eligible for new loans. Please contact support.");
     }
 
+    /** A staff block is held on the customer id too, so a corrected mobile does not lift it. */
+    @Test
+    void staffBlockOnTheCustomerIdHoldsEvenWhenTheMobileOnFileHasNoBlock() {
+        actor("7", "BORROWER");
+        ApplicationRejection block = new ApplicationRejection();
+        block.setReasonCode(ApplicationRejection.BLOCKED_BY_STAFF);
+        block.setBlockedUntil(ApplicationRejection.INDEFINITE);
+        when(rejectionRepository.findFirstByCustomerIdAndReasonCodeAndBlockedUntilAfter(
+                eq(7L), eq(ApplicationRejection.BLOCKED_BY_STAFF), any())).thenReturn(Optional.of(block));
+
+        assertThatThrownBy(() -> flow.createDraft(7L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "NOT_ELIGIBLE")
+                .hasMessage("Your account is not eligible for new loans. Please contact support.");
+    }
+
     @Test
     void creditToActiveHappyPath() {
         LoanApplication app = appAt(ApplicationStatus.KYC_PENDING);

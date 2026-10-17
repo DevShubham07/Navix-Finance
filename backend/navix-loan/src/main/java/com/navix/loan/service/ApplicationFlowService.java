@@ -1464,6 +1464,14 @@ public class ApplicationFlowService {
      * call) and 90 (an engine rule) would between them say which one turned the borrower away.
      */
     private void assertNotBlocked(Long customerId) {
+        // A staff block is also held on the customer id, so correcting the mobile on file (an ADMIN
+        // action) cannot quietly lift it.
+        if (customerId != null && rejectionRepository.findFirstByCustomerIdAndReasonCodeAndBlockedUntilAfter(
+                customerId, ApplicationRejection.BLOCKED_BY_STAFF, Instant.now()).isPresent()) {
+            log.info("blocked application start customer={} staff block", customerId);
+            throw new BusinessException("NOT_ELIGIBLE",
+                    "Your account is not eligible for new loans. Please contact support.");
+        }
         String mobile = latestProfileForCustomer(customerId).map(CustomerProfile::getMobile).orElse(null);
         if (mobile == null || mobile.isBlank()) {
             return;
