@@ -45,6 +45,7 @@ class MandateDebitSchedulerTest {
     void setUp() {
         when(flags.isEnabled("digio-debit", false)).thenReturn(true);
         when(debits.findFirstByLoanIdOrderByAttemptNoDesc(anyLong())).thenReturn(Optional.empty());
+        when(debitService.configured()).thenReturn(true);
         sweep = new MandateDebitScheduler(debitService, debits, loans, new DpdCalculator(), flags);
     }
 
@@ -62,6 +63,15 @@ class MandateDebitSchedulerTest {
         d.setFailureCode(code);
         d.setSettlementDate(settle);
         return d;
+    }
+
+    @Test
+    void presentsNothingWhenTheCorporateAccountIsUnset() {
+        // Otherwise every loan fails DEBIT_NOT_CONFIGURED one warn at a time and the sweep looks healthy.
+        when(debitService.configured()).thenReturn(false);
+        when(loans.listCollectible(any())).thenReturn(List.of(loan(1, 3)));
+        sweep.sweep();
+        verify(debitService, never()).present(anyLong(), any(), any(), any());
     }
 
     @Test

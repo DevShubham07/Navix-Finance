@@ -99,6 +99,14 @@ public class MandateDebitScheduler {
     }
 
     private void presentDue(LocalDate today) {
+        // One ERROR for the pass, not a warn per loan: without the settlement account EVERY loan fails
+        // DEBIT_NOT_CONFIGURED, and a silently inert collection sweep is exactly the failure mode the
+        // eSign landmine in CLAUDE.md exists to warn about.
+        if (!debitService.configured()) {
+            log.error("Debit sweep stopped: NAVIX_DIGIO_CORPORATE_ACCOUNT_NUMBER "
+                    + "(navix.digio.corporate-account-number) is unset, so no debit can be presented");
+            return;
+        }
         int presented = 0;
         for (LoanSummary loan : loans.listCollectible(today)) {
             try {

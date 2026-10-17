@@ -719,7 +719,11 @@ What holds across all of it, and does not belong in that file:
   `NAVIX_ESIGN_*` (`PROVIDER` signzy|mock · `CALLBACK_URL` + `CALLBACK_SECRET` — **both mandatory when
   the provider is `signzy`**; the app refuses to start otherwise, SSM `/navix/<env>/navix/esign/…`),
   `NAVIX_DIGIO_*` (`PROVIDER` mock|digio · `BASE_URL` · `CLIENT_ID` · `CLIENT_SECRET` · `WEBHOOK_SECRET` ·
-  `CORPORATE_CONFIG_ID` · `NARRATION` · `EXPIRE_IN_DAYS` · `DEBIT_CRON` — the Digio eMandate; `NAVIX_DIGIO_DEBIT_CRON` is the debit sweep schedule, default 10:00 `Asia/Kolkata`; the app **refuses to start**
+  `CORPORATE_CONFIG_ID` · `CORPORATE_ACCOUNT_NUMBER` · `NARRATION` · `EXPIRE_IN_DAYS` · `DEBIT_CRON` — the
+  Digio eMandate; `NAVIX_DIGIO_DEBIT_CRON` is the debit sweep schedule, default 10:00 `Asia/Kolkata`, and
+  **`NAVIX_DIGIO_CORPORATE_ACCOUNT_NUMBER` is the lender's settlement account every NACH debit credits —
+  unset, every presentation refuses `DEBIT_NOT_CONFIGURED` and the sweep stops with one ERROR, so set it
+  before enabling the `digio-debit` flag**; the app **refuses to start**
   with provider `digio` unless the five credentials are set, SSM `/navix/<env>/navix/digio/…`; `.env.example`
   ships `mock`), `NAVIX_S3_*`, `NAVIX_SMS_*` (incl. `NAVIX_SMS_MOCK`),
   `NAVIX_WHATSAPP_*` (`TOKEN` — SSM `/navix/<env>/navix/whatsapp/token` · `ENABLED` · `MOCK` · `OTP_TEMPLATE`),
