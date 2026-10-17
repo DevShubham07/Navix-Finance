@@ -271,6 +271,51 @@ class DebitServiceTest {
     }
 
     @Test
+    void refusesAZeroOrNegativeAmount() {
+        assertCode(() -> service.present(LOAN, 0L, Trigger.MANUAL, 9L), "INVALID_AMOUNT");
+        assertCode(() -> service.present(LOAN, -5L, Trigger.MANUAL, 9L), "INVALID_AMOUNT");
+        verify(port, never()).presentDebit(any());
+    }
+
+    @Test
+    void aLostRaceOnTheInFlightIndexIsReportedAsInFlight() {
+        when(debits.saveAndFlush(any())).thenThrow(new org.springframework.dao.DataIntegrityViolationException("uq"));
+        assertCode(() -> service.present(LOAN, null, Trigger.MANUAL, 9L), "DEBIT_IN_FLIGHT");
+        verify(port, never()).presentDebit(any());
+    }
+
+    @Test
+    void doesNotRepresentAfterATerminalRejectCode() {
+        for (String code : new String[] {"ACCOUNT_CLOSED", "SOMETHING_NEW_99", null}) {
+            when(debits.findFirstByLoanIdOrderByAttemptNoDesc(LOAN)).thenReturn(Optional.of(row(Status.FAILED, code)));
+            assertCode(() -> service.present(LOAN, null, Trigger.MANUAL, 9L), "DEBIT_NOT_REPRESENTABLE");
+        }
+        verify(port, never()).presentDebit(any());
+    }
+
+    @Test
+    void representsAfterBalanceInsufficientButStopsAtTheAttemptCap() {
+        MandateDebit failed = row(Status.FAILED, "BALANCE_INSUFFICIENT");
+        when(debits.findFirstByLoanIdOrderByAttemptNoDesc(LOAN)).thenReturn(Optional.of(failed));
+        service.present(LOAN, null, Trigger.SCHEDULED, null);
+        verify(port, times(1)).presentDebit(any());
+        failed.setAttemptNo(4);
+        assertCode(() -> service.present(LOAN, null, Trigger.SCHEDULED, null), "DEBIT_ATTEMPTS_EXHAUSTED");
+        verify(port, times(1)).presentDebit(any());
+    }
+
+    @Test
+    void reconcileTakesTheLoanLockBeforeCrediting() {
+        inProgress();
+        when(port.debitStatus("NPT1")).thenReturn(new DebitOutcome("NPT1", "PAYMENT_SUCCESS", "UTR123", null, null, 500_000L));
+        when(loans.creditCollectionPayment(anyLong(), anyLong(), anyString(), anyString(), any())).thenReturn(55L);
+        service.reconcile(11L);
+        var order = inOrder(debits, loans);
+        order.verify(debits).lockLoan(anyLong());
+        order.verify(loans).creditCollectionPayment(anyLong(), anyLong(), anyString(), anyString(), any());
+    }
+
+    @Test
     void insufficientBalanceIsEligibleForRepresentation() {
         assertThat(service.eligibleForRepresentation(row(Status.FAILED, "BALANCE_INSUFFICIENT"))).isTrue();
         inProgress();

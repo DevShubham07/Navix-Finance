@@ -63,6 +63,12 @@ public class DebitService {
      */
     private static final Set<String> REPRESENTABLE_CODES =
             Set.of("BALANCE_INSUFFICIENT", "INSUFFICIENT_BALANCE", "INSUFFICIENT_FUNDS");
+    // UNVERIFIED: these strings are our guess at Digio's failure_code vocabulary, not observed values.
+    // GO-LIVE BLOCKER: confirm against a real failure_code before the digio-debit flag is enabled.
+    // Fail-closed until then: a wrong guess means no re-presentation, never a wrong one.
+
+    /** DPD 1/3/5/9 is the schedule, so four presentations is the ceiling per loan. NPCI's own caps are invisible to us. */
+    static final int MAX_ATTEMPTS = 4;
 
     private final MandateDebitRepository debits;
     private final MandateService mandateService;
@@ -71,6 +77,13 @@ public class DebitService {
     private final MandatePort port;
     private final PaymentRepository payments;
     private final TransactionTemplate tx;
+
+    /** Opened per call: the credit runs in its own transaction so a caught LOAN_SETTLED cannot poison ours. */
+    private TransactionTemplate creditTx() {
+        TransactionTemplate t = new TransactionTemplate(tx.getTransactionManager());
+        t.setPropagationBehavior(org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        return t;
+    }
 
     /** The lender's settlement account; blank means debits are not configured and we refuse to present. */
     @Value("${navix.digio.corporate-account-number:}")
@@ -111,8 +124,18 @@ public class DebitService {
 
     /** Read the provider's outcome for one in-flight debit and apply it. Safe to repeat. */
     public DebitView reconcile(Long debitId) {
-        MandateDebit row = debits.findById(debitId)
+        MandateDebit probe = debits.findById(debitId)
                 .orElseThrow(() -> new BusinessException("DEBIT_NOT_FOUND", "Debit not found"));
+        // Same loan lock as prepare: the sweep and a manual reconcile must not both credit one outcome
+        // (recordPayment throws LOAN_SETTLED before its own txnRef dedupe, so that is no backstop).
+        return tx.execute(s -> {
+            debits.lockLoan(LOCK_NAMESPACE | probe.getLoanId());
+            MandateDebit row = debits.findById(debitId).orElse(probe); // re-read under the lock
+            return reconcileLocked(row);
+        });
+    }
+
+    private DebitView reconcileLocked(MandateDebit row) {
         if (!IN_FLIGHT.contains(row.getStatus()) && row.getStatus() != Status.FAILED_TECHNICAL) {
             return view(row); // terminal: monotonic, never revisited
         }
@@ -169,6 +192,17 @@ public class DebitService {
             reuse = latest; // nothing exists under the key: re-present with the IDENTICAL key (provider dedupes)
         }
 
+        // Terminal means terminal, for every caller: a FAILED row whose code NPCI does not allow re-presenting
+        // (or an unknown code) can never be followed by another attempt, and the schedule has a ceiling.
+        if (reuse == null && latest != null) {
+            if (latest.getStatus() == Status.FAILED && !eligibleForRepresentation(latest)) {
+                throw new BusinessException("DEBIT_NOT_REPRESENTABLE", "The last debit failed in a way that cannot be retried");
+            }
+            if (latest.getAttemptNo() >= MAX_ATTEMPTS) {
+                throw new BusinessException("DEBIT_ATTEMPTS_EXHAUSTED", "The maximum number of debit attempts has been reached");
+            }
+        }
+
         LoanSummary loan = loans.findLoan(loanId)
                 .orElseThrow(() -> new BusinessException("LOAN_NOT_FOUND", "Loan not found"));
         LocalDate today = LocalDate.now(IST);
@@ -202,11 +236,11 @@ public class DebitService {
         if (amount > outstanding) {
             throw new BusinessException("AMOUNT_EXCEEDS_OUTSTANDING", "The amount is more than is owed");
         }
-        if (amount > mandate.getMaximumAmountPaise()) {
+        if (mandate.getMaximumAmountPaise() <= 0 || amount > mandate.getMaximumAmountPaise()) {
             throw new BusinessException("AMOUNT_EXCEEDS_MANDATE", "The amount is above the mandate limit");
         }
         if (amount > Integer.MAX_VALUE) { // Digio's amount_in_paise is int32
-            throw new BusinessException("AMOUNT_EXCEEDS_MANDATE", "The amount is above the mandate limit");
+            throw new BusinessException("AMOUNT_TOO_LARGE", "The amount is too large for a single debit");
         }
         // T-1 cutoff: what we request today settles tomorrow at the earliest.
         LocalDate settle = today.plusDays(1);
@@ -222,6 +256,8 @@ public class DebitService {
             throw new BusinessException("DEBIT_REFERENCE_INVALID", "A debit reference could not be formed");
         }
 
+        // A reused FAILED_TECHNICAL row overwrites its actor and trigger below: the audit trail of the original
+        // attempt is deliberately traded for key stability (the identical unique_key is the double-charge backstop).
         MandateDebit row = reuse != null ? reuse : new MandateDebit();
         row.setMandateId(mandate.getId());
         row.setLoanId(loanId);
@@ -340,8 +376,9 @@ public class DebitService {
             paymentId = existing.get().getId();
         } else {
             try {
-                paymentId = loans.creditCollectionPayment(row.getLoanId(), amount, txnRef,
-                        "NACH:" + row.getDigioTxnId(), paidOn);
+                final String ref = txnRef;
+                paymentId = creditTx().execute(s -> loans.creditCollectionPayment(row.getLoanId(), amount, ref,
+                        "NACH:" + row.getDigioTxnId(), paidOn));
             } catch (BusinessException e) {
                 if (!"LOAN_SETTLED".equals(e.getCode())) {
                     throw e;
