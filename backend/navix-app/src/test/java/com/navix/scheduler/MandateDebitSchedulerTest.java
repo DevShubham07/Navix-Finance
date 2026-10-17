@@ -177,4 +177,25 @@ class MandateDebitSchedulerTest {
         verify(debitService).reconcile(100L);
         verify(debitService, never()).reconcile(101L);
     }
+
+    @Test
+    void anUnresolvedOrFailingReconcileTouchesTheRowSoItRotatesBack() {
+        LocalDate today = LocalDate.now(IST);
+        when(loans.listCollectible(any())).thenReturn(List.of());
+        when(debits.findDueForReconcile(any(), any(), any())).thenReturn(List.of(
+                debit(21, 1, 1, Status.IN_PROGRESS, null, today),
+                debit(22, 2, 1, Status.IN_PROGRESS, null, today),
+                debit(23, 3, 1, Status.IN_PROGRESS, null, today)));
+        when(debitService.reconcile(21L)).thenThrow(new RuntimeException("boom"));
+        when(debitService.reconcile(22L)).thenReturn(view(Status.IN_PROGRESS));
+        when(debitService.reconcile(23L)).thenReturn(view(Status.SUCCEEDED));
+        sweep.sweep();
+        verify(debits).touch(org.mockito.ArgumentMatchers.eq(21L), any());
+        verify(debits).touch(org.mockito.ArgumentMatchers.eq(22L), any());
+        verify(debits, never()).touch(org.mockito.ArgumentMatchers.eq(23L), any());
+    }
+
+    private static DebitService.DebitView view(Status st) {
+        return new DebitService.DebitView(1L, 1L, st, 0, null, 1, Trigger.SCHEDULED, null, false, false);
+    }
 }

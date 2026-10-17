@@ -79,7 +79,36 @@ class MandateDebitRepositoryIT {
 
         assertThat(repository.findFirstByLoanIdOrderByAttemptNoDesc(1020L))
                 .get().extracting(MandateDebit::getAttemptNo).isEqualTo(3);
-        assertThat(repository.findByStatusIn(List.of(Status.IN_PROGRESS)))
-                .extracting(MandateDebit::getUniqueKey).contains("k-1020-3");
+    }
+
+    @Test
+    void findDueForReconcileFiltersOrdersAndPages() {
+        java.time.LocalDate today = java.time.LocalDate.of(2026, 10, 17);
+        List<Status> open = List.of(Status.SCHEDULED, Status.IN_PROGRESS, Status.FAILED_TECHNICAL);
+        MandateDebit a = saved(2001, "k-2001", Status.IN_PROGRESS, today);
+        MandateDebit b = saved(2002, "k-2002", Status.SCHEDULED, today.minusDays(3));
+        MandateDebit c = saved(2003, "k-2003", Status.FAILED_TECHNICAL, today.minusDays(1));
+        saved(2004, "k-2004", Status.SCHEDULED, today.plusDays(1));   // not yet settled
+        saved(2005, "k-2005", Status.SUCCEEDED, today.minusDays(2));  // terminal
+        saved(2006, "k-2006", Status.FAILED, today.minusDays(2));     // terminal
+
+        var all = repository.findDueForReconcile(open, today, org.springframework.data.domain.PageRequest.of(0, 50));
+        assertThat(all.stream().map(MandateDebit::getUniqueKey).filter(k -> k.matches("k-200[1-6]")).toList())
+                .containsExactlyInAnyOrder("k-2001", "k-2002", "k-2003");
+        assertThat(repository.findDueForReconcile(open, today, org.springframework.data.domain.PageRequest.of(0, 1)))
+                .hasSize(1);
+
+        // touching the first-ordered row sends it to the back
+        Long first = all.get(0).getId();
+        repository.touch(first, java.time.Instant.now().plusSeconds(3600));
+        var after = repository.findDueForReconcile(open, today, org.springframework.data.domain.PageRequest.of(0, 50));
+        assertThat(after.get(after.size() - 1).getId()).isEqualTo(first);
+        assertThat(after.get(0).getId()).isNotEqualTo(first);
+    }
+
+    private MandateDebit saved(long loanId, String key, Status st, java.time.LocalDate settle) {
+        MandateDebit d = debit(loanId, 1, key, st);
+        d.setSettlementDate(settle);
+        return repository.saveAndFlush(d);
     }
 }

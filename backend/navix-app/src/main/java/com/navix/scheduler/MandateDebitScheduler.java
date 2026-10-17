@@ -9,6 +9,7 @@ import com.navix.loan.entity.MandateDebit.Status;
 import com.navix.loan.entity.MandateDebit.Trigger;
 import com.navix.loan.repository.MandateDebitRepository;
 import com.navix.loan.service.DebitService;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
@@ -71,17 +72,28 @@ public class MandateDebitScheduler {
     }
 
     private void reconcileInFlight(LocalDate today) {
-        // Bounded and ordered in the query, so the oldest due rows go first and a pass never loads the backlog.
-        // ponytail: rows that never resolve (and are never saved) keep the front of this order; add a
-        // last-reconciled column if that proves real.
+        // Bounded and ordered in the query: least-recently-attempted first. A row that cannot be resolved is
+        // touched (below) so it rotates to the back and the queue drains instead of starving.
+        // ponytail: this repurposes updated_at as "last attempted" for open debits, not "last state change".
+        // Upgrade path if that muddies anything: a dedicated last_reconciled_at column (needs a migration).
         List<MandateDebit> due = debits.findDueForReconcile(
                 Set.of(Status.SCHEDULED, Status.IN_PROGRESS, Status.FAILED_TECHNICAL), today,
                 PageRequest.of(0, RECONCILE_BATCH));
         for (MandateDebit d : due) {
+            boolean resolved = false;
             try {
-                debitService.reconcile(d.getId());
+                DebitService.DebitView v = debitService.reconcile(d.getId());
+                resolved = v != null && v.status() != Status.SCHEDULED && v.status() != Status.IN_PROGRESS
+                        && v.status() != Status.FAILED_TECHNICAL;
             } catch (RuntimeException e) {
                 log.warn("Debit reconcile skipped debitId={}: {}", d.getId(), e.getMessage());
+            }
+            if (!resolved) {
+                try {
+                    debits.touch(d.getId(), Instant.now());
+                } catch (RuntimeException e) {
+                    log.warn("Debit touch failed debitId={}: {}", d.getId(), e.getMessage());
+                }
             }
         }
     }
