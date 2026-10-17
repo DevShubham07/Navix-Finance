@@ -902,3 +902,31 @@ input[type="range"]:focus-visible { outline: 2px solid var(--navy); outline-offs
   .btn { padding: 13px 18px; }
   .container { padding: 0 16px; }
 }
+
+/* ---- loan behaviour pills ----
+   The customer pop-up's Loan tab colours each loan pill by how the borrower repaid it
+   (`lib/customers/loan-behaviour.ts`): a leading dot + a 3px left border. Additive to `.cal-preset`
+   (base rule untouched); these come after `.cal-preset.on`/`:hover` at equal-or-higher specificity,
+   so the left border keeps its colour while the pill is selected or hovered. Colours = the Tailwind
+   status ramps in tailwind.config.ts (success-700/500, warning-500 amber, error-700, muted). */
+.lb-dot { font-size: 0.6em; line-height: 1; vertical-align: 0.15em; margin-right: 5px; }
+.lb-legend .lb-dot { margin-right: 1px; }
+.lb-early    { --lb: #167A54; }  /* success-700 */
+.lb-ontime   { --lb: #22A06B; }  /* success-500 */
+.lb-late     { --lb: #B5820E; }  /* warning-500 amber */
+.lb-verylate { --lb: #8F1E18; }  /* error-700 */
+.lb-open     { --lb: #8593A6; }  /* muted grey */
+.lb-overdue  { --lb: #8F1E18; }  /* error-700; the dot pulses via Tailwind's .animate-pulse */
+.cal-preset.lb-early, .cal-preset.lb-ontime, .cal-preset.lb-late,
+.cal-preset.lb-verylate, .cal-preset.lb-open, .cal-preset.lb-overdue {
+  border-left: 3px solid var(--lb);
+  padding-left: 13px;
+}
+.cal-preset.lb-early:hover, .cal-preset.lb-ontime:hover, .cal-preset.lb-late:hover,
+.cal-preset.lb-verylate:hover, .cal-preset.lb-open:hover, .cal-preset.lb-overdue:hover,
+.cal-preset.lb-early.on, .cal-preset.lb-ontime.on, .cal-preset.lb-late.on,
+.cal-preset.lb-verylate.on, .cal-preset.lb-open.on, .cal-preset.lb-overdue.on {
+  border-left-color: var(--lb);
+}
+.cal-preset .lb-dot, .lb-legend .lb-dot { color: var(--lb); }
+.cal-preset.on .lb-dot { color: #fff; }
