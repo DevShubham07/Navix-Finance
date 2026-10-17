@@ -302,6 +302,15 @@ class DebitServiceTest {
         when(debits.countByLoanIdAndStatusIn(eq(LOAN), anyCollection())).thenReturn(4L);
         assertCode(() -> service.present(LOAN, null, Trigger.SCHEDULED, null), "DEBIT_ATTEMPTS_EXHAUSTED");
         verify(port, times(1)).presentDebit(any());
+        assertCapCountsOnlyFruitlessAttempts();
+    }
+
+    @SuppressWarnings("unchecked")
+    private void assertCapCountsOnlyFruitlessAttempts() {
+        ArgumentCaptor<java.util.Collection<Status>> statuses = ArgumentCaptor.forClass(java.util.Collection.class);
+        verify(debits, org.mockito.Mockito.atLeastOnce()).countByLoanIdAndStatusIn(eq(LOAN), statuses.capture());
+        assertThat(statuses.getAllValues()).allSatisfy(c -> assertThat(java.util.Set.copyOf(c))
+                .isEqualTo(java.util.Set.of(Status.FAILED, Status.FAILED_TECHNICAL)));
     }
 
     @Test
@@ -312,6 +321,7 @@ class DebitServiceTest {
         when(debits.countByLoanIdAndStatusIn(eq(LOAN), anyCollection())).thenReturn(0L);
         service.present(LOAN, 100_000L, Trigger.MANUAL, 9L);
         verify(port, times(1)).presentDebit(any());
+        assertCapCountsOnlyFruitlessAttempts();
     }
 
     @Test
