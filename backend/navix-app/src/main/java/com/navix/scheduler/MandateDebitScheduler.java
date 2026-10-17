@@ -14,6 +14,7 @@ import java.time.ZoneId;
 import java.util.List;
 import java.util.Set;
 import org.slf4j.Logger;
+import org.springframework.data.domain.PageRequest;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -70,16 +71,13 @@ public class MandateDebitScheduler {
     }
 
     private void reconcileInFlight(LocalDate today) {
-        List<MandateDebit> open = debits.findByStatusIn(Set.of(Status.SCHEDULED, Status.IN_PROGRESS, Status.FAILED_TECHNICAL));
-        int n = 0;
-        for (MandateDebit d : open) {
-            if (n >= RECONCILE_BATCH) {
-                break; // the rest are picked up tomorrow
-            }
-            if (d.getSettlementDate() == null || d.getSettlementDate().isAfter(today)) {
-                continue;
-            }
-            n++;
+        // Bounded and ordered in the query, so the oldest due rows go first and a pass never loads the backlog.
+        // ponytail: rows that never resolve (and are never saved) keep the front of this order; add a
+        // last-reconciled column if that proves real.
+        List<MandateDebit> due = debits.findDueForReconcile(
+                Set.of(Status.SCHEDULED, Status.IN_PROGRESS, Status.FAILED_TECHNICAL), today,
+                PageRequest.of(0, RECONCILE_BATCH));
+        for (MandateDebit d : due) {
             try {
                 debitService.reconcile(d.getId());
             } catch (RuntimeException e) {

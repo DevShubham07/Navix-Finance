@@ -100,10 +100,13 @@ class MandateDebitSchedulerTest {
     @Test
     void doesNotPresentWhenTheFlagIsOff() {
         when(flags.isEnabled("digio-debit", false)).thenReturn(false);
+        when(debits.findDueForReconcile(any(), any(), any()))
+                .thenReturn(List.of(debit(11, 1, 1, Status.IN_PROGRESS, null, LocalDate.now(IST))));
         when(loans.listCollectible(any())).thenReturn(List.of(loan(1, 1)));
         sweep.sweep();
         verify(debitService, never()).present(anyLong(), any(), any(), any());
         verify(debitService, never()).reconcile(anyLong());
+        verify(debits, never()).findDueForReconcile(any(), any(), any());
         verify(loans, never()).listCollectible(any());
     }
 
@@ -129,23 +132,49 @@ class MandateDebitSchedulerTest {
     void reconcilesInFlightDebitsPastTheirSettlementDate() {
         LocalDate today = LocalDate.now(IST);
         when(loans.listCollectible(any())).thenReturn(List.of());
-        when(debits.findByStatusIn(any())).thenReturn(List.of(
+        when(debits.findDueForReconcile(any(), any(), any())).thenReturn(List.of(
                 debit(11, 1, 1, Status.IN_PROGRESS, null, today),
-                debit(12, 2, 1, Status.SCHEDULED, null, today.minusDays(1)),
-                debit(13, 3, 1, Status.SCHEDULED, null, today.plusDays(1))));
+                debit(12, 2, 1, Status.SCHEDULED, null, today.minusDays(1))));
         sweep.sweep();
+        verify(debits).findDueForReconcile(any(), org.mockito.ArgumentMatchers.eq(today), any());
         verify(debitService).reconcile(11L);
         verify(debitService).reconcile(12L);
-        verify(debitService, never()).reconcile(13L);
     }
 
     @Test
     void oneFailingLoanDoesNotStopTheSweep() {
         when(loans.listCollectible(any())).thenReturn(List.of(loan(1, 1), loan(2, 1)));
         when(debitService.present(1L, null, Trigger.SCHEDULED, null)).thenThrow(new RuntimeException("boom"));
-        when(debits.findByStatusIn(any())).thenReturn(List.of(debit(11, 9, 1, Status.IN_PROGRESS, null, LocalDate.now(IST))));
+        when(debits.findDueForReconcile(any(), any(), any())).thenReturn(List.of(debit(11, 9, 1, Status.IN_PROGRESS, null, LocalDate.now(IST))));
         when(debitService.reconcile(11L)).thenThrow(new RuntimeException("boom"));
         sweep.sweep();
         verify(debitService).present(2L, null, Trigger.SCHEDULED, null);
+    }
+
+    @Test
+    void reconcileIsCappedAtFiftyPerPassAndTheNextPassTakesTheRest() {
+        LocalDate today = LocalDate.now(IST);
+        when(loans.listCollectible(any())).thenReturn(List.of());
+        java.util.List<MandateDebit> backlog = new java.util.ArrayList<>();
+        for (long i = 1; i <= 120; i++) {
+            backlog.add(debit(i, i, 1, Status.IN_PROGRESS, null, today));
+        }
+        // Stands in for the real query: oldest first, honours the page size, drops rows already reconciled.
+        when(debits.findDueForReconcile(any(), any(), any())).thenAnswer(inv -> {
+            org.springframework.data.domain.Pageable page = inv.getArgument(2);
+            return backlog.stream().limit(page.getPageSize()).toList();
+        });
+        when(debitService.reconcile(anyLong())).thenAnswer(inv -> {
+            backlog.removeIf(d -> d.getId().equals(inv.getArgument(0)));
+            return null;
+        });
+        sweep.sweep();
+        verify(debitService, org.mockito.Mockito.times(50)).reconcile(anyLong());
+        verify(debitService, never()).reconcile(51L);
+        sweep.sweep();
+        verify(debitService, org.mockito.Mockito.times(100)).reconcile(anyLong());
+        verify(debitService).reconcile(51L);
+        verify(debitService).reconcile(100L);
+        verify(debitService, never()).reconcile(101L);
     }
 }
