@@ -3050,7 +3050,7 @@ export type DashMetric =
   | "APPLICATIONS" | "DISBURSED" | "PENDING" | "REJECTED" | "PENDING_SANCTIONED" | "PENDING_DISBURSAL"
   | "CLOSED" | "SETTLED" | "PART_PAID" | "DUE_ON" | "PRECLOSED_ON" | "PENDING_ON" | "RECEIVED_ON"
   | "AUM_BUCKET" | "COLLECTION_MONTH" | "COLLECTION_GROUP" | "RELOAN_RETENTION" | "STATE" | "PINCODE"
-  | "COMPANY" | "CALENDAR_DUE" | "CALENDAR_DISBURSED" | "CALENDAR_BIRTHDAY" | "STAFF_FILES"
+  | "COMPANY" | "CALENDAR_DUE" | "CALENDAR_DISBURSED" | "CALENDAR_BIRTHDAY" | "CALENDAR_ACTIVE" | "STAFF_FILES"
   | "STAFF_CASES" | "PF_RATE" | "ROI_RATE"
   | "POSITION_PRINCIPAL" | "POSITION_NET" | "POSITION_RECEIVABLE" | "POSITION_PENALTY" | "POSITION_RECEIVED"
   | "POSITION_PENDING";
@@ -3234,7 +3234,7 @@ export interface DashTeam {
   heads: { staffId: number; name: string; role: string; score: number | null }[];
 }
 
-export type DashCalendarMode = "DUE" | "DISBURSED" | "BIRTHDAY";
+export type DashCalendarMode = "DUE" | "DISBURSED" | "BIRTHDAY" | "ACTIVE";
 export interface DashCalendar {
   month: string;
   mode: string;
@@ -3242,6 +3242,8 @@ export interface DashCalendar {
   daysWithData: number;
   totalCount: number;
   totalAmountPaise: number | null;
+  /** True when the totals are the open book on the month's last day (ACTIVE), not a sum of the days. */
+  snapshot?: boolean;
 }
 
 export interface DashGeoRow {

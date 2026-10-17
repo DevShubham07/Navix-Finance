@@ -18,6 +18,7 @@ const MODES: Record<DashCalendarMode, { label: string; color: string; rgb: strin
   DUE: { label: "Due Amount", color: NAVY, rgb: rgbOf(NAVY), metric: "CALENDAR_DUE", noun: "due" },
   DISBURSED: { label: "Disbursed Amount", color: TONE_SOLID.emerald, rgb: rgbOf(TONE_SOLID.emerald), metric: "CALENDAR_DISBURSED", noun: "disbursed" },
   BIRTHDAY: { label: "Customer Birthday", color: TONE_SOLID.violet, rgb: rgbOf(TONE_SOLID.violet), metric: "CALENDAR_BIRTHDAY", noun: "birthdays" },
+  ACTIVE: { label: "Active loans", color: TONE_SOLID.sky, rgb: rgbOf(TONE_SOLID.sky), metric: "CALENDAR_ACTIVE", noun: "open loans" },
 };
 
 /** Five heat steps, light to strong; alpha over white keeps the dark text legible on every step. */
@@ -36,7 +37,11 @@ function shiftMonth(m: string, by: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-/** Admin "Calendar": month grid with Due / Disbursed / Birthday modes. Sundays are styled, never blocked. */
+/**
+ * Admin "Calendar": month grid with Due / Disbursed / Birthday / Active modes. Sundays are styled, never
+ * blocked. Active is a daily snapshot of the open book, so its header totals are "open at month end"
+ * (`snapshot`), not a sum of the days.
+ */
 export function CalendarTab({ params, open }: DashTabProps) {
   const [month, setMonth] = React.useState(todayIso().slice(0, 7));
   const [mode, setMode] = React.useState<DashCalendarMode>("DUE");
@@ -68,7 +73,7 @@ export function CalendarTab({ params, open }: DashTabProps) {
         </span>
       }
       subtitle="Sundays are shaded for orientation only — loans can fall due on any day."
-      info="Due: loans by due date (count and total repayable). Disbursed: loans by disbursal date (count and principal). Birthday: distinct customers with a disbursed loan, by birthday."
+      info="Due: loans by due date (count and total repayable). Disbursed: loans by disbursal date (count and principal). Birthday: distinct customers with a disbursed loan, by birthday. Active loans: loans open on each day (count and principal); the totals are the open book at month end, or today for the current month."
       accent={cfg.color}
       controls={
         <Segmented
@@ -76,7 +81,7 @@ export function CalendarTab({ params, open }: DashTabProps) {
           value={mode}
           onChange={setMode}
           options={(Object.keys(MODES) as DashCalendarMode[]).map((k) => [k, MODES[k].label] as const)}
-          colors={{ DUE: MODES.DUE.color, DISBURSED: MODES.DISBURSED.color, BIRTHDAY: MODES.BIRTHDAY.color }}
+          colors={{ DUE: MODES.DUE.color, DISBURSED: MODES.DISBURSED.color, BIRTHDAY: MODES.BIRTHDAY.color, ACTIVE: MODES.ACTIVE.color }}
         />
       }
       loading={q.isLoading}
@@ -115,9 +120,17 @@ export function CalendarTab({ params, open }: DashTabProps) {
         </select>
         <span className="ml-auto flex flex-wrap gap-2">
           <StatChip {...STAT_CHIP.blue} label="Days with data" value={nf(cal?.daysWithData)} />
-          <StatChip {...STAT_CHIP.amber} label={mode === "BIRTHDAY" ? "Customers" : "Total cases"} value={nf(cal?.totalCount)} />
+          <StatChip
+            {...STAT_CHIP.amber}
+            label={mode === "BIRTHDAY" ? "Customers" : cal?.snapshot ? "Open at month end" : "Total cases"}
+            value={nf(cal?.totalCount)}
+          />
           {mode !== "BIRTHDAY" && (
-            <StatChip {...STAT_CHIP.green} label="Total amount" value={paiseToINR(cal?.totalAmountPaise)} />
+            <StatChip
+              {...STAT_CHIP.green}
+              label={cal?.snapshot ? "Principal open at month end" : "Total amount"}
+              value={paiseToINR(cal?.totalAmountPaise)}
+            />
           )}
         </span>
       </div>

@@ -131,8 +131,12 @@ public final class DashboardDtos {
     public record CalendarDay(String date, long count, Long amountPaise) {
     }
 
+    /**
+     * {@code snapshot} is true when the totals are a point-in-time figure (ACTIVE: loans open on the
+     * month's last day, or today for the current month) rather than a sum over the month's days.
+     */
     public record Calendar(String month, String mode, List<CalendarDay> days, long daysWithData, long totalCount,
-                           Long totalAmountPaise) {
+                           Long totalAmountPaise, boolean snapshot) {
     }
 
     // ---- geo / companies ------------------------------------------------------------------

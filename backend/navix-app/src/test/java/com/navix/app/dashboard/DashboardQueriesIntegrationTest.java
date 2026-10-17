@@ -293,6 +293,13 @@ class DashboardQueriesIntegrationTest {
         service.records(ADMIN, "COMPANY", "Acme Ltd", "ALL", null, 0, 10, FROM, TO);
         service.records(ADMIN, "PF_RATE", "10", "ALL", null, 0, 10, FROM, TO);
         service.records(ADMIN, "CALENDAR_BIRTHDAY", "2026-06-15", "ALL", null, 0, 10, FROM, TO);
+        // ACTIVE lists the loans open on the clicked day: one row per loan, never one per (loan, day).
+        Records activeDay = service.records(ADMIN, "CALENDAR_ACTIVE", "2026-06-15", "ALL", null, 0, 10, FROM, TO);
+        assertThat(activeDay.total()).isEqualTo(jdbc.queryForObject("select count(*) from loan"
+                + " where disbursed_on <= date '2026-06-15' and (closed_on is null or closed_on > date '2026-06-15')",
+                Long.class));
+        assertThat(service.calendar(ADMIN, "2026-06", "ACTIVE").snapshot()).isTrue();
+        assertThat(service.calendar(ADMIN, "2026-06", "DUE").snapshot()).isFalse();
         assertThat(business.targets(java.time.YearMonth.of(2026, 1), java.time.YearMonth.of(2026, 12))).isEmpty();
     }
 
