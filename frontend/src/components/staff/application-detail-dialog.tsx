@@ -236,7 +236,7 @@ export function ApplicationDetailDialog({
 
         {canReview && customerId != null && <MobileReuseStrip customerId={customerId} onOpen={() => setMatchesOpen(true)} />}
 
-        <div className="mt-3 flex min-h-0 flex-1 gap-3">
+        <div className="mt-3 flex flex-col sm:flex-row min-h-0 flex-1 gap-3">
           <PillTabs tabs={CUSTOMER_TABS} active={tab} onChange={setTab} />
           <div className="min-h-0 min-w-0 flex-1 overflow-y-auto pr-1 text-[10.4px]">
           {resolving || (ready && appQ.isLoading) ? (

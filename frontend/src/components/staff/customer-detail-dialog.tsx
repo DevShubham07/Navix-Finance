@@ -73,7 +73,7 @@ export function CustomerDetailDialog({
         </button>
       </div>
 
-      <div className="mt-3 flex max-h-[68vh] gap-3">
+      <div className="mt-3 flex flex-col sm:flex-row max-h-[68vh] gap-3">
         <PillTabs tabs={CUSTOMER_TABS} active={tab} onChange={setTab} />
         <div className="min-w-0 flex-1 overflow-y-auto pr-1 text-[10.4px]">
         {detailQ.isLoading ? (
