@@ -625,14 +625,23 @@ table.data td strong { color: var(--navy); }
    (`.on`); an unselected chip keeps the neutral default look. Reuses the existing status tokens. */
 .cal-preset--success.on { background: var(--success); border-color: var(--success); color: #fff; }
 .cal-preset--error.on { background: var(--danger); border-color: var(--danger); color: #fff; }
-/* The customer pop-up's tab strip. A thin scrollbar is always on show (a mouse cannot scroll
-   sideways any other way), so the strip no longer hides it or fades its ends; the pills sit a
-   little tighter than the calendar presets they borrow their look from. */
-.pill-tabs { overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; scrollbar-color: var(--navy-500) var(--grey-200); }
-.pill-tabs::-webkit-scrollbar { height: 6px; }
-.pill-tabs::-webkit-scrollbar-track { background: var(--grey-200); border-radius: 3px; }
-.pill-tabs::-webkit-scrollbar-thumb { background: var(--navy-500); border-radius: 3px; }
-.pill-tabs .cal-preset { padding: 4px 9px; gap: 4px; }
+/* One-row chip scroller (the registers' active-filter strip): scrolls sideways, fades its ends. */
+.pill-tabs { overflow-x: auto; scrollbar-width: none; -webkit-mask-image: linear-gradient(to right, transparent, #000 16px, #000 calc(100% - 16px), transparent); mask-image: linear-gradient(to right, transparent, #000 16px, #000 calc(100% - 16px), transparent); }
+.pill-tabs::-webkit-scrollbar { display: none; }
+/* The customer pop-up's tab bar (PillTabs): compact underlined tabs that wrap onto as many rows as
+   they need, so every tab is in view at once — nothing to scroll. Active = navy underline + tint. */
+.cust-tabs { display: flex; flex-wrap: wrap; gap: 2px 1px; padding: 0 0 1px; border-bottom: 1px solid var(--line); }
+.cust-tab { display: inline-flex; align-items: center; gap: 4px; padding: 5px 9px 4px; margin-bottom: -1px;
+  border: 0; border-bottom: 2px solid transparent; border-radius: 6px 6px 0 0; background: transparent;
+  color: var(--slate); font-size: 0.62rem; font-weight: 600; line-height: 1.2; white-space: nowrap; cursor: pointer;
+  transition: color .12s, background-color .12s, border-color .12s; }
+.cust-tab svg { opacity: .7; }
+.cust-tab:hover { color: var(--navy-800); background: var(--grey-100); }
+.cust-tab.on { color: var(--navy-800); font-weight: 800; background: var(--navy-tint); border-bottom-color: var(--navy-800); }
+.cust-tab.on svg { opacity: 1; }
+.cust-tab.off { cursor: not-allowed; opacity: .45; }
+.cust-tab.off:hover { background: transparent; color: var(--slate); }
+.cust-tab-badge { margin-left: 2px; padding: 0 5px; border-radius: 999px; background: var(--grey-200); color: var(--slate); font-size: 0.48rem; font-weight: 700; }
 .cal-sublabel { font-family: var(--mono); font-size: 0.528rem; letter-spacing: .08em; text-transform: uppercase; color: var(--gold-700); font-weight: 500; margin-bottom: 5px; }
 .cal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
 .cal-title { font-family: var(--font-display); font-size: clamp(0.96rem, 1.84vw, 1.2rem); font-weight: 700; color: var(--navy-800); letter-spacing: -.02em; line-height: 1; }

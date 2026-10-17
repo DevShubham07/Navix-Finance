@@ -7,7 +7,12 @@ import type { TabDef } from "@/components/ui/tabs";
 
 export type PillTabDef = TabDef & { icon?: LucideIcon; disabled?: boolean };
 
-/** One-row scrolling pill tabs (navy fill when active). Disabled tabs are inert. */
+/**
+ * The customer pop-up's tab bar: compact underlined tabs that WRAP onto as many rows as they need,
+ * so every tab is visible at once — no sideways scrolling (a mouse had no way to do it). The active
+ * tab carries a navy underline and a light tint. Disabled tabs are inert. Styles: `.cust-tabs` in
+ * globals.css.
+ */
 export function PillTabs({
   tabs,
   active,
@@ -19,43 +24,27 @@ export function PillTabs({
   onChange: (key: string) => void;
   className?: string;
 }) {
-  const activeRef = React.useRef<HTMLButtonElement>(null);
-  React.useEffect(() => {
-    activeRef.current?.scrollIntoView?.({ inline: "nearest", block: "nearest" });
-  }, [active]);
-
   return (
-    <div className={cn("pill-tabs", className)}>
-      <div role="tablist" className="flex w-max gap-1 px-1 py-1">
-        {tabs.map((t) => {
-          const on = t.key === active;
-          const Icon = t.icon;
-          return (
-            <button
-              key={t.key}
-              ref={on ? activeRef : undefined}
-              type="button"
-              role="tab"
-              aria-selected={on}
-              aria-disabled={t.disabled ? "true" : undefined}
-              onClick={() => !t.disabled && onChange(t.key)}
-              className={cn(
-                "cal-preset flex items-center gap-1.5 whitespace-nowrap",
-                on && "on",
-                t.disabled && "cursor-not-allowed opacity-50 hover:!bg-white hover:![color:var(--slate)] hover:![border-color:var(--line-2)]",
-              )}
-            >
-              {Icon && <Icon size={13} />}
-              {t.label}
-              {t.badge != null && (
-                <span className="rounded-full bg-navy-tint px-1.5 py-0.5 text-[8px] font-semibold text-navy">
-                  {t.badge}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
+    <div role="tablist" className={cn("cust-tabs", className)}>
+      {tabs.map((t) => {
+        const on = t.key === active;
+        const Icon = t.icon;
+        return (
+          <button
+            key={t.key}
+            type="button"
+            role="tab"
+            aria-selected={on}
+            aria-disabled={t.disabled ? "true" : undefined}
+            onClick={() => !t.disabled && onChange(t.key)}
+            className={cn("cust-tab", on && "on", t.disabled && "off")}
+          >
+            {Icon && <Icon size={12} aria-hidden />}
+            {t.label}
+            {t.badge != null && <span className="cust-tab-badge">{t.badge}</span>}
+          </button>
+        );
+      })}
     </div>
   );
 }

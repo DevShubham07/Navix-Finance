@@ -68,7 +68,6 @@ import {
 export const CUSTOMER_TABS: PillTabDef[] = [
   { key: "customer", label: "Customer", icon: User },
   { key: "loan", label: "Loan", icon: Landmark },
-  { key: "sanction", label: "Sanction", icon: FileSignature },
   { key: "disbursal", label: "Disbursal", icon: Banknote },
   { key: "repayment", label: "Repayment", icon: IndianRupee },
   { key: "collections", label: "Collections", icon: HandCoins },
@@ -83,6 +82,7 @@ export const CUSTOMER_TABS: PillTabDef[] = [
   { key: "dedupe", label: "Dedupe", icon: Copy },
   { key: "communication", label: "Communication", icon: MessageSquare },
   { key: "activity", label: "Activity", icon: History },
+  { key: "sanction", label: "Sanction", icon: FileSignature },
   { key: "followups", label: "Follow-ups", icon: CalendarClock },
   {
     key: "mandate",
@@ -197,7 +197,7 @@ export function CustomerTabBody({
   return (
     <>
       <NeedsManualReviewBadge customerId={customerId} className="mb-3" />
-      {(tab === "loan" || tab === "repayment" || tab === "disbursal") && <BureauMobilesStrip customerId={customerId} />}
+      {(tab === "repayment" || tab === "disbursal") && <BureauMobilesStrip customerId={customerId} />}
       {content}
     </>
   );
