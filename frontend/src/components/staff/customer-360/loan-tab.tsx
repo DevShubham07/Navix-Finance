@@ -3,7 +3,7 @@
 /** Loan tab (design §3.2): the current loan's card, sanction details and disbursal details. */
 
 import * as React from "react";
-import { Landmark } from "lucide-react";
+import { IndianRupee, Landmark } from "lucide-react";
 import { Badge, EmptyState } from "@/components/ui";
 import { Field, FieldGrid } from "@/components/ui/field-grid";
 import { Section } from "@/components/staff/detail-parts";
@@ -17,8 +17,9 @@ import {
 import type { TabCtx } from "@/components/staff/customer-360/types";
 import { daysBetween } from "@/lib/calc/loan-math";
 import { isoDayToLocalDate, istCalendarToday } from "@/lib/customers/customer-360";
+import { customerEarnings } from "@/lib/customers/customer-earnings";
 import { formatDate, formatDateTime } from "@/lib/utils";
-import { paiseToINR, statusLabel } from "@/lib/api/applications";
+import { paiseToINR, statusLabel, type CustomerDetail } from "@/lib/api/applications";
 
 const inr = (p: number | null | undefined) => (p == null ? null : paiseToINR(p));
 
@@ -44,7 +45,7 @@ export function LoanTab({ listing, ...ctx }: TabCtx & { listing?: React.ReactNod
         <Section title="Loan">
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <LoanSelector loans={detail.loans} value={loan.id} onChange={setLoanId} />
+              <LoanSelector loans={detail.loans} value={loan.id} onChange={setLoanId} outstandingByLoanId={detail.outstandingByLoanId} />
             </div>
             <LoanCardHeader ctx={ctx} loan={loan} collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} />
             {!collapsed && (
@@ -57,7 +58,33 @@ export function LoanTab({ listing, ...ctx }: TabCtx & { listing?: React.ReactNod
         </Section>
       )}
       {listing}
+      {detail.loans.length > 0 && <EarnedFromCustomer detail={detail} />}
     </div>
+  );
+}
+
+/** What the lender has actually made on this customer, across every loan (see `customerEarnings`). */
+function EarnedFromCustomer({ detail }: { detail: CustomerDetail }) {
+  const e = customerEarnings(detail, istCalendarToday());
+  const loans = `${e.loanCount} ${e.loanCount === 1 ? "loan" : "loans"}`;
+  return (
+    <Section title="Earned from this customer" icon={IndianRupee}>
+      <FieldGrid cols={4}>
+        <Field label="Processing fees" caption="10%, collected upfront · GST excluded">{inr(e.processingFeesPaise)}</Field>
+        <Field label="Interest received" tone="warning" caption="verified payments only">{inr(e.interestReceivedPaise)}</Field>
+        <Field label="Penalty received" tone="error" caption="verified payments only">{inr(e.penaltyReceivedPaise)}</Field>
+        <Field label="Total earned" keyLabel tone="navy">{inr(e.totalEarnedPaise)}</Field>
+      </FieldGrid>
+      <p className="mt-2 text-[8.8px] text-muted">
+        Across {loans} · {paiseToINR(e.outstandingPaise)} still outstanding
+        {e.waivedPaise > 0 && (
+          <>
+            {" · "}
+            <span className="font-bold text-error-700">{paiseToINR(e.waivedPaise)} waived via settlement</span>
+          </>
+        )}
+      </p>
+    </Section>
   );
 }
 
