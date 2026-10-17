@@ -497,9 +497,14 @@ public class DashboardService {
             case "DUE" -> Metric.CALENDAR_DUE;
             case "DISBURSED" -> Metric.CALENDAR_DISBURSED;
             case "BIRTHDAY" -> Metric.CALENDAR_BIRTHDAY;
-            default -> throw new BusinessException("INVALID_MODE", "mode must be DUE, DISBURSED or BIRTHDAY");
+            case "ACTIVE" -> Metric.CALENDAR_ACTIVE;
+            default -> throw new BusinessException("INVALID_MODE", "mode must be DUE, DISBURSED, BIRTHDAY or ACTIVE");
         };
         boolean money = m != Metric.CALENDAR_BIRTHDAY;
+        // ACTIVE is a daily snapshot of the open book: summing its days would count one loan once per
+        // day it was open, so the month's totals are the figure on its last day (today, this month).
+        boolean snapshot = m == Metric.CALENDAR_ACTIVE;
+        LocalDate anchor = ym.equals(YearMonth.from(today())) ? today() : ym.atEndOfMonth();
         Map<String, Agg> byDay = metrics.aggregateByGrp(m, scope, ym.atDay(1), ym.atEndOfMonth());
         List<CalendarDay> days = new ArrayList<>();
         long withData = 0;
@@ -508,11 +513,13 @@ public class DashboardService {
         for (LocalDate d = ym.atDay(1); !d.isAfter(ym.atEndOfMonth()); d = d.plusDays(1)) {
             Agg a = byDay.getOrDefault(d.toString(), Agg.ZERO);
             if (a.count() > 0) withData++;
-            totalCount += a.count();
-            totalAmount += a.amount();
+            if (!snapshot || d.equals(anchor)) {
+                totalCount += a.count();
+                totalAmount += a.amount();
+            }
             days.add(new CalendarDay(d.toString(), a.count(), money ? a.amount() : null));
         }
-        return new Calendar(ym.toString(), md, days, withData, totalCount, money ? totalAmount : null);
+        return new Calendar(ym.toString(), md, days, withData, totalCount, money ? totalAmount : null, snapshot);
     }
 
     // ---- geo & companies --------------------------------------------------------------------
