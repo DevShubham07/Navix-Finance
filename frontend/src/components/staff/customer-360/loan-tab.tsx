@@ -63,27 +63,65 @@ export function LoanTab({ listing, ...ctx }: TabCtx & { listing?: React.ReactNod
   );
 }
 
-/** What the lender has actually made on this customer, across every loan (see `customerEarnings`). */
+const pct = (r: number | null) => (r == null ? null : `${(r * 100).toFixed(1)}%`);
+
+/**
+ * The business done with this customer across every loan (see `customerEarnings`): what we lent and
+ * still have out, what we made, and whether the cash is back yet.
+ */
 function EarnedFromCustomer({ detail }: { detail: CustomerDetail }) {
   const e = customerEarnings(detail, istCalendarToday());
-  const loans = `${e.loanCount} ${e.loanCount === 1 ? "loan" : "loans"}`;
+  const ahead = e.netCashPaise >= 0;
   return (
-    <Section title="Earned from this customer" icon={IndianRupee}>
+    <Section title="Business with this customer" icon={IndianRupee}>
+      <h4 className="mb-1 text-[9.6px] font-bold uppercase tracking-wide text-muted">Lending</h4>
       <FieldGrid cols={4}>
-        <Field label="Processing fees" caption="10%, collected upfront · GST excluded">{inr(e.processingFeesPaise)}</Field>
-        <Field label="Interest received" tone="warning" caption="verified payments only">{inr(e.interestReceivedPaise)}</Field>
-        <Field label="Penalty received" tone="error" caption="verified payments only">{inr(e.penaltyReceivedPaise)}</Field>
-        <Field label="Total earned" keyLabel tone="navy">{inr(e.totalEarnedPaise)}</Field>
+        <Field label="Loans taken" keyLabel caption={`${e.closedLoanCount} repaid · ${e.openLoanCount} running`}>
+          {e.disbursedLoanCount}
+        </Field>
+        <Field label="Total lent" caption="principal, all loans">{inr(e.totalLentPaise)}</Field>
+        <Field label="Currently disbursed" tone={e.openLoanCount > 0 ? "navy" : "ink"} caption="principal still out">
+          {inr(e.currentlyDisbursedPaise)}
+        </Field>
+        <Field label="Currently due" keyLabel tone={e.outstandingPaise > 0 ? "error" : "ink"} caption="owed today, penalty included">
+          {inr(e.outstandingPaise)}
+        </Field>
       </FieldGrid>
-      <p className="mt-2 text-[8.8px] text-muted">
-        Across {loans} · {paiseToINR(e.outstandingPaise)} still outstanding
-        {e.waivedPaise > 0 && (
-          <>
-            {" · "}
-            <span className="font-bold text-error-700">{paiseToINR(e.waivedPaise)} waived via settlement</span>
-          </>
-        )}
-      </p>
+
+      <h4 className="mb-1 mt-3 text-[9.6px] font-bold uppercase tracking-wide text-muted">Profit</h4>
+      <FieldGrid cols={4}>
+        <Field label="Processing fees" caption="10%, upfront · GST excluded">{inr(e.processingFeesPaise)}</Field>
+        <Field label="Interest received" caption="verified payments">{inr(e.interestReceivedPaise)}</Field>
+        <Field label="Penalty received" caption="verified payments">{inr(e.penaltyReceivedPaise)}</Field>
+        <Field label="Total profit" keyLabel tone="navy" caption="made till now">{inr(e.totalEarnedPaise)}</Field>
+      </FieldGrid>
+
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <div className="rounded-lg border border-success-100 bg-success-50 px-3 py-2">
+          <p className="m-0 text-[8.8px] font-bold uppercase tracking-wide text-success-700">Profit on money lent</p>
+          <p className="m-0 font-serif text-lg font-bold text-success-700">{pct(e.profitOnLentRatio) ?? "—"}</p>
+          <p className="m-0 text-[8.8px] text-muted">total profit ÷ total lent</p>
+        </div>
+        <div className={`rounded-lg border px-3 py-2 ${ahead ? "border-success-100 bg-success-50" : "border-warning-100 bg-warning-50"}`}>
+          <p className={`m-0 text-[8.8px] font-bold uppercase tracking-wide ${ahead ? "text-success-700" : "text-warning-800"}`}>
+            Net cash so far
+          </p>
+          <p className={`m-0 font-serif text-lg font-bold ${ahead ? "text-success-700" : "text-warning-800"}`}>
+            {ahead ? "" : "−"}{paiseToINR(Math.abs(e.netCashPaise))}
+          </p>
+          <p className="m-0 text-[8.8px] text-muted">
+            received {paiseToINR(e.cashInPaise)} − sent out {paiseToINR(e.cashOutPaise)}
+            {ahead ? "" : " · still recovering"}
+          </p>
+        </div>
+      </div>
+
+      {e.waivedPaise > 0 && (
+        <p className="mt-2 text-[8.8px] font-bold text-error-700">
+          {paiseToINR(e.waivedPaise)} waived via settlement on {e.settledLoanCount}{" "}
+          {e.settledLoanCount === 1 ? "loan" : "loans"}
+        </p>
+      )}
     </Section>
   );
 }

@@ -632,7 +632,7 @@ table.data td strong { color: var(--navy); }
 .pill-tabs::-webkit-scrollbar { height: 6px; }
 .pill-tabs::-webkit-scrollbar-track { background: var(--grey-200); border-radius: 3px; }
 .pill-tabs::-webkit-scrollbar-thumb { background: var(--navy-500); border-radius: 3px; }
-.pill-tabs .cal-preset { padding: 5px 10px; }
+.pill-tabs .cal-preset { padding: 4px 9px; gap: 4px; }
 .cal-sublabel { font-family: var(--mono); font-size: 0.528rem; letter-spacing: .08em; text-transform: uppercase; color: var(--gold-700); font-weight: 500; margin-bottom: 5px; }
 .cal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
 .cal-title { font-family: var(--font-display); font-size: clamp(0.96rem, 1.84vw, 1.2rem); font-weight: 700; color: var(--navy-800); letter-spacing: -.02em; line-height: 1; }
@@ -904,29 +904,23 @@ input[type="range"]:focus-visible { outline: 2px solid var(--navy); outline-offs
 }
 
 /* ---- loan behaviour pills ----
-   The customer pop-up's Loan tab colours each loan pill by how the borrower repaid it
-   (`lib/customers/loan-behaviour.ts`): a leading dot + a 3px left border. Additive to `.cal-preset`
-   (base rule untouched); these come after `.cal-preset.on`/`:hover` at equal-or-higher specificity,
-   so the left border keeps its colour while the pill is selected or hovered. Colours = the Tailwind
-   status ramps in tailwind.config.ts (success-700/500, warning-500 amber, error-700, muted). */
-.lb-dot { font-size: 0.6em; line-height: 1; vertical-align: 0.15em; margin-right: 5px; }
-.lb-legend .lb-dot { margin-right: 1px; }
-.lb-early    { --lb: #167A54; }  /* success-700 */
-.lb-ontime   { --lb: #22A06B; }  /* success-500 */
-.lb-late     { --lb: #B5820E; }  /* warning-500 amber */
-.lb-verylate { --lb: #8F1E18; }  /* error-700 */
-.lb-open     { --lb: #8593A6; }  /* muted grey */
-.lb-overdue  { --lb: #8F1E18; }  /* error-700; the dot pulses via Tailwind's .animate-pulse */
-.cal-preset.lb-early, .cal-preset.lb-ontime, .cal-preset.lb-late,
-.cal-preset.lb-verylate, .cal-preset.lb-open, .cal-preset.lb-overdue {
-  border-left: 3px solid var(--lb);
-  padding-left: 13px;
-}
-.cal-preset.lb-early:hover, .cal-preset.lb-ontime:hover, .cal-preset.lb-late:hover,
-.cal-preset.lb-verylate:hover, .cal-preset.lb-open:hover, .cal-preset.lb-overdue:hover,
-.cal-preset.lb-early.on, .cal-preset.lb-ontime.on, .cal-preset.lb-late.on,
-.cal-preset.lb-verylate.on, .cal-preset.lb-open.on, .cal-preset.lb-overdue.on {
-  border-left-color: var(--lb);
-}
-.cal-preset .lb-dot, .lb-legend .lb-dot { color: var(--lb); }
-.cal-preset.on .lb-dot { color: #fff; }
+   The customer pop-up's Loan tab: one compact pill per loan, filled in the colour of how the
+   borrower repaid it (`lib/customers/loan-behaviour.ts`) so the history reads at a glance —
+   green early / on time, amber late, red very late or settled, grey running, solid red overdue.
+   Selected = the solid colour with a navy ring. Colours are the Tailwind status ramps. */
+.lb-pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: var(--pill);
+  border: 1px solid var(--lb-line); background: var(--lb-bg); color: var(--lb-ink);
+  font-size: 0.6rem; font-weight: 600; line-height: 1.3; cursor: pointer; white-space: nowrap; transition: filter .15s, box-shadow .15s; }
+.lb-pill:hover { filter: brightness(0.96); }
+.lb-pill .lb-id { font-weight: 800; }
+.lb-pill .lb-when { font-weight: 500; opacity: .85; }
+.lb-pill.on { background: var(--lb-line); border-color: var(--lb-line); color: #fff; box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px var(--navy-800); }
+.lb-pill.on .lb-when { opacity: 1; }
+.lb-early    { --lb-bg: #D9F2E6; --lb-ink: #0E5C3D; --lb-line: #167A54; }
+.lb-ontime   { --lb-bg: #EAF7F0; --lb-ink: #146C47; --lb-line: #22A06B; }
+.lb-late     { --lb-bg: #FBF1D8; --lb-ink: #6E4B08; --lb-line: #B5820E; }
+.lb-verylate { --lb-bg: #F9E1DF; --lb-ink: #8F1E18; --lb-line: #8F1E18; }
+.lb-open     { --lb-bg: #F1F3F6; --lb-ink: #46566E; --lb-line: #8593A6; }
+.lb-overdue  { --lb-bg: #B3261E; --lb-ink: #FFFFFF; --lb-line: #8F1E18; }
+.lb-legend { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0 0; }
+.lb-key { padding: 1px 6px; border-radius: var(--pill); border: 1px solid var(--lb-line); background: var(--lb-bg); color: var(--lb-ink); font-size: 0.5rem; font-weight: 600; }

@@ -50,9 +50,10 @@ export function useLoanData(ctx: TabCtx, loanId: number | null) {
 }
 
 /**
- * One pill per loan. Each carries its repayment behaviour (`loanBehaviour`) as a leading dot + left
- * border colour and spells it out in the tooltip, so a glance at the row reads the customer's
- * history: early / on time / late / very late or settled / open / overdue.
+ * One pill per loan, filled in its repayment-behaviour colour (`loanBehaviour`) with the facts on
+ * its face — "#169 · ₹3,000 · 5d early" — so the row reads the customer's history at a glance
+ * without opening anything: green early / on time, amber late, red very late or settled, grey
+ * running, solid red overdue. The full sentence is in the tooltip.
  */
 export function LoanSelector({
   loans,
@@ -70,7 +71,7 @@ export function LoanSelector({
   if (loans.length < 2) return null;
   return (
     <div className="space-y-1.5">
-      <div className="flex flex-wrap gap-2" role="group" aria-label="Select loan">
+      <div className="flex flex-wrap gap-1" role="group" aria-label="Select loan">
         {loans.map((l) => {
           const b = loanBehaviour(l, today, outstandingByLoanId?.[String(l.id)]);
           const status = humanStatus(l.status);
@@ -78,24 +79,22 @@ export function LoanSelector({
             <button
               key={l.id}
               type="button"
-              className={`cal-preset ${LOAN_BEHAVIOUR_CLASS[b.kind]}${l.id === value ? " on" : ""}`}
+              className={`lb-pill ${LOAN_BEHAVIOUR_CLASS[b.kind]}${l.id === value ? " on" : ""}`}
               aria-pressed={l.id === value}
-              aria-label={`Loan #${l.id} · ${status} — ${b.label}`}
-              title={`Loan #${l.id} · ${status} — ${b.label}`}
+              aria-label={`Loan #${l.id} · ${paiseToINR(l.principalPaise)} · ${status} — ${b.label}`}
+              title={`Loan #${l.id} · ${paiseToINR(l.principalPaise)} · ${status} — ${b.label}`}
               onClick={() => onChange(l.id)}
             >
-              <span aria-hidden="true" className={`lb-dot${b.kind === "overdue" ? " animate-pulse" : ""}`}>●</span>
-              Loan #{l.id} · {status}
+              <span className="lb-id">#{l.id}</span>
+              <span>{paiseToINR(l.principalPaise)}</span>
+              <span className="lb-when">{b.short}</span>
             </button>
           );
         })}
       </div>
-      <p className="lb-legend text-[8.8px] text-muted" aria-label="Loan pill colour legend">
-        {LOAN_BEHAVIOUR_LEGEND.map((e, i) => (
-          <React.Fragment key={e.kind}>
-            {i > 0 && " · "}
-            <span className={`lb-dot ${LOAN_BEHAVIOUR_CLASS[e.kind]}`} aria-hidden="true">●</span> {e.label}
-          </React.Fragment>
+      <p className="lb-legend" aria-label="Loan pill colour legend">
+        {LOAN_BEHAVIOUR_LEGEND.map((e) => (
+          <span key={e.kind} className={`lb-key ${LOAN_BEHAVIOUR_CLASS[e.kind]}`}>{e.label}</span>
         ))}
       </p>
     </div>

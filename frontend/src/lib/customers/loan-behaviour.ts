@@ -16,6 +16,8 @@ export interface LoanBehaviour {
   kind: LoanBehaviourKind;
   /** e.g. "Paid 5 days early", "Paid on time", "Settled", "Due in 12 days", "3 days overdue". */
   label: string;
+  /** The same, short enough for the pill face: "5d early", "on time", "settled", "due in 12d", "3d overdue". */
+  short: string;
   /**
    * Closed loans: closedOn − dueDate. Running loans: today − dueDate. Positive = after the due
    * date. Null when the loan has no due date (or a closed loan has no closedOn).
@@ -32,11 +34,41 @@ export const LATE_UNTIL_DAYS_AFTER_DUE = 7;
 
 const plural = (n: number, unit: string) => `${n} ${unit}${n === 1 ? "" : "s"}`;
 
+/** Derives the pill-face wording from the full label's kind and day count. */
+function withShort(b: Omit<LoanBehaviour, "short">): LoanBehaviour {
+  const d = b.daysVsDue;
+  let short: string;
+  switch (b.kind) {
+    case "early":
+      short = `${-(d ?? 0)}d early`;
+      break;
+    case "onTime":
+      short = b.label === "Paid" ? "paid" : "on time";
+      break;
+    case "late":
+      short = `${d}d late`;
+      break;
+    case "veryLate":
+      short = b.label === "Settled" ? "settled" : `${d}d late`;
+      break;
+    case "overdue":
+      short = `${d}d overdue`;
+      break;
+    default:
+      short = d == null ? "no due date" : d === 0 ? "due today" : `due in ${-d}d`;
+  }
+  return { ...b, short };
+}
+
 export function loanBehaviour(
   loan: LoanView,
   today: Date,
   outstanding?: OutstandingView | null,
 ): LoanBehaviour {
+  return withShort(judge(loan, today, outstanding));
+}
+
+function judge(loan: LoanView, today: Date, outstanding?: OutstandingView | null): Omit<LoanBehaviour, "short"> {
   const closed = loan.status === "CLOSED" || loan.closedOn != null;
   const due = isoDayToLocalDate(loan.dueDate);
 

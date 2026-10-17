@@ -11,6 +11,11 @@
  *                      wrote part of the dues off, so there the principal is recovered first and
  *                      only what came in above it counts as earned (penalty first, then interest).
  *
+ * Alongside the profit, the lending position: how much was lent, how much of it is still out, what
+ * is due now, and the cash view — money received back minus money that left (net disbursal + the
+ * GST paid over on its fee). The cash figure is negative while loans are running and equals the
+ * profit once every loan is repaid in full; it is the honest "are we ahead on this customer" line.
+ *
  * Pure. `today` only feeds the ledger's day counts; the money comes from the server rows.
  */
 import { buildLedger } from "@/lib/calc/loan-ledger";
@@ -18,6 +23,15 @@ import type { CustomerDetail, LoanView, OutstandingView } from "@/lib/api/applic
 
 export interface LoanEarnings {
   loanId: number;
+  /** False for a loan never disbursed — it counts nowhere below. */
+  disbursed: boolean;
+  /** Still running (not closed). */
+  open: boolean;
+  principalPaise: number;
+  /** Cash that left: the net disbursal plus the GST paid over on its fee. */
+  cashOutPaise: number;
+  /** Verified money received back on the loan. */
+  cashInPaise: number;
   processingFeePaise: number;
   interestReceivedPaise: number;
   penaltyReceivedPaise: number;
@@ -38,6 +52,22 @@ export interface CustomerEarnings {
   /** Written off through approved settlements; 0 when none. */
   waivedPaise: number;
   settledLoanCount: number;
+  /** Disbursed loans, and how many of them are repaid (closed) / still running. */
+  disbursedLoanCount: number;
+  closedLoanCount: number;
+  openLoanCount: number;
+  /** Σ principal over every disbursed loan. */
+  totalLentPaise: number;
+  /** Σ principal over the loans still running — money currently out with this customer. */
+  currentlyDisbursedPaise: number;
+  /** Verified money received back, across every loan. */
+  cashInPaise: number;
+  /** Money that left: net disbursals + the GST paid over on their fees. */
+  cashOutPaise: number;
+  /** cashIn − cashOut. Negative while loans run; equals the profit once all are repaid. */
+  netCashPaise: number;
+  /** totalEarned ÷ totalLent, as a fraction (0.27 = 27%); null when nothing was lent. */
+  profitOnLentRatio: number | null;
   perLoan: LoanEarnings[];
 }
 
@@ -69,9 +99,15 @@ function earningsForLoan(
     waived = Math.max(0, dues - (outstanding?.settledAmountPaise ?? dues));
   }
 
+  const disbursed = loan.disbursedOn != null;
   return {
     loanId: loan.id,
-    processingFeePaise: loan.disbursedOn ? loan.processingFeePaise : 0,
+    disbursed,
+    open: disbursed && loan.status !== "CLOSED" && loan.closedOn == null,
+    principalPaise: disbursed ? loan.principalPaise : 0,
+    cashOutPaise: disbursed ? loan.netDisbursedPaise + loan.gstPaise : 0,
+    cashInPaise: row("total").receivedPaise,
+    processingFeePaise: disbursed ? loan.processingFeePaise : 0,
     interestReceivedPaise: interest,
     penaltyReceivedPaise: penalty,
     outstandingPaise: row("total").outstandingPaise,
@@ -87,6 +123,10 @@ export function customerEarnings(detail: Input, today: Date): CustomerEarnings {
   const fees = sum((l) => l.processingFeePaise);
   const interest = sum((l) => l.interestReceivedPaise);
   const penalty = sum((l) => l.penaltyReceivedPaise);
+  const disbursedLoans = perLoan.filter((l) => l.disbursed);
+  const totalLent = sum((l) => l.principalPaise);
+  const cashIn = sum((l) => l.cashInPaise);
+  const cashOut = sum((l) => l.cashOutPaise);
   return {
     loanCount: detail.loans.length,
     processingFeesPaise: fees,
@@ -96,6 +136,15 @@ export function customerEarnings(detail: Input, today: Date): CustomerEarnings {
     outstandingPaise: sum((l) => l.outstandingPaise),
     waivedPaise: sum((l) => l.waivedPaise ?? 0),
     settledLoanCount: perLoan.filter((l) => l.waivedPaise != null).length,
+    disbursedLoanCount: disbursedLoans.length,
+    closedLoanCount: disbursedLoans.filter((l) => !l.open).length,
+    openLoanCount: disbursedLoans.filter((l) => l.open).length,
+    totalLentPaise: totalLent,
+    currentlyDisbursedPaise: sum((l) => (l.open ? l.principalPaise : 0)),
+    cashInPaise: cashIn,
+    cashOutPaise: cashOut,
+    netCashPaise: cashIn - cashOut,
+    profitOnLentRatio: totalLent > 0 ? (fees + interest + penalty) / totalLent : null,
     perLoan,
   };
 }

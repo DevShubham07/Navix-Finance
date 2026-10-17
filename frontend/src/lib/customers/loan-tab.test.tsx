@@ -62,27 +62,33 @@ describe("Loan tab", () => {
     expect(screen.queryByRole("button", { name: "Open loan details" })).not.toBeInTheDocument();
   });
 
-  it("loan pills carry the repayment behaviour as a colour class + tooltip, with a legend", () => {
+  it("loan pills are filled in their behaviour colour with the facts on the face, plus a legend", () => {
     const early: LoanView = { ...loan("CLOSED"), id: 169, dueDate: "2026-06-30", closedOn: "2026-06-25" };
     const late: LoanView = { ...loan("CLOSED"), id: 170, dueDate: "2026-07-30", closedOn: "2026-08-03" };
     renderLoan({ loans: [loan("ACTIVE"), early, late], applications: [app()] });
-    const earlyPill = screen.getByTitle("Loan #169 · Closed — Paid 5 days early");
-    expect(earlyPill).toHaveClass("cal-preset", "lb-early");
-    expect(screen.getByTitle("Loan #170 · Closed — Paid 4 days late")).toHaveClass("lb-late");
-    expect(screen.getByTitle(/^Loan #208 · Active — /)).toHaveClass("cal-preset", "on");
-    expect(screen.getByLabelText("Loan pill colour legend")).toHaveTextContent("early · ● on time · ● late · ● very late/settled · ● open · ● overdue");
+    const earlyPill = screen.getByTitle("Loan #169 · ₹5,000 · Closed — Paid 5 days early");
+    expect(earlyPill).toHaveClass("lb-pill", "lb-early");
+    expect(earlyPill).toHaveTextContent("#169₹5,0005d early");
+    expect(screen.getByTitle("Loan #170 · ₹5,000 · Closed — Paid 4 days late")).toHaveClass("lb-late");
+    expect(screen.getByTitle(/^Loan #208 · ₹5,000 · Active — /)).toHaveClass("lb-pill", "on");
+    const legend = screen.getByLabelText("Loan pill colour legend");
+    for (const key of ["early", "on time", "late", "very late/settled", "open", "overdue"]) {
+      expect(legend).toContainElement(screen.getByText(key, { selector: ".lb-key" }));
+    }
   });
 
-  it("a settled loan's pill is very late / Settled", () => {
+  it("a settled loan's pill is very late / settled", () => {
     const settled: LoanView = { ...loan("CLOSED"), id: 171, closedOn: "2026-10-01" };
     renderLoan({
       loans: [loan("ACTIVE"), settled],
       outstandingByLoanId: { "171": { loanId: 171, asOf: "2026-10-01", outstandingPaise: 0, settledAmountPaise: 450_000, interestPaise: 100_000, penaltyPaise: 20_000, verifiedPaise: 450_000 } },
     });
-    expect(screen.getByTitle("Loan #171 · Closed — Settled")).toHaveClass("lb-verylate");
+    const pill = screen.getByTitle("Loan #171 · ₹5,000 · Closed — Settled");
+    expect(pill).toHaveClass("lb-verylate");
+    expect(pill).toHaveTextContent("settled");
   });
 
-  it("Earned from this customer sums fees + received interest/penalty, excludes GST, and flags waivers", () => {
+  it("Business with this customer: lending position, profit, profit %, net cash, waivers", () => {
     // Loan 208 (active, nothing received yet) + loan 300 settled at ₹5,500 against ₹6,650 of dues.
     const settled: LoanView = { ...loan("CLOSED"), id: 300, closedOn: "2026-10-01", disbursedOn: "2026-08-01", dueDate: "2026-09-10" };
     renderLoan({
@@ -93,17 +99,28 @@ describe("Loan tab", () => {
         "300": { loanId: 300, asOf: "2026-10-01", outstandingPaise: 0, settledAmountPaise: 550_000, interestPaise: 150_000, penaltyPaise: 15_000, verifiedPaise: 550_000 },
       },
     });
-    expect(screen.getByText("Earned from this customer")).toBeInTheDocument();
-    expect(screen.getByText("Processing fees").nextSibling).toHaveTextContent("₹1,000"); // 2 × ₹500, no GST
-    expect(screen.getByText("Penalty received").nextSibling).toHaveTextContent("₹150"); // ₹500 above principal → penalty first
-    expect(screen.getByText("Interest received").nextSibling).toHaveTextContent("₹350");
-    expect(screen.getByText("Total earned").nextSibling).toHaveTextContent("₹1,500");
-    expect(screen.getByText(/Across 2 loans · ₹5,050 still outstanding/)).toBeInTheDocument();
-    expect(screen.getByText("₹1,150 waived via settlement")).toBeInTheDocument();
+    const value = (label: string) => screen.getByText(label).nextSibling;
+    expect(screen.getByText("Business with this customer")).toBeInTheDocument();
+    // Lending
+    expect(value("Loans taken")).toHaveTextContent("2");
+    expect(screen.getByText("1 repaid · 1 running")).toBeInTheDocument();
+    expect(value("Total lent")).toHaveTextContent("₹10,000");
+    expect(value("Currently disbursed")).toHaveTextContent("₹5,000");
+    expect(value("Currently due")).toHaveTextContent("₹5,050");
+    // Profit — fees with no GST; on the settled loan ₹500 came in above principal → penalty first.
+    expect(value("Processing fees")).toHaveTextContent("₹1,000");
+    expect(value("Penalty received")).toHaveTextContent("₹150");
+    expect(value("Interest received")).toHaveTextContent("₹350");
+    expect(value("Total profit")).toHaveTextContent("₹1,500");
+    // Return: ₹1,500 on ₹10,000 lent; cash in ₹5,500 − out 2 × (₹4,410 + ₹90 GST) = −₹3,500.
+    expect(screen.getByText("15.0%")).toBeInTheDocument();
+    expect(screen.getByText("−₹3,500")).toBeInTheDocument();
+    expect(screen.getByText(/received ₹5,500 − sent out ₹9,000 · still recovering/)).toBeInTheDocument();
+    expect(screen.getByText("₹1,150 waived via settlement on 1 loan")).toBeInTheDocument();
   });
 
   it("no loans: no earnings section", () => {
     renderLoan({ applications: [app({ loanId: null, status: "CREDIT_EXEC_PENDING" })] });
-    expect(screen.queryByText("Earned from this customer")).not.toBeInTheDocument();
+    expect(screen.queryByText("Business with this customer")).not.toBeInTheDocument();
   });
 });

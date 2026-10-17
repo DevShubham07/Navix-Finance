@@ -99,4 +99,23 @@ describe("customerEarnings", () => {
     const e = customerEarnings({ loans: [base], payments: [] }, today);
     expect(e).toMatchObject({ interestReceivedPaise: 270_000, totalEarnedPaise: 370_000, outstandingPaise: 0 });
   });
+
+  it("adds the lending position and the cash view", () => {
+    const running: LoanView = { ...base, id: 2, status: "ACTIVE", closedOn: null };
+    const e = customerEarnings(
+      { loans: [base, running], payments: [], outstandingByLoanId: {} },
+      new Date(2026, 9, 17),
+    );
+    expect(e.disbursedLoanCount).toBe(2);
+    expect(e.closedLoanCount + e.openLoanCount).toBe(2);
+    expect(e.totalLentPaise).toBe(2 * base.principalPaise);
+    expect(e.currentlyDisbursedPaise).toBe(running.principalPaise);
+    expect(e.cashOutPaise).toBe(2 * (base.netDisbursedPaise + base.gstPaise));
+    expect(e.netCashPaise).toBe(e.cashInPaise - e.cashOutPaise);
+    expect(e.profitOnLentRatio).toBeCloseTo(e.totalEarnedPaise / e.totalLentPaise);
+  });
+
+  it("has no profit ratio when nothing was ever lent", () => {
+    expect(customerEarnings({ loans: [], payments: [] }, new Date()).profitOnLentRatio).toBeNull();
+  });
 });
