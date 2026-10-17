@@ -112,6 +112,8 @@ navix:
     webhook-secret: ${NAVIX_DIGIO_WEBHOOK_SECRET:}
     corporate-config-id: ${NAVIX_DIGIO_CORPORATE_CONFIG_ID:}
     narration: ${NAVIX_DIGIO_NARRATION:}
+    # The lender's own settlement account a NACH debit pays into. Blank = DebitService refuses to present.
+    corporate-account-number: ${NAVIX_DIGIO_CORPORATE_ACCOUNT_NUMBER:}
     expire-in-days: ${NAVIX_DIGIO_EXPIRE_IN_DAYS:7}
   digitap:
     # Two hosts: svc (KYC/Employment/Email), api (Credit/Location/Face-Match/OCR). Auth = Basic base64(id:secret).

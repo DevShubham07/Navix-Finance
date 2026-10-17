@@ -252,6 +252,15 @@ public class MandateService {
         return featureFlags.isEnabled("digio-mandate", false) && !hasUsableMandate(app);
     }
 
+    /**
+     * The usable mandate behind a loan (loan -> application -> mandate), by the same rule as
+     * {@link #hasUsableMandate}. A debit starts from a loan; the mandate is keyed by application.
+     */
+    @Transactional(readOnly = true)
+    public Optional<Mandate> usableMandateForLoan(Long loanId) {
+        return applications.findByLoanId(loanId).flatMap(this::usableMandate);
+    }
+
     /** The mandate {@link #hasUsableMandate} accepts for this application, if any. */
     private Optional<Mandate> usableMandate(LoanApplication app) {
         String account = app.getDisbursalAccountNumber() == null ? "" : app.getDisbursalAccountNumber().trim();
