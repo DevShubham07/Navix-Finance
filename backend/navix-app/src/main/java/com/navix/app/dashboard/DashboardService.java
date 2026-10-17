@@ -7,6 +7,7 @@ import com.navix.app.dashboard.BusinessQueries.MonthCollection;
 import com.navix.app.dashboard.CollectionQueries.AnalysisAgg;
 import com.navix.app.dashboard.CollectionQueries.CaseRow;
 import com.navix.app.dashboard.CollectionQueries.Collected;
+import com.navix.app.dashboard.CollectionQueries.CountAmount;
 import com.navix.app.dashboard.CollectionQueries.PtpTotals;
 import com.navix.app.dashboard.DashboardDtos.*;
 import com.navix.app.dashboard.MetricQueries.Agg;
@@ -69,6 +70,11 @@ public class DashboardService {
     private final StaffDirectory staffDirectory;
     private final RepaymentService repayments;
     private final LoanRepository loanRepository;
+
+    /** The collection SQL, for the integration test that pins each day query against the real schema. */
+    CollectionQueries collection() {
+        return collection;
+    }
 
     // ---- scope & period ---------------------------------------------------------------------
 
@@ -620,6 +626,64 @@ public class DashboardService {
 
     private static AllocRow allocRow(Long id, String name, long[] v) {
         return new AllocRow(id, name, v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7]);
+    }
+
+    // ---- collection head desk: team today / tomorrow ----------------------------------------
+
+    /**
+     * One day of the collections team, for the Head's desk: every active Collection Executive always
+     * has a row (a zero day is information), and a Head appears only when they hold figures of their
+     * own that day. The roster is the whole collections team for a COLLECTION_HEAD view -- they are a
+     * Head -- narrowed by an explicit {@code staffIds} request the way the allocation table is.
+     */
+    public TeamDay collectionsTeamDay(DashboardScope scope, LocalDate date) {
+        scope.require("ADMIN", "COLLECTION_HEAD");
+        List<StaffSummary> executives = scope.filterStaff(staffDirectory.listActive("COLLECTION_EXECUTIVE"),
+                StaffSummary::id);
+        List<StaffSummary> heads = scope.filterStaff(staffDirectory.listActive("COLLECTION_HEAD"), StaffSummary::id);
+
+        Map<Long, Long> calls = collection.callsLoggedByOfficer(scope, date);
+        Map<Long, CountAmount> promises = collection.promisesDueByOfficer(scope, date);
+        Map<Long, CountAmount> parts = collection.partPaymentsByOfficer(scope, date);
+        Map<Long, Long> collected = new HashMap<>();
+        for (Collected c : collection.collectedByOfficer(scope, date, date)) {
+            collected.merge(c.staffId(), c.paise(), Long::sum);
+        }
+        Map<Long, Long> closed = collection.closedByOfficer(scope, date, date);
+        Map<Long, Long> due = collection.dueOnByOfficer(scope, date);
+
+        List<TeamDayRow> rows = new ArrayList<>();
+        for (StaffSummary s : executives) rows.add(teamDayRow(s, calls, promises, parts, collected, closed, due));
+        for (StaffSummary s : heads) {
+            TeamDayRow r = teamDayRow(s, calls, promises, parts, collected, closed, due);
+            if (r.calls() + r.promisesDue() + r.partPayments() + r.collectedPaise() + r.closed() + r.dueCount() > 0) {
+                rows.add(r);
+            }
+        }
+        rows.sort(java.util.Comparator.comparing(TeamDayRow::name, String.CASE_INSENSITIVE_ORDER));
+        long[] t = new long[8];
+        for (TeamDayRow r : rows) {
+            t[0] += r.calls();
+            t[1] += r.promisesDue();
+            t[2] += r.promisesDuePaise();
+            t[3] += r.partPayments();
+            t[4] += r.partPaymentsPaise();
+            t[5] += r.collectedPaise();
+            t[6] += r.closed();
+            t[7] += r.dueCount();
+        }
+        TeamDayRow totals = new TeamDayRow(null, "Total", null, t[0], t[1], t[2], t[3], t[4], t[5], t[6], t[7]);
+        return new TeamDay(date.toString(), rows, totals);
+    }
+
+    private static TeamDayRow teamDayRow(StaffSummary s, Map<Long, Long> calls, Map<Long, CountAmount> promises,
+                                         Map<Long, CountAmount> parts, Map<Long, Long> collected, Map<Long, Long> closed,
+                                         Map<Long, Long> due) {
+        CountAmount p = promises.getOrDefault(s.id(), new CountAmount(0, 0));
+        CountAmount pp = parts.getOrDefault(s.id(), new CountAmount(0, 0));
+        return new TeamDayRow(s.id(), s.name(), s.role(), calls.getOrDefault(s.id(), 0L), p.count(), p.paise(),
+                pp.count(), pp.paise(), collected.getOrDefault(s.id(), 0L), closed.getOrDefault(s.id(), 0L),
+                due.getOrDefault(s.id(), 0L));
     }
 
     // ---- leaderboard ------------------------------------------------------------------------

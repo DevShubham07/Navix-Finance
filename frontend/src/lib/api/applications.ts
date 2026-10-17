@@ -3389,6 +3389,34 @@ export interface DashTarget {
   collectionTargetBp: number;
 }
 
+/**
+ * One officer's day on the Collection Head's desk (`GET /dashboard/collections/team`). `staffId` is
+ * null only on the totals row. `calls` is every interaction logged that day; `promisesDue` the cases
+ * whose LATEST promise-to-pay falls on the day (with the cached outstanding on them); `partPayments`
+ * verified partial payments paid that day; `collectedPaise` every verified rupee that day on the
+ * officer's cases; `closed` loans closed that day; `dueCount` live loans falling due that day.
+ */
+export interface DashTeamDayRow {
+  staffId: number | null;
+  name: string;
+  role: string | null;
+  calls: number;
+  promisesDue: number;
+  promisesDuePaise: number;
+  partPayments: number;
+  partPaymentsPaise: number;
+  collectedPaise: number;
+  closed: number;
+  dueCount: number;
+}
+
+export interface DashTeamDay {
+  /** yyyy-MM-dd (IST). */
+  date: string;
+  rows: DashTeamDayRow[];
+  totals: DashTeamDayRow;
+}
+
 const DASH_BASE = "/api/staff/dashboard";
 
 function dashQs(p: DashParams, extra?: Record<string, string | number | undefined | null>): string {
@@ -3414,6 +3442,9 @@ export const dashboardApi = {
   collectionAnalysis: (p: DashParams, date: string | undefined, groupBy: DashGroupBy) =>
     bff<DashCollectionAnalysis>(`${DASH_BASE}/collection-analysis${dashQs(p, { date, groupBy })}`, "GET"),
   team: (p: DashParams) => bff<DashTeam>(`${DASH_BASE}/team${dashQs(p)}`, "GET"),
+  /** The Collection Head's team tracker for one IST day (`date` yyyy-MM-dd; omitted = today). */
+  collectionsTeam: (view: DashView, date?: string) =>
+    bff<DashTeamDay>(`${DASH_BASE}/collections/team${dashQs({ view }, { date })}`, "GET"),
   calendar: (p: DashParams, month: string, mode: DashCalendarMode) =>
     bff<DashCalendar>(`${DASH_BASE}/calendar${dashQs(p, { month, mode })}`, "GET"),
   geo: (p: DashParams) => bff<DashGeo>(`${DASH_BASE}/geo${dashQs(p)}`, "GET"),

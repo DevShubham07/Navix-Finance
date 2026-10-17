@@ -172,6 +172,25 @@ public final class DashboardDtos {
     public record Allocation(AllocCardsWithPrevious cards, List<AllocRow> rows, AllocRow total) {
     }
 
+    // ---- collection head desk: team today / tomorrow ----------------------------------------
+
+    /**
+     * One officer's day on the Collection Head's desk. {@code staffId} is null only on the totals row.
+     * {@code calls} counts every interaction the officer logged that day (any channel);
+     * {@code promisesDue}/{@code promisesDuePaise} are the cases whose LATEST promise-to-pay falls on
+     * the day and the cached {@code loan.outstanding} on them; {@code partPayments} are verified partial
+     * payments paid that day on the officer's cases; {@code collectedPaise} is every verified rupee paid
+     * that day on their cases; {@code closed} the cases whose loan closed that day; {@code dueCount} the
+     * live loans on their cases falling due that day.
+     */
+    public record TeamDayRow(Long staffId, String name, String role, long calls, long promisesDue,
+                             long promisesDuePaise, long partPayments, long partPaymentsPaise, long collectedPaise,
+                             long closed, long dueCount) {
+    }
+
+    public record TeamDay(String date, List<TeamDayRow> rows, TeamDayRow totals) {
+    }
+
     // ---- leaderboard ----------------------------------------------------------------------
 
     public record LeaderRow(long staffId, String name, int rank, Double score, Integer stars, long volume,
