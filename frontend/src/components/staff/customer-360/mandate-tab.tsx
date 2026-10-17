@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, ShieldOff } from "lucide-react";
 import { EmptyState, Skeleton, toast } from "@/components/ui";
 import { useCan, errMessage } from "@/components/staff/pipeline/hooks";
-import { staffApi } from "@/lib/api/applications";
+import { collectionsApi, staffApi } from "@/lib/api/applications";
 import { formatDateTime } from "@/lib/utils";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -16,13 +16,26 @@ const STATUS_LABEL: Record<string, string> = {
   BANK_UNSUPPORTED: "Bank does not support online mandates",
 };
 
+const inr2 = (paise: number) =>
+  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2 }).format(paise / 100);
+
+/** Rupee text ("1250.5") to integer paise, or null when it is not a positive amount with at most 2 decimals. */
+export function parseRupeesToPaise(text: string): number | null {
+  const t = text.trim();
+  if (!/^\d+(\.\d{1,2})?$/.test(t)) return null;
+  const paise = Math.round(parseFloat(t) * 100);
+  return paise > 0 ? paise : null;
+}
+
 /** Latest eMandate attempt. Only the last four of the account is ever shown; the auth link never is. */
 export function MandateTab({
   applicationId,
+  loanId = null,
   status,
   onChanged,
 }: {
   applicationId: number | null;
+  loanId?: number | null;
   status: string | null;
   onChanged?: () => void;
 }) {
@@ -40,6 +53,27 @@ export function MandateTab({
       toast.success("Mandate overridden; moved to disbursement");
       setNotes("");
       qc.invalidateQueries({ queryKey: ["staff-mandate", applicationId] });
+      onChanged?.();
+    },
+  });
+
+  // The case (and so the live outstanding + DPD) is only readable by staff allowed to work it; an executive
+  // on someone else's case gets CASE_NOT_ASSIGNED here and simply sees no debit action.
+  const mayDebit = can("mandate:debit") && loanId != null;
+  const caseQ = useQuery({
+    queryKey: ["staff-debit-case", loanId],
+    queryFn: () => collectionsApi.caseByLoan(loanId as number),
+    enabled: mayDebit && q.data?.status === "ACTIVE",
+    retry: false,
+  });
+  const [amountText, setAmountText] = React.useState("");
+  const [confirming, setConfirming] = React.useState(false);
+  const debit = useMutation({
+    mutationFn: (paise: number) => collectionsApi.debit(loanId as number, paise),
+    onSuccess: (r) => {
+      toast.success(`Debit of ${inr2(r.amountPaise)} requested`);
+      setConfirming(false);
+      qc.invalidateQueries({ queryKey: ["staff-debit-case", loanId] });
       onChanged?.();
     },
   });
@@ -64,6 +98,16 @@ export function MandateTab({
   ];
   if (m.rejectReason) rows.push(["Reject reason", m.rejectReason]);
 
+  const dc = caseQ.data;
+  const outstanding = dc?.loan?.outstandingPaise ?? null;
+  const showDebit = mayDebit && m.status === "ACTIVE" && !!m.accountLast4 && dc != null && outstanding != null && outstanding > 0 && dc.dpd >= 1;
+  const amountPaise = parseRupeesToPaise(amountText);
+  const amountError =
+    amountText.trim() === "" ? null
+    : amountPaise == null ? "Enter an amount in rupees, up to 2 decimals."
+    : outstanding != null && amountPaise > outstanding ? `It cannot be more than the outstanding ${inr2(outstanding)}.`
+    : null;
+
   return (
     <div className="space-y-4">
       <dl className="grid max-w-xl grid-cols-[10rem_1fr] gap-y-2 text-sm">
@@ -74,6 +118,61 @@ export function MandateTab({
           </React.Fragment>
         ))}
       </dl>
+
+      {showDebit && (
+        <div className="max-w-md space-y-2 rounded border border-line bg-grey-50 p-3">
+          <p className="text-xs text-muted">
+            Debit the borrower&apos;s bank account now under this mandate. This takes real money and cannot be
+            undone. Outstanding today: <strong>{inr2(outstanding as number)}</strong>. The amount can be lowered, never raised.
+          </p>
+          {!confirming ? (
+            <>
+              <label className="block text-xs text-muted" htmlFor="debit-amount">Amount to debit (₹)</label>
+              <input
+                id="debit-amount"
+                inputMode="decimal"
+                value={amountText}
+                onChange={(e) => setAmountText(e.target.value)}
+                placeholder={((outstanding as number) / 100).toFixed(2)}
+                className="w-full rounded border border-line px-2 py-1.5 text-sm"
+              />
+              {amountError && <p className="text-xs text-error-700">{amountError}</p>}
+              <button
+                type="button"
+                onClick={() => {
+                  if (amountText.trim() === "") setAmountText(((outstanding as number) / 100).toFixed(2));
+                  setConfirming(true);
+                }}
+                disabled={!!amountError}
+                className="btn btn-sm btn-navy disabled:opacity-50"
+              >
+                Review debit
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-navy" role="alert">
+                Debit <strong>{inr2(amountPaise ?? (outstanding as number))}</strong> from the account ending{" "}
+                <strong>•••• {m.accountLast4}</strong>?
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => debit.mutate(amountPaise ?? (outstanding as number))}
+                  disabled={debit.isPending}
+                  className="btn btn-sm btn-navy disabled:opacity-50"
+                >
+                  {debit.isPending && <Loader2 size={14} className="animate-spin" />} Confirm and debit
+                </button>
+                <button type="button" onClick={() => setConfirming(false)} disabled={debit.isPending} className="btn btn-sm">
+                  Cancel
+                </button>
+              </div>
+            </>
+          )}
+          {debit.isError && <p className="text-xs text-error-700">{errMessage(debit.error)}</p>}
+        </div>
+      )}
 
       {m.overridable && status === "SANCTIONED" && can("mandate:override") && (
         <div className="max-w-md space-y-2 rounded border border-line bg-grey-50 p-3">

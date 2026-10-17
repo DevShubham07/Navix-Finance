@@ -77,3 +77,10 @@ describe("mandate:override", () => {
     expect(can("ADMIN", "DISBURSEMENT_HEAD", "mandate:override")).toBe(true);
   });
 });
+
+describe("mandate:debit", () => {
+  it("grants mandate:debit to COLLECTION_EXECUTIVE, COLLECTION_HEAD and ADMIN only", () => {
+    const roles = ["COLLECTION_HEAD", "COLLECTION_EXECUTIVE", "ADMIN", "DISBURSEMENT_HEAD", "CREDIT_HEAD", "CREDIT_EXECUTIVE", "ACCOUNTANT", "TELECALLER", "DSA"] as const;
+    expect(roles.filter((r) => hasPermission(r, "mandate:debit"))).toEqual(["COLLECTION_HEAD", "COLLECTION_EXECUTIVE", "ADMIN"]);
+  });
+});

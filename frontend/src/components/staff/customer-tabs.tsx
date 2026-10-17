@@ -168,7 +168,7 @@ export function CustomerTabBody({
       case "activity":
         return <AuditLogsTab customerId={customerId} apps={detail.applications} />;
       case "mandate":
-        return <MandateTab applicationId={applicationId} status={app?.status ?? null} onChanged={onChanged} />;
+        return <MandateTab applicationId={applicationId} loanId={app?.loanId ?? null} status={app?.status ?? null} onChanged={onChanged} />;
       case "verifications":
         // Every check on the file, penny drop included, with the same per-check detail and manual
         // override the application dialog offers.

@@ -1885,6 +1885,15 @@ function registerFacet(base: string, column: string, filters: Record<string, str
   return bff<RegisterFacet>(`${base}/facets?${new URLSearchParams({ ...filters, column })}`, "GET");
 }
 
+/** A presented NACH debit. No provider message and no failure code reach the UI by design. */
+export interface DebitResult {
+  debitId: number;
+  status: string;
+  amountPaise: number;
+  settlementDate: string | null;
+  attemptNo: number;
+}
+
 export interface MandateView {
   status: "PENDING_AUTHORIZATION" | "ACTIVE" | "AUTHORIZATION_FAILED" | "EXPIRED" | "BANK_UNSUPPORTED";
   umrn: string | null;
@@ -4042,6 +4051,10 @@ export interface UpcomingLoanView {
 const COLLECTIONS_BASE = "/api/staff/collections";
 
 export const collectionsApi = {
+  /** Present a NACH debit now (real money). Omit `amountPaise` for the full outstanding; it may only be lower. */
+  debit: (loanId: number, amountPaise?: number) =>
+    bff<DebitResult>(`${COLLECTIONS_BASE}/loans/${loanId}/debit`, "POST", amountPaise == null ? {} : { amountPaise }),
+
   /**
    * One page of the worklist, narrowed server-side.
    *

@@ -84,6 +84,9 @@ export type Permission =
   // Let a BANK_UNSUPPORTED file past the blocking eMandate step (the bank has no API mandate, so the
   // borrower cannot fix it by retrying). Mirrors ApplicationFlowService.mandateOverride; nothing else.
   | "mandate:override"
+  // Fire a NACH debit against a borrower's mandate NOW (real money). Collections desk + ADMIN; mirrored
+  // by ManualDebitService, which also enforces case assignment (CASE_NOT_ASSIGNED) and refuses DSA.
+  | "mandate:debit"
   // Re-fire a provider verification (PAN / email / address / bureau / employment / penny-drop) from
   // the staff console. ADMIN only — the backend's `retryExternalCheck` is `requireAdmin()`, so a
   // credit role could open the Retry dialog and still be refused server-side. A credit reviewer who
@@ -144,6 +147,7 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
   ACCOUNTANT: ["loan:activate", "customer:view", "loan:pipeline", "leads:import"],
   COLLECTION_HEAD: [
     "collections:manage",
+    "mandate:debit",
     "customer:view",
     "customer:view:all",
     "customer:assign",
@@ -152,7 +156,7 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
     "collections:overview",
     "leads:import",
   ],
-  COLLECTION_EXECUTIVE: ["collections:interact", "customer:view", "loan:pipeline", "leads:import"],
+  COLLECTION_EXECUTIVE: ["collections:interact", "mandate:debit", "customer:view", "loan:pipeline", "leads:import"],
   // Telecaller: view customers, enter DSA-style leads, disposition calls, self-assign chase-up
   // work off the telecalling queue. No lifecycle permission.
   TELECALLER: ["customer:view", "leads:manage", "customer:assign", "leads:import"],
@@ -179,6 +183,7 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
     "referral:payout",
     "verification:retry",
     "mandate:override",
+    "mandate:debit",
     "loan:register",
     "collections:overview",
     // NOT dsa:portal — that is the DSA's own self-service portal, gated backend-side by

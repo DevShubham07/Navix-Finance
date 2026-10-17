@@ -19,6 +19,8 @@ import com.navix.collections.entity.CollectionPaymentStatus;
 import com.navix.collections.service.CollectionPaymentService;
 import com.navix.collections.service.CollectionsService;
 import com.navix.collections.service.DpdCalculator;
+import com.navix.collections.service.ManualDebitService;
+import com.navix.common.loan.DebitDirectory;
 import com.navix.collections.service.SettlementService;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.loan.LoanSummary;
@@ -63,6 +65,7 @@ public class CollectionsController {
     private final SettlementService settlementService;
     private final CollectionPaymentService collectionPaymentService;
     private final DpdCalculator dpdCalculator;
+    private final ManualDebitService manualDebitService;
 
     /**
      * The collections worklist — one row per live loan, past due or due within the next week,
@@ -170,6 +173,16 @@ public class CollectionsController {
     @GetMapping("/cases/by-loan/{loanId}")
     public ApiResponse<CaseDetailView> getCaseByLoan(@PathVariable Long loanId) {
         return ApiResponse.ok(collectionsService.getCaseDetailByLoanId(loanId));
+    }
+
+    /**
+     * Present a NACH debit now. Moves REAL money. Body {@code amountPaise} omitted = full outstanding;
+     * a value may only be lower. Guards live in the loan module; role, assignment and flag in the service.
+     */
+    @PostMapping("/loans/{loanId}/debit")
+    public ApiResponse<DebitDirectory.Result> debit(@PathVariable Long loanId,
+                                                    @RequestBody(required = false) Map<String, Long> body) {
+        return ApiResponse.ok(manualDebitService.debit(loanId, body == null ? null : body.get("amountPaise")));
     }
 
     /** Assign a collections officer (a real ACTIVE executive) to a case. */
