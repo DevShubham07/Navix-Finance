@@ -164,4 +164,8 @@ public interface CustomerProfileRepository extends JpaRepository<CustomerProfile
             + "order by a.id desc")
     List<Object[]> findOtherBorrowersByMobileIn(@Param("mobiles") Collection<String> mobiles,
                                                 @Param("customerId") Long customerId);
+
+    /** Every profile carrying a stored bureau brief — the boot-time star re-score walks these. */
+    @Query("select p.id from CustomerProfile p where p.creditBriefFacts is not null order by p.id")
+    List<Long> findIdsWithCreditBriefFacts();
 }

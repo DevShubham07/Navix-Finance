@@ -976,6 +976,8 @@ export interface CreditBriefView {
   bureauSource?: string | null;
   /** The bureau's own PDF (BUREAU_REPORT — Fintrix CRIF), null when none was returned (Experian, KBA). */
   bureauReportDocumentId?: number | null;
+  /** Why the stars are what they are: the score band, then each BRE deduction or cap applied. */
+  ratingReasons?: string[];
 }
 
 /** Admin edit of a customer's KYC / salary data (identity fields excluded — they stay locked). */

@@ -283,6 +283,22 @@ export function CreditProfileCard({ applicationId }: { applicationId: number }) 
             </button>
           </div>
 
+          {brief.ratingReasons && brief.ratingReasons.length > 0 && (
+            <div className="mt-3 rounded-lg border border-line bg-ivory/60 px-3 py-2">
+              <div className="mb-1 flex items-center gap-1 text-xs font-semibold text-navy">
+                Why {brief.starRating?.toFixed(1)}★
+                <InfoTooltip content="Stars follow the BRE: the score sets the base (600 is the policy floor), then late payments over 10 days, accounts overdue now, an enquiry burst and no recent personal loan each take a step off; a default caps at 2.5★, a written-off or settled account at 2.0★." />
+              </div>
+              <ul className="space-y-0.5 text-xs text-ink">
+                {brief.ratingReasons.map((r, i) => (
+                  <li key={i} className={i === 0 ? "font-medium" : "text-error-800"}>
+                    {i === 0 ? r : `• ${r}`}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <BriefFactsAndReport facts={brief.facts} summary={brief.summary} providerResponse={brief.providerResponse} />
         </>
       )}
