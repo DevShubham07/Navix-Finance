@@ -1,0 +1,12 @@
+-- V86 — bound the FAILED_TECHNICAL recovery path: how many times ONE mandate_debit row may be presented.
+--
+-- A row whose outcome is unknown (FAILED_TECHNICAL, V84) is deliberately re-presented with its ORIGINAL
+-- unique_key and attempt_no — that key is the double-charge backstop and must not change. The side effect
+-- was that neither the terminal-reject check nor the per-loan attempt cap (which both key off attempt_no /
+-- the row count) could ever advance on that path, so a collections officer pressing "Confirm and debit"
+-- repeatedly fired an unlimited number of REAL provider POSTs against one row.
+--
+-- present_count counts presentations OF THIS ROW (1 on insert, +1 on every re-presentation) and is the only
+-- thing that moves while the key is held stable. DebitService refuses past MAX_PRESENTATIONS_PER_ROW.
+-- Existing rows were each presented at least once, hence default 1.
+alter table mandate_debit add column present_count integer not null default 1;

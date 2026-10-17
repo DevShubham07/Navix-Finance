@@ -115,6 +115,7 @@ class DebitServiceTest {
         assertThat(saved.getValue().getAmountPaise()).isEqualTo(123_000L);
         assertThat(saved.getValue().getUniqueKey()).startsWith("DBM");
         assertThat(result.amountPaise()).isEqualTo(123_000L);
+        assertThat(result.status()).isEqualTo("SCHEDULED");
     }
 
     @Test
@@ -360,6 +361,76 @@ class DebitServiceTest {
     @Test
     void accountClosedIsTerminalAndNotRepresented() {
         assertThat(service.eligibleForRepresentation(row(Status.FAILED, "ACCOUNT_CLOSED"))).isFalse();
+    }
+
+    // ---- "never charge someone who has already repaid" ------------------------------------------------
+
+    @Test
+    void refusesWhenNothingIsOutstanding() {
+        when(repayments.outstandingAsOf(LOAN, today)).thenReturn(0L);
+        assertCode(() -> service.present(LOAN, null, Trigger.SCHEDULED, null), "NOTHING_OUTSTANDING");
+        when(repayments.outstandingAsOf(LOAN, today)).thenReturn(-1L);
+        assertCode(() -> service.present(LOAN, 100_000L, Trigger.MANUAL, 9L), "NOTHING_OUTSTANDING");
+        verify(port, never()).presentDebit(any());
+    }
+
+    @Test
+    void refusesALoanThatIsNotLive() {
+        for (String status : new String[] {"CLOSED", "WRITTEN_OFF", "PENDING", null}) {
+            when(loans.findLoan(LOAN)).thenReturn(Optional.of(loan(status, today.minusDays(3))));
+            assertCode(() -> service.present(LOAN, null, Trigger.MANUAL, 9L), "LOAN_NOT_DEBITABLE");
+        }
+        verify(port, never()).presentDebit(any());
+    }
+
+    @Test
+    void refusesALoanThatIsNotYetOverdue() {
+        for (LocalDate due : new LocalDate[] {today, today.plusDays(1), null}) {
+            when(loans.findLoan(LOAN)).thenReturn(Optional.of(loan("ACTIVE", due)));
+            assertCode(() -> service.present(LOAN, null, Trigger.MANUAL, 9L), "LOAN_NOT_OVERDUE");
+        }
+        verify(port, never()).presentDebit(any());
+    }
+
+    @Test
+    void refusesWhenTheCorporateAccountIsNotConfigured() {
+        for (String account : new String[] {null, "", "   "}) {
+            ReflectionTestUtils.setField(service, "corporateAccountNumber", account);
+            assertThat(service.configured()).isFalse();
+            assertCode(() -> service.present(LOAN, null, Trigger.SCHEDULED, null), "DEBIT_NOT_CONFIGURED");
+        }
+        verify(port, never()).presentDebit(any());
+    }
+
+    @Test
+    void refusesAnAmountAboveTheProvidersInt32Ceiling() {
+        long overInt32 = (long) Integer.MAX_VALUE + 1;
+        when(repayments.outstandingAsOf(LOAN, today)).thenReturn(overInt32 + 1_000L);
+        mandate.setMaximumAmountPaise(overInt32 + 1_000L);
+        assertCode(() -> service.present(LOAN, overInt32, Trigger.MANUAL, 9L), "AMOUNT_TOO_LARGE");
+        verify(port, never()).presentDebit(any());
+    }
+
+    // ---- the recovery path is bounded too (V86) --------------------------------------------------------
+
+    @Test
+    void anOutcomeUnknownRowCannotBeRepresentedWithoutLimit() {
+        MandateDebit unknown = row(Status.FAILED_TECHNICAL, null);
+        when(debits.findFirstByLoanIdOrderByAttemptNoDesc(LOAN)).thenReturn(Optional.of(unknown));
+        when(port.findDebitByRef("DBM7-1")).thenReturn(Optional.empty());
+
+        // Each re-presentation keeps the key and attempt_no (the double-charge backstop) but advances the
+        // per-row counter, so the manual path cannot POST for real forever.
+        for (int i = 1; i < DebitService.MAX_PRESENTATIONS_PER_ROW; i++) {
+            unknown.setStatus(Status.FAILED_TECHNICAL);
+            service.present(LOAN, null, Trigger.MANUAL, 9L);
+            assertThat(unknown.getPresentCount()).isEqualTo(i + 1);
+            assertThat(unknown.getUniqueKey()).isEqualTo("DBM7-1");
+            assertThat(unknown.getAttemptNo()).isEqualTo(1);
+        }
+        unknown.setStatus(Status.FAILED_TECHNICAL);
+        assertCode(() -> service.present(LOAN, null, Trigger.MANUAL, 9L), "DEBIT_ATTEMPTS_EXHAUSTED");
+        verify(port, times(DebitService.MAX_PRESENTATIONS_PER_ROW - 1)).presentDebit(any());
     }
 
     @Test

@@ -82,4 +82,12 @@ public class MandateDebit extends BaseAuditEntity {
 
     @Column(name = "overpayment", nullable = false)
     private boolean overpayment;
+
+    /**
+     * How many times THIS row has been presented to the provider (V86). A FAILED_TECHNICAL row is
+     * re-presented with its original {@code unique_key} and {@code attempt_no}, so this counter is the
+     * only thing that advances on the recovery path — and the only thing that can bound it.
+     */
+    @Column(name = "present_count", nullable = false)
+    private int presentCount = 1;
 }

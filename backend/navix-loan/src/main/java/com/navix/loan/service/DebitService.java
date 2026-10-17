@@ -70,6 +70,14 @@ public class DebitService {
 
     /** DPD 1/3/5/9 is the schedule, so four presentations is the ceiling per loan. NPCI's own caps are invisible to us. */
     static final int MAX_ATTEMPTS = 4;
+    /**
+     * Ceiling on presentations of ONE row. The FAILED_TECHNICAL recovery path keeps the original
+     * unique_key and attempt_no on purpose (that key is the double-charge backstop), so neither the
+     * terminal-reject check nor MAX_ATTEMPTS can advance there: without this, a collections officer could
+     * press "debit" without limit, each press a real provider POST. Three = the first presentation plus
+     * two recoveries; beyond that the outcome is not unknown, the integration is broken.
+     */
+    static final int MAX_PRESENTATIONS_PER_ROW = 3;
 
     private final MandateDebitRepository debits;
     private final MandateService mandateService;
@@ -89,6 +97,15 @@ public class DebitService {
     /** The lender's settlement account; blank means debits are not configured and we refuse to present. */
     @Value("${navix.digio.corporate-account-number:}")
     private String corporateAccountNumber;
+
+    /**
+     * False when the lender's settlement account is unset, in which case every presentation is refused with
+     * {@code DEBIT_NOT_CONFIGURED}. Callers check it once per pass so a misconfiguration is one loud error
+     * rather than a per-loan warning on a silently inert sweep.
+     */
+    public boolean configured() {
+        return corporateAccountNumber != null && !corporateAccountNumber.isBlank();
+    }
 
     /**
      * What callers (sweep, collections) see. Deliberately no provider message and no failure code:
@@ -191,6 +208,11 @@ public class DebitService {
                 return new Prepared(latest, null, true);
             }
             reuse = latest; // nothing exists under the key: re-present with the IDENTICAL key (provider dedupes)
+            // ...but bound it. The key and attempt_no stay frozen here, so present_count is the only cap.
+            if (reuse.getPresentCount() >= MAX_PRESENTATIONS_PER_ROW) {
+                throw new BusinessException("DEBIT_ATTEMPTS_EXHAUSTED",
+                        "The maximum number of debit attempts has been reached");
+            }
         }
 
         // Terminal means terminal, for every caller: a FAILED row whose code NPCI does not allow re-presenting
@@ -223,7 +245,7 @@ public class DebitService {
         if (mandate.getUmrn() == null || mandate.getUmrn().isBlank()) {
             throw new BusinessException("NO_USABLE_MANDATE", "No active mandate for this loan");
         }
-        if (corporateAccountNumber == null || corporateAccountNumber.isBlank()) {
+        if (!configured()) {
             throw new BusinessException("DEBIT_NOT_CONFIGURED", "Debits are not configured");
         }
 
@@ -274,6 +296,7 @@ public class DebitService {
         row.setDpdAtAttempt(dpd);
         row.setTriggeredBy(trigger);
         row.setActorId(actorId);
+        row.setPresentCount(reuse != null ? reuse.getPresentCount() + 1 : 1);
         try {
             row = debits.saveAndFlush(row); // the index refuses a concurrent second in-flight row right here
         } catch (DataIntegrityViolationException race) {
