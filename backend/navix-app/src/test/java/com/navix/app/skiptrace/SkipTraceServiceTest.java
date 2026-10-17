@@ -76,7 +76,7 @@ class SkipTraceServiceTest {
         ApplicationView newer = record(ApplicationView.class, Map.of("id", 10869L));
         LoanView loan = record(LoanView.class, Map.of("id", 18L));
         return new CustomerDetail(CUSTOMER, profile, List.of(older, newer), List.of(loan), List.of(),
-                null, null, null, null, Map.of());
+                null, null, null, null, Map.of(), false, null);
     }
 
     /** Build a wide DTO record with every component null except the named ones. */

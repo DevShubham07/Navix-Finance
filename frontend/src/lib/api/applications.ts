@@ -674,6 +674,11 @@ export interface CustomerSummary {
   journeyStep?: string | null;
   /** Returning borrower: the latest file was created after a prior loan closed. */
   reloan?: boolean | null;
+  /** A live block on the customer's mobile in the rejection register — a staff block or a running
+   *  cooling-off. The borrower cannot start a new application while it holds. */
+  blocked?: boolean | null;
+  /** The staff-entered reason for a staff block, the reason code otherwise; null when not blocked. */
+  blockedReason?: string | null;
   totalOutstandingPaise: number;
   /** Latest credit headline for the customer (staff-only). */
   creditScore?: number | null;
@@ -765,6 +770,16 @@ export interface CustomerDetail {
   /** The itemised interest/penalty/paid breakdown per loan id, computed with the rest of this
    *  payload. The Loans tab used to fetch one `/outstanding` per loan card to get it. */
   outstandingByLoanId?: Record<string, OutstandingView>;
+  /** Same rule as `CustomerSummary.blocked`: a live rejection-register block on the mobile. */
+  blocked?: boolean | null;
+  blockedReason?: string | null;
+}
+
+/** The customer's block state after `customersApi.block` / `unblock` (mirrors backend CustomerBlockView). */
+export interface CustomerBlockView {
+  customerId: number;
+  blocked: boolean;
+  blockedReason: string | null;
 }
 
 /**
@@ -2224,6 +2239,8 @@ export type CustomerSummaryCounts = {
   closed: number;
   /** Overlay segment; absent until the backend ships it. */
   reloan?: number;
+  /** Overlay segment: customers with a live block on their mobile. */
+  blocked?: number;
   unallocated: number;
 };
 
@@ -2380,6 +2397,14 @@ export const customersApi = {
   /** Assign (or clear) the staff owner. staffId null → unallocate. */
   assignOwner: (customerId: number, staffId: number | null) =>
     bff<CustomerDetail>(`${CUSTOMERS_BASE}/${customerId}/owner`, "POST", { staffId }),
+
+  /** ACCOUNTANT / ADMIN — block the customer for future loans (indefinite; reason required, ≤300 chars). */
+  block: (customerId: number, reason: string) =>
+    bff<CustomerBlockView>(`${CUSTOMERS_BASE}/${customerId}/block`, "POST", { reason }),
+
+  /** ADMIN — lift a staff block. */
+  unblock: (customerId: number) =>
+    bff<CustomerBlockView>(`${CUSTOMERS_BASE}/${customerId}/block`, "DELETE"),
 
   /** Staff call logs on a customer, optionally narrowed to one of their loans. */
   callLogs: (customerId: number, loanId?: number) =>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { inSegment, segmentCounts, segmentOf } from "./segments";
+import { SEGMENTS, inSegment, segmentCounts, segmentOf } from "./segments";
 
 describe("segmentOf", () => {
   it("overdue loan beats a still-ACTIVE application", () => {
@@ -92,5 +92,35 @@ describe("reloan overlay", () => {
     expect(rs.filter((c) => inSegment(c, "reloan"))).toHaveLength(1);
     expect(segmentCounts(rs).reloan).toBe(1);
     expect(segmentOf(rs[0])).toBe("approved");
+  });
+});
+
+describe("blocked overlay segment", () => {
+  it("is an overlay like unallocated/reloan: the row keeps its lifecycle segment", () => {
+    const row = { loanStatus: "CLOSED", latestStatus: "CLOSED", ownerStaffId: 3, blocked: true };
+    expect(segmentOf(row)).toBe("closed");
+    expect(inSegment(row, "blocked")).toBe(true);
+    expect(inSegment(row, "closed")).toBe(true);
+  });
+
+  it("only a true flag is blocked (absent / null / false are not)", () => {
+    expect(inSegment({ latestStatus: "CLOSED" }, "blocked")).toBe(false);
+    expect(inSegment({ latestStatus: "CLOSED", blocked: null }, "blocked")).toBe(false);
+    expect(inSegment({ latestStatus: "CLOSED", blocked: false }, "blocked")).toBe(false);
+  });
+
+  it("segmentCounts counts blocked rows in both their lifecycle segment and blocked", () => {
+    const counts = segmentCounts([
+      { loanStatus: "CLOSED", latestStatus: "CLOSED", ownerStaffId: 3, blocked: true },
+      { loanStatus: "ACTIVE", latestStatus: "ACTIVE", ownerStaffId: 3, blocked: false },
+    ]);
+    expect(counts.all).toBe(2);
+    expect(counts.closed).toBe(1);
+    expect(counts.active).toBe(1);
+    expect(counts.blocked).toBe(1);
+  });
+
+  it("sits right after rejected in the chip order", () => {
+    expect(SEGMENTS.indexOf("blocked")).toBe(SEGMENTS.indexOf("rejected") + 1);
   });
 });
