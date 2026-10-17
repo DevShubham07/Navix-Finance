@@ -105,7 +105,7 @@ export function BusinessSnapshot(props: DashTabProps) {
               ["Net disbursed", "teal", Landmark, pos.netDisbursedPaise, "POSITION_NET", "Cash sent to customers' banks",
                 "Loan amount minus the 10% processing fee and 18% GST on that fee: a ₹100 loan puts ₹88.20 in the customer's account."],
               ["Net receivable", "violet", Receipt, pos.receivablePaise, "POSITION_RECEIVABLE", "Principal + interest so far",
-                "What customers owe on these loans before late fees: the loan amount plus 1% a day interest up to today."],
+                "What customers owe before late fees: the loan amount plus 1% a day interest from disbursal to the due date (and 1 grace day). Interest stops there; late fees take over."],
               ["Total penalty", "red", TriangleAlert, pos.penaltyPaise, "POSITION_PENALTY", "Late fees",
                 "2% a day on the loan amount once a loan is past its due date and 1 grace day, capped at 30 days."],
               ["Net received", "emerald", CheckCircle2, pos.receivedPaise, "POSITION_RECEIVED", "Repayments verified",

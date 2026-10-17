@@ -119,6 +119,17 @@ img { max-width: 100%; display: block; }
    table header bars (white on navy), and disabled controls (stay grey so they read inactive).
    Placeholders, badges, buttons, links and error/success/warning tones are untouched. */
 body.staff-console { --staff-heading: #000; }
+/* Staff console surfaces are white, not cream. The warm --cream/--ivory/--line/--grey tokens stay as
+   they are for the marketing and borrower sites; under body.staff-console (set by StaffShell, so
+   portalled pop-ups are covered) they are remapped to white and cool light greys, and the Tailwind
+   utilities compiled from the same hex values are overridden to match. Zebra rows and hover keep a
+   faint neutral grey so striping and hover feedback survive. */
+body.staff-console { --ivory: #FFFFFF; --cream-50: #FFFFFF; --cream-100: #FFFFFF; --cream-200: #F3F4F6; --cream-300: #E5E7EB; --line: #E5E7EB; --line-2: #D1D5DB; --grey-100: #F6F7F9; --grey-200: #ECEEF2; --grad-cream: none; --grad-hero: none; }
+body.staff-console :is(.bg-ivory, .bg-cream-50, .bg-grey-50) { background-color: #FFFFFF; }
+body.staff-console .bg-grey-100 { background-color: var(--grey-100); }
+body.staff-console .bg-grey-200 { background-color: var(--grey-200); }
+body.staff-console :is(.hover\:bg-grey-50:hover, .hover\:bg-grey-100:hover) { background-color: var(--grey-100); }
+body.staff-console :is(.border-line, .border-line-2, .divide-line > :not([hidden]) ~ :not([hidden])) { border-color: var(--line); }
 body.staff-console :is(h1, h2, h3, h4, h5, h6, .font-serif, .text-ink, .text-muted, .text-slate, .text-neutral-500, .text-neutral-600, .text-neutral-700, .text-grey-500, .text-grey-600, .text-grey-700):not(aside *, .staff-header *, thead *, .bg-navy *, .bg-navy-800 *, .bg-navy-900 *, :disabled, :disabled *, [aria-disabled="true"], [aria-disabled="true"] *, .btn, .btn *, [class*="text-error-"], [class*="text-success-"], [class*="text-warning-"], [class*="text-gold"], [class*="text-info-"], [class*="text-white"], [class*="text-white"] *, :is(a, button, [role="button"], [role="tab"], summary):hover) { color: var(--staff-heading); }
 a { color: var(--navy); text-decoration: none; }
 a:hover { color: var(--navy-700); }
@@ -614,8 +625,14 @@ table.data td strong { color: var(--navy); }
    (`.on`); an unselected chip keeps the neutral default look. Reuses the existing status tokens. */
 .cal-preset--success.on { background: var(--success); border-color: var(--success); color: #fff; }
 .cal-preset--error.on { background: var(--danger); border-color: var(--danger); color: #fff; }
-.pill-tabs { overflow-x: auto; scrollbar-width: none; -webkit-mask-image: linear-gradient(to right, transparent, #000 16px, #000 calc(100% - 16px), transparent); mask-image: linear-gradient(to right, transparent, #000 16px, #000 calc(100% - 16px), transparent); }
-.pill-tabs::-webkit-scrollbar { display: none; }
+/* The customer pop-up's tab strip. A thin scrollbar is always on show (a mouse cannot scroll
+   sideways any other way), so the strip no longer hides it or fades its ends; the pills sit a
+   little tighter than the calendar presets they borrow their look from. */
+.pill-tabs { overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; scrollbar-color: var(--navy-500) var(--grey-200); }
+.pill-tabs::-webkit-scrollbar { height: 6px; }
+.pill-tabs::-webkit-scrollbar-track { background: var(--grey-200); border-radius: 3px; }
+.pill-tabs::-webkit-scrollbar-thumb { background: var(--navy-500); border-radius: 3px; }
+.pill-tabs .cal-preset { padding: 5px 10px; }
 .cal-sublabel { font-family: var(--mono); font-size: 0.528rem; letter-spacing: .08em; text-transform: uppercase; color: var(--gold-700); font-weight: 500; margin-bottom: 5px; }
 .cal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
 .cal-title { font-family: var(--font-display); font-size: clamp(0.96rem, 1.84vw, 1.2rem); font-weight: 700; color: var(--navy-800); letter-spacing: -.02em; line-height: 1; }

@@ -26,7 +26,7 @@ export function PillTabs({
 
   return (
     <div className={cn("pill-tabs", className)}>
-      <div role="tablist" className="flex w-max gap-1.5 px-4 py-1">
+      <div role="tablist" className="flex w-max gap-1 px-1 py-1">
         {tabs.map((t) => {
           const on = t.key === active;
           const Icon = t.icon;
