@@ -66,7 +66,9 @@ public class MockMandateAdapter implements MandatePort {
     @Override
     public DebitOutcome debitStatus(String txnId) {
         refuseInProd();
-        return new DebitOutcome(txnId, "SUCCESS", "MOCKUTR" + txnId, null, null, 0L);
+        // PAYMENT_SUCCESS, not "SUCCESS": applyOutcome maps Digio's vocabulary, and a mock that
+        // answers anything else leaves a local/demo debit stalled as an unrecognised status.
+        return new DebitOutcome(txnId, "PAYMENT_SUCCESS", "MOCKUTR" + txnId, null, null, 0L);
     }
 
     @Override
