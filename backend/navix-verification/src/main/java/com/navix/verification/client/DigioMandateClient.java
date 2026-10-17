@@ -134,12 +134,28 @@ public class DigioMandateClient implements MandatePort {
         }
         JsonNode root = call("debit_register", http.post().uri("/v3/client/nach_debit/scheduled/register")
                 .contentType(MediaType.APPLICATION_JSON).body(body.toString()));
+        return plan(root, r.settlementDate());
+    }
+
+    @Override
+    public Optional<DebitPlan> findDebitByRef(String uniqueKey) {
+        // 404 / empty body = no plan under this key; every other failure throws ("unknown" must never read as "none").
+        JsonNode root = call("debit_by_ref",
+                http.get().uri("/v3/client/nach_debit/scheduled/by_reference_id/{ref}", uniqueKey), true);
+        return root.isMissingNode() || root.isNull() || root.isEmpty() ? Optional.empty()
+                : Optional.of(plan(root, null));
+    }
+
+    private static DebitPlan plan(JsonNode root, LocalDate fallbackSettle) {
         JsonNode up = root.path("upcoming_transaction");
+        String txn = text(up.path("id"));
+        if (txn == null) {
+            txn = text(root.path("last_transaction").path("id"));
+        }
         LocalDate settle = date(text(up.path("scheduled_settlement_date")));
-        // ponytail: the spec's create response carries no NPT id; read upcoming_transaction.id if Digio
-        // adds it, else null and the caller recovers the transaction by plan. Confirm on the first live debit.
-        return new DebitPlan(text(root.path("id")), text(root.path("status")), text(up.path("id")),
-                settle != null ? settle : r.settlementDate());
+        // ponytail: the create response carries no NPT id per the spec; null until the read-back has one.
+        return new DebitPlan(text(root.path("id")), text(root.path("status")), txn,
+                settle != null ? settle : fallbackSettle);
     }
 
     @Override

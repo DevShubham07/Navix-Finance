@@ -281,4 +281,38 @@ class DigioMandateClientTest {
 
         assertThat(c.cancelDebit("NPT1")).isFalse();
     }
+
+    private static final String BY_REF = BASE + "/v3/client/nach_debit/scheduled/by_reference_id/L42-R1";
+
+    @Test
+    void findDebitByRefReturnsEmptyOnNotFound() {
+        DigioMandateClient c = client();
+        server.expect(requestTo(BY_REF)).andRespond(
+                org.springframework.test.web.client.response.MockRestResponseCreators.withResourceNotFound());
+        assertThat(c.findDebitByRef("L42-R1")).isEmpty();
+        server.verify();
+    }
+
+    @Test
+    void findDebitByRefParsesPlanAndTransactionId() {
+        DigioMandateClient c = client();
+        server.expect(requestTo(BY_REF)).andRespond(withSuccess("""
+                {"id":"NSP1","status":"active","last_transaction":{"id":"NPT9"},
+                 "upcoming_transaction":{"state":"scheduled","scheduled_settlement_date":"2026-12-01 00:00:00"}}""",
+                MediaType.APPLICATION_JSON));
+
+        var plan = c.findDebitByRef("L42-R1").orElseThrow();
+
+        assertThat(plan.planId()).isEqualTo("NSP1");
+        assertThat(plan.txnId()).isEqualTo("NPT9");
+        assertThat(plan.scheduledSettlementDate()).isEqualTo(LocalDate.of(2026, 12, 1));
+    }
+
+    @Test
+    void findDebitByRefThrowsOnOtherErrors() {
+        DigioMandateClient c = client();
+        server.expect(requestTo(BY_REF)).andRespond(withServerError().contentType(MediaType.APPLICATION_JSON)
+                .body("{\"code\":\"SYSTEM_ERROR\",\"details\":\"EX3\"}"));
+        assertThatThrownBy(() -> c.findDebitByRef("L42-R1")).isInstanceOf(BusinessException.class);
+    }
 }

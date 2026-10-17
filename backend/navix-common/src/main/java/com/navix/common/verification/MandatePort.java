@@ -33,6 +33,13 @@ public interface MandatePort {
      */
     DebitPlan presentDebit(DebitRequest request);
 
+    /**
+     * Recover a debit by our {@code uniqueKey}; empty only when Digio has no plan under it (nothing was
+     * created), any other failure throws. Use this, never a re-present, after a timed-out
+     * {@link #presentDebit}: a blind retry debits the borrower twice. Also where {@code txnId} is resolved.
+     */
+    Optional<DebitPlan> findDebitByRef(String uniqueKey);
+
     /** Read a debit transaction by the provider's {@code NPT...} id. Read-only and retry-safe. */
     DebitOutcome debitStatus(String txnId);
 

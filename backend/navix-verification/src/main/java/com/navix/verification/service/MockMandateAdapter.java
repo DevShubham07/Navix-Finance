@@ -74,4 +74,10 @@ public class MockMandateAdapter implements MandatePort {
         refuseInProd();
         return true;
     }
+
+    @Override
+    public Optional<DebitPlan> findDebitByRef(String uniqueKey) {
+        refuseInProd();
+        return Optional.empty();
+    }
 }
