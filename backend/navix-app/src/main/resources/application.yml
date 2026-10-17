@@ -106,6 +106,9 @@ navix:
     # With provider=digio the app REFUSES TO START unless base-url, client-id, client-secret,
     # webhook-secret and corporate-config-id are all set (SSM /navix/<env>/navix/digio/...), by design.
     provider: ${NAVIX_DIGIO_PROVIDER:mock}
+    # NACH debit sweep (MandateDebitScheduler), 10:00 IST: early enough to beat the T-1 cutoff with the
+    # working day left to react. Off unless the `digio-debit` feature_flag row is enabled.
+    debit-cron: ${NAVIX_DIGIO_DEBIT_CRON:0 0 10 * * *}
     base-url: ${NAVIX_DIGIO_BASE_URL:https://api.digio.in}
     client-id: ${NAVIX_DIGIO_CLIENT_ID:}
     client-secret: ${NAVIX_DIGIO_CLIENT_SECRET:}
