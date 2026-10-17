@@ -303,6 +303,62 @@ class DashboardQueriesIntegrationTest {
         assertThat(business.targets(java.time.YearMonth.of(2026, 1), java.time.YearMonth.of(2026, 12))).isEmpty();
     }
 
+    /**
+     * The Collection Head's team tracker, one IST day at a time: interactions logged that day by the
+     * officer, the LATEST promise per case (a superseded promise does not count, nor one on a closed
+     * loan), verified part payments and every verified rupee on the officer's cases, closures and loans
+     * falling due. Reads {@code payment} only -- never {@code collection_payment}.
+     */
+    @Test
+    void collectionsTeamDayCountsOneOfficersDay() {
+        long officer = 7L;
+        LocalDate day = LocalDate.of(2026, 6, 15);
+        // C7 (due 15 Jun, part-paid 100k on 10 Jun) and C1 (due 30 Jun) are the officer's cases.
+        Long l7 = jdbc.queryForObject("select id from loan where customer_id = 7", Long.class);
+        Long l1 = jdbc.queryForObject("select id from loan where customer_id = 1", Long.class);
+        UUID c7 = UUID.randomUUID();
+        UUID c1 = UUID.randomUUID();
+        jdbc.update("insert into collection_case (id, loan_id, assigned_officer_id, created_at) values (?, ?, ?, now())",
+                c7, l7, officer);
+        jdbc.update("insert into collection_case (id, loan_id, assigned_officer_id, created_at) values (?, ?, ?, now())",
+                c1, l1, officer);
+        var at = day.atTime(10, 0).atZone(ZoneId.of("Asia/Kolkata")).toOffsetDateTime();
+        // Two calls on the day; the first promised the 15th, the later one moved it to the 16th.
+        jdbc.update("insert into interaction_log (id, collection_case_id, type, outcome, promise_to_pay_date,"
+                + " logged_at, logged_by_staff_id) values (?, ?, 'CALL', 'PROMISE_TO_PAY', ?, ?, ?)",
+                UUID.randomUUID(), c7, Date.valueOf(day), at, officer);
+        jdbc.update("insert into interaction_log (id, collection_case_id, type, outcome, promise_to_pay_date,"
+                + " logged_at, logged_by_staff_id) values (?, ?, 'CALL', 'PROMISE_TO_PAY', ?, ?, ?)",
+                UUID.randomUUID(), c7, Date.valueOf(day.plusDays(1)), at.plusHours(2), officer);
+        // C1's latest promise is for the 15th; a part payment lands the same day.
+        jdbc.update("insert into interaction_log (id, collection_case_id, type, outcome, promise_to_pay_date,"
+                + " logged_at, logged_by_staff_id) values (?, ?, 'CALL', 'PROMISE_TO_PAY', ?, ?, ?)",
+                UUID.randomUUID(), c1, Date.valueOf(day), at.plusHours(3), officer);
+        payment(l1, 200_000, "VERIFIED", "2026-06-15", true);
+        payment(l1, 50_000, "PENDING_VERIFICATION", "2026-06-15", true); // not verified -- never counted
+
+        DashboardScope scope = new DashboardScope("COLLECTION_HEAD", List.of(officer), false, "COLLECTION_HEAD", 9L);
+        Map<Long, Long> calls = service.collection().callsLoggedByOfficer(scope, day);
+        assertThat(calls.get(officer)).isEqualTo(3);
+
+        var promises = service.collection().promisesDueByOfficer(scope, day);
+        assertThat(promises.get(officer).count()).isEqualTo(1);        // C1 only -- C7's latest promise moved
+        assertThat(promises.get(officer).paise()).isEqualTo(1_270_000); // C1's cached outstanding
+        assertThat(service.collection().promisesDueByOfficer(scope, day.plusDays(1)).get(officer).count()).isEqualTo(1);
+
+        var parts = service.collection().partPaymentsByOfficer(scope, day);
+        assertThat(parts.get(officer).count()).isEqualTo(1);
+        assertThat(parts.get(officer).paise()).isEqualTo(200_000);
+
+        assertThat(service.collection().dueOnByOfficer(scope, day).get(officer)).isEqualTo(1); // C7 due 15 Jun
+        assertThat(service.collection().dueOnByOfficer(scope, LocalDate.of(2026, 6, 30)).get(officer)).isEqualTo(1);
+
+        // Everything above, assembled, for the real roster shape (no active officer 7 exists, so the
+        // SQL side is what this pins; the assembly is unit-tested in DashboardTeamDayTest).
+        service.collectionsTeamDay(ADMIN, day);
+        service.collectionsTeamDay(scope, day);
+    }
+
     @Test
     void staffFilesRecordsWorkWithoutAKeyAndByClickedDay() {
         Long app = jdbc.queryForObject("select id from loan_application where status = 'KYC_PENDING'", Long.class);
