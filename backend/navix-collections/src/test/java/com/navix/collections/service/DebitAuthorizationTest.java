@@ -108,10 +108,48 @@ class DebitAuthorizationTest {
     }
 
     @Test
-    void everyAttemptIsAudited() {
+    void theActorAndAmountAreHandedToTheDirectory() {
+        // The persisted audit (actor, MANUAL, amount) is asserted in DebitServiceTest.manualDebitPersistsActorTriggerAndAmount.
         actAs("COLLECTION_HEAD");
         service.debit(LOAN, 250_000L);
-        // actor id + amount reach the directory, which records them with Trigger.MANUAL on the debit row.
         verify(directory).presentForCase(LOAN, 250_000L, 9L);
+    }
+
+    @Test
+    void everyDenialIsLoggedAtWarnWithActorLoanAndCode() {
+        ch.qos.logback.classic.Logger lg =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(ManualDebitService.class);
+        var appender = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        appender.start();
+        lg.addAppender(appender);
+        try {
+            actAs("DSA");
+            assertThatThrownBy(() -> service.debit(LOAN, 111_111L)).isInstanceOf(BusinessException.class);
+
+            actAs("COLLECTION_HEAD");
+            when(flags.isEnabled("digio-debit", false)).thenReturn(false);
+            assertThatThrownBy(() -> service.debit(LOAN, null)).isInstanceOf(BusinessException.class);
+
+            when(flags.isEnabled("digio-debit", false)).thenReturn(true);
+            when(cases.findByLoanId(LOAN)).thenReturn(Optional.empty());
+            assertThatThrownBy(() -> service.debit(LOAN, null)).isInstanceOf(BusinessException.class);
+
+            when(cases.findByLoanId(LOAN)).thenReturn(Optional.of(theCase));
+            org.mockito.Mockito.doThrow(new BusinessException("CASE_NOT_ASSIGNED", "no"))
+                    .when(collections).assertCaseAccessible(caseId);
+            assertThatThrownBy(() -> service.debit(LOAN, null)).isInstanceOf(BusinessException.class);
+
+            var warns = appender.list.stream()
+                    .filter(e -> e.getLevel() == ch.qos.logback.classic.Level.WARN)
+                    .map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage).toList();
+            assertThat(warns).hasSize(4);
+            assertThat(warns.get(0)).contains("loanId=77", "actor=9", "code=FORBIDDEN_ROLE");
+            assertThat(warns.get(1)).contains("code=DEBIT_DISABLED");
+            assertThat(warns.get(2)).contains("code=CASE_NOT_FOUND");
+            assertThat(warns.get(3)).contains("code=CASE_NOT_ASSIGNED");
+            assertThat(String.join("|", warns)).doesNotContain("111111"); // no amounts in denial lines
+        } finally {
+            lg.detachAppender(appender);
+        }
     }
 }

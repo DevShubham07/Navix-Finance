@@ -105,6 +105,19 @@ class DebitServiceTest {
     }
 
     @Test
+    void manualDebitPersistsActorTriggerAndAmount() {
+        // Through the same adapter collections uses, against the real DebitService.
+        var result = new DebitDirectoryAdapter(service).presentForCase(LOAN, 123_000L, 42L);
+        ArgumentCaptor<MandateDebit> saved = ArgumentCaptor.forClass(MandateDebit.class);
+        verify(debits).saveAndFlush(saved.capture());
+        assertThat(saved.getValue().getActorId()).isEqualTo(42L);
+        assertThat(saved.getValue().getTriggeredBy()).isEqualTo(Trigger.MANUAL);
+        assertThat(saved.getValue().getAmountPaise()).isEqualTo(123_000L);
+        assertThat(saved.getValue().getUniqueKey()).startsWith("DBM");
+        assertThat(result.amountPaise()).isEqualTo(123_000L);
+    }
+
+    @Test
     void defaultsToFullOutstandingAsOfToday() {
         service.present(LOAN, null, Trigger.MANUAL, 9L);
         ArgumentCaptor<DebitRequest> req = ArgumentCaptor.forClass(DebitRequest.class);

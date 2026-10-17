@@ -34,6 +34,17 @@ public class ManualDebitService {
 
     public DebitDirectory.Result debit(Long loanId, Long amountPaise) {
         CurrentActor actor = ActorContext.get();
+        String actorId = actor == null ? null : actor.id();
+        try {
+            return attempt(actor, loanId, amountPaise);
+        } catch (BusinessException e) {
+            // Every denial is recorded BEFORE it propagates: who tried to use this on which loan, and why not.
+            log.warn("Manual debit denied loanId={} actor={} code={}", loanId, actorId, e.getCode());
+            throw e;
+        }
+    }
+
+    private DebitDirectory.Result attempt(CurrentActor actor, Long loanId, Long amountPaise) {
         String role = actor == null ? null : actor.role();
         if (role == null || !ALLOWED.contains(role)) {
             throw new BusinessException("FORBIDDEN_ROLE", "This action requires role COLLECTION_HEAD, COLLECTION_EXECUTIVE or ADMIN");
@@ -51,14 +62,9 @@ public class ManualDebitService {
         } catch (NumberFormatException e) {
             throw new BusinessException("FORBIDDEN_ROLE", "A staff identity is required");
         }
-        // Audit: the debit row stores actor + MANUAL trigger + amount once created; this line also covers refusals.
+        // The debit row stores actor + MANUAL trigger + amount once created (see DebitServiceTest).
         log.info("Manual debit requested loanId={} actor={} role={} actingRole={} amountPaise={} trigger=MANUAL",
                 loanId, actorId, role, actor.actingRole(), amountPaise);
-        try {
-            return debits.presentForCase(loanId, amountPaise, actorId);
-        } catch (BusinessException e) {
-            log.info("Manual debit refused loanId={} actor={} code={}", loanId, actorId, e.getCode());
-            throw e;
-        }
+        return debits.presentForCase(loanId, amountPaise, actorId);
     }
 }
