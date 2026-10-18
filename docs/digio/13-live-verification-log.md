@@ -514,3 +514,86 @@ Two things this incident also settled:
 deliberately omits the provider `message`, because that message echoes account numbers (§9 finding 4).
 That tradeoff held up — the code plus the schema was enough to find this in one pass — but it is worth
 knowing that a field-level reason will never be in our logs.
+
+
+## 12. NACH debit presented in production — the whole path proven except settlement (2026-10-18)
+
+First real debit, through the platform: `POST /api/collections/loans/219/debit` with
+`amountPaise=100`, actor ADMIN acting as COLLECTION_HEAD, against UMRN
+`PUNB7031810261019193` (itself the first mandate registered through the offer journey, after the
+`customer_ref_number` fix in §11).
+
+```
+HTTP 200 in 198ms
+mandate_debit: status=SCHEDULED  amount_paise=100  unique_key=DBM219-1
+               digio_plan_id=NSP26101821213603438FTSIW6DIAGAP
+               digio_txn_id=NPT261018212136038K9ADQ7BAXADX54
+               digio_status=completed  settlement_date=2026-10-19
+```
+
+### What this settles
+
+**1. `txnId` IS returned on create.** `DebitService` tolerates a null `txnId` defensively; it does not
+need to. The create response carries both a plan id (`NSP…`) and a transaction id (`NPT…`).
+
+**2. `digio_status: "completed"` on create is the PLAN's status, not the debit's.** The plan lifecycle
+enum is `['ACTIVE','CANCELLED','PAUSED','COMPLETED']` — a one-payment plan is COMPLETED as soon as its
+single transaction is scheduled. The *transaction* status is a different enum entirely. Reading
+`completed` as success would credit a payment that has not happened; `applyOutcome` does not recognise
+it, logs "Unrecognised debit status" and quarantines, which is the correct outcome by accident of
+failing closed. **Do not add `COMPLETED` to that switch.**
+
+**3. The transaction-status response shape is confirmed**, against the live transaction:
+
+```jsonc
+GET /v3/client/nach_debit/transaction/{txnId}  → 200
+{ "id": "NPT…", "umrn": "…", "state": "scheduled", "customer": {…},
+  "details": { "status": "new", "amount_in_paise": 100, "amount": 1,
+               "ready_to_process_at": "2026-10-19 00:00:00",
+               "txn_ref": "K9ADQ7BAXADX54", "type": "nach_debit",
+               "sponsor_bank_id": "YESB0000001" } }
+```
+
+`DigioMandateClient.debitStatus` reads `details.status` / `details.utr` / `details.failure_code` /
+`details.failure_reason` / `details.amount_in_paise` — all correct. `utr`, `failure_code` and
+`failure_reason` are simply absent until the transaction resolves.
+
+**4. ⚠ Transaction statuses come back LOWERCASE.** Live: `"new"`. Every schema lists the enum
+uppercase (`NEW`, `PAYMENT_SUCCESS`, …). `applyOutcome` upper-cases before matching, so it works — but
+this is the same write-vs-read vocabulary drift as `frequency` (§9 finding 2), and it is the reason
+`TERMINAL_MARKERS` normalises case and punctuation before matching a `failure_code`. A mapper that
+compared raw strings against the documented enum would match **nothing**.
+
+**5. T+1 is the floor, and nothing can force it earlier.** `ready_to_process_at` is midnight of the
+settlement date, and the transaction action API offers only
+`['cancel', 'reattempt', 'update', 'approve']` — there is no "process now". `settle = today.plusDays(1)`
+in `DebitService` is the earliest the rail permits, not a conservative choice.
+
+**6. `unique_key` with a hyphen is accepted** (`DBM219-1`), as `createScheduledPlan`'s
+`^[A-Za-z0-9-_]*$` predicted. The §11 mandate bug does not extend to the debit path.
+
+### Still unproven after this
+
+- **The `failure_code` vocabulary.** No debit has failed yet, so `TERMINAL_MARKERS` remains our reading
+  of the NPCI return-reason list rather than observed values.
+- **The success path end to end**: `PAYMENT_SUCCESS`, the UTR, and `creditCollectionPayment` writing a
+  VERIFIED payment. Settlement is 2026-10-19.
+- **Whether a repeated `unique_key` is deduped by Digio** — the double-charge backstop on the
+  `FAILED_TECHNICAL` recovery path.
+
+### Operational notes this run surfaced
+
+- **Reconcile latency is up to ~24h.** The sweep runs once daily at 10:00 IST, so a payment that
+  finalises at 14:00 is not known to us until 10:00 the next day; the row shows a stale
+  `SCHEDULED`/`IN_PROGRESS` until then. This is the deferred webhook receiver's cost, and it is
+  cosmetic only — `creditSuccess` sets `paidOn` to the **settlement date**, not the reconcile date
+  (`paidOn = settlementDate unless it is in the future`), so our latency never costs a borrower a
+  day of penalty.
+- **NPCI holidays reschedule automatically** (`06-` §5, `02-` §4): a settlement date falling on a
+  non-working day moves to the next working day and surfaces as `PAYMENT_DELAYED` → `IN_PROGRESS`,
+  which `shouldPresent` treats as in-flight, so no duplicate presentation is made. `DebitService`
+  therefore needs no holiday calendar of its own.
+- **A part payment does not stop the penalty.** The late penalty is 2% **of principal** per day
+  (capped at 30 days), not of the outstanding balance, so a ₹1 debit on a ₹1,000 advance reduces the
+  total owed by ₹1 while the loan continues accruing ₹20/day. A test debit leaves the loan overdue
+  and growing; restore its due date or settle it afterwards.
