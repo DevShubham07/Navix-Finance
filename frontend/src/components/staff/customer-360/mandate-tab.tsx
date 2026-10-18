@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, ShieldOff } from "lucide-react";
 import { EmptyState, Skeleton, toast } from "@/components/ui";
 import { useCan, errMessage } from "@/components/staff/pipeline/hooks";
-import { collectionsApi, staffApi } from "@/lib/api/applications";
+import { collectionsApi, featureFlagsApi, staffApi } from "@/lib/api/applications";
 import { formatDateTime } from "@/lib/utils";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -59,6 +59,12 @@ export function MandateTab({
 
   // The case (and so the live outstanding + DPD) is only readable by staff allowed to work it; an executive
   // on someone else's case gets CASE_NOT_ASSIGNED here and simply sees no debit action.
+  // The server reads digio-debit with defaultWhenMissing=FALSE, so the UI must too: require an explicit
+  // true. Without this the box rendered whatever the flag said, and an officer filled in an amount, hit
+  // confirm and got DEBIT_DISABLED — a disabled feature that looks exactly like a bug. Same query key as
+  // the shell's, so react-query serves it from cache rather than refetching per tab.
+  const { data: flags } = useQuery({ queryKey: ["feature-flags"], queryFn: () => featureFlagsApi.get() });
+  const debitEnabled = flags?.["digio-debit"] === true;
   const mayDebit = can("mandate:debit") && loanId != null;
   const caseQ = useQuery({
     queryKey: ["staff-debit-case", loanId],
@@ -109,7 +115,7 @@ export function MandateTab({
 
   const dc = caseQ.data;
   const outstanding = dc?.loan?.outstandingPaise ?? null;
-  const showDebit = mayDebit && m.status === "ACTIVE" && !!m.accountLast4 && dc != null && outstanding != null && outstanding > 0 && dc.dpd >= 1;
+  const showDebit = debitEnabled && mayDebit && m.status === "ACTIVE" && !!m.accountLast4 && dc != null && outstanding != null && outstanding > 0 && dc.dpd >= 1;
   const amountPaise = parseRupeesToPaise(amountText);
   const amountError =
     amountText.trim() === "" ? null

@@ -46,6 +46,7 @@ class MandateDebitSchedulerTest {
         when(flags.isEnabled("digio-debit", false)).thenReturn(true);
         when(debits.findFirstByLoanIdOrderByAttemptNoDesc(anyLong())).thenReturn(Optional.empty());
         when(debitService.configured()).thenReturn(true);
+        org.mockito.Mockito.lenient().when(debitService.hasUsableMandate(anyLong())).thenReturn(true);
         sweep = new MandateDebitScheduler(debitService, debits, loans, new DpdCalculator(), flags);
     }
 
@@ -207,5 +208,27 @@ class MandateDebitSchedulerTest {
 
     private static DebitService.DebitView view(Status st) {
         return new DebitService.DebitView(1L, 1L, st, 0, null, 1, Trigger.SCHEDULED, null, false, false);
+    }
+
+    /**
+     * Most overdue loans hold no mandate. Before this filter the sweep called present() on every one of
+     * them, logging NO_USABLE_MANDATE per loan per day and burying real failures. prepare() still
+     * refuses independently — this only keeps the log readable.
+     */
+    @Test
+    void skipsOverdueLoansWithNoUsableMandateWithoutCallingPresent() {
+        when(loans.listCollectible(any())).thenReturn(List.of(loan(5L, 3)));
+        when(debitService.hasUsableMandate(5L)).thenReturn(false);
+        sweep.sweep();
+        verify(debitService, never()).present(anyLong(), any(), any(), any());
+    }
+
+    /** ...but a loan that DOES hold one is still presented, so the filter cannot silence collection. */
+    @Test
+    void stillPresentsWhenTheLoanHoldsAUsableMandate() {
+        when(loans.listCollectible(any())).thenReturn(List.of(loan(6L, 3)));
+        when(debitService.hasUsableMandate(6L)).thenReturn(true);
+        sweep.sweep();
+        verify(debitService).present(6L, null, Trigger.SCHEDULED, null);
     }
 }

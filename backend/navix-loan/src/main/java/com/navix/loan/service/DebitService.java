@@ -218,6 +218,21 @@ public class DebitService {
         return s == null ? "" : s.trim().toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9]+", "_");
     }
 
+    /**
+     * Cheap pre-check for the sweep: does this loan have a mandate worth presenting against at all?
+     *
+     * <p>Delegates to the SAME {@code usableMandateForLoan} predicate {@link #prepare} enforces — it is
+     * deliberately not a second copy of the rule, because a money-affecting rule in two places drifts.
+     * {@code prepare} remains the authority; this exists only so the daily sweep stops calling
+     * {@code present()} on every mandate-less overdue loan and burying real failures under one
+     * {@code NO_USABLE_MANDATE} warning per loan per day.
+     */
+    public boolean hasUsableMandate(Long loanId) {
+        return mandateService.usableMandateForLoan(loanId)
+                .filter(m -> m.getUmrn() != null && !m.getUmrn().isBlank())
+                .isPresent();
+    }
+
     // ---- presentation ------------------------------------------------------------------------------------
 
     private Prepared prepare(Long loanId, Long amountPaise, Trigger trigger, Long actorId) {

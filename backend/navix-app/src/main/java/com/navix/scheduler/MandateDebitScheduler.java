@@ -131,6 +131,13 @@ public class MandateDebitScheduler {
         if (d < ATTEMPT_DPD[0] || d > ATTEMPT_DPD[ATTEMPT_DPD.length - 1]) {
             return false;
         }
+        // Most overdue loans hold no mandate, and present() would refuse each one with NO_USABLE_MANDATE
+        // — caught, logged, and repeated every single day. That buries a genuine failure under noise, so
+        // skip them here. This is a FILTER, not the guard: DebitService.prepare still refuses on its own,
+        // and this calls the same predicate rather than restating it.
+        if (!debitService.hasUsableMandate(loan.loanId())) {
+            return false;
+        }
         int slotsReached = 0;
         for (int s : ATTEMPT_DPD) {
             if (d >= s) {
