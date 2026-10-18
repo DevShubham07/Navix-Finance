@@ -1459,6 +1459,9 @@ export const borrowerApi = {
   /** Read back the (masked) profile. */
   getProfile: (id: number) => bff<ProfileView>(`${BORROWER_BASE}/${id}/profile`, "GET"),
 
+  /** The borrower's own eMandate (auto-repayment). Same view staff see; it is all their own data. */
+  mandate: (id: number) => bff<MandateView | null>(`${BORROWER_BASE}/${id}/mandate`, "GET"),
+
   /** The borrower's notification preferences (server-persisted; honored by the engine). */
   getPreferences: () => bff<BorrowerPreferences>(`/api/borrower/preferences`, "GET"),
   updatePreferences: (prefs: BorrowerPreferences) =>
@@ -2203,6 +2206,13 @@ export const staffApi = {
   // --- customer review (any reviewing role) ---
   /** The customer's KYC details (PAN masked). */
   getProfile: (id: number) => bff<ProfileView>(`${STAFF_BASE}/${id}/profile`, "GET"),
+
+  /**
+   * Invite this customer to set up auto-repayment — the only route for someone whose loan was already
+   * live when the mandate step shipped. Returns the link to copy; the engine also sends it.
+   */
+  mandateInvite: (id: number) =>
+    bff<{ link: string }>(`${STAFF_BASE}/${id}/mandate/invite`, "POST", {}),
 
   /** The application's uploaded documents (metadata). */
   documents: (id: number) => bff<DocumentView[]>(`${STAFF_BASE}/${id}/documents`, "GET"),

@@ -3,6 +3,7 @@ package com.navix.loan.service;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.featureflag.FeatureFlagService;
 import com.navix.common.notification.event.MandateBankUnsupportedEvent;
+import com.navix.common.notification.event.MandateInviteEvent;
 import com.navix.common.verification.MandatePort;
 import com.navix.common.verification.MandatePort.BankCapability;
 import com.navix.common.verification.MandatePort.MandateRequest;
@@ -68,6 +69,10 @@ public class MandateService {
     private final LoanMath loanMath;
     private final FeatureFlagService featureFlags;
     private final ApplicationEventPublisher eventPublisher;
+
+    /** Builds the invite link; same property the password-reset emails use. */
+    @org.springframework.beans.factory.annotation.Value("${navix.app.frontend-base-url:http://localhost:3000}")
+    private String frontendBaseUrl = "http://localhost:3000"; // initialised so a direct `new` is safe
 
     private volatile Map<String, BankCapability> banks;
     private volatile long banksLoadedAt;
@@ -255,6 +260,49 @@ public class MandateService {
             throw new BusinessException("MANDATE_ATTEMPTS_EXHAUSTED",
                     "Too many mandate attempts. Our team will get in touch.");
         }
+    }
+
+    /**
+     * Invites a customer to register a mandate outside the offer journey — the only route for someone
+     * whose loan is already live, because they never saw the mandate step.
+     *
+     * <p>Returns the link so staff can copy it into whatever channel they are already using, and
+     * publishes {@link MandateInviteEvent} so the engine also sends it on every channel the customer
+     * has (CLAUDE.md section 12: publish an event, never call the engine, and never depend on delivery).
+     *
+     * <p>The link points at OUR page, not Digio's {@code authentication_url}: that url expires and
+     * belongs to one attempt, so a message carrying it would rot. Nothing is filed here — the borrower
+     * opening the page is what mints an attempt, so an invite is free and repeatable.
+     *
+     * <p>Refuses when there is no account to mandate. "Everyone without a mandate" cannot include a
+     * customer whose bank details we have never proven: {@code init} would reject them on arrival, and
+     * a link that leads to an error is worse than an honest refusal here.
+     */
+    @Transactional
+    public String invite(Long appId) {
+        LoanApplication app = applications.findById(appId)
+                .orElseThrow(() -> new BusinessException("APPLICATION_NOT_FOUND", "Application not found"));
+        if (hasUsableMandate(app)) {
+            throw new BusinessException("MANDATE_ALREADY_ACTIVE", "This customer already has an active mandate");
+        }
+        String account = app.getDisbursalAccountNumber() == null ? "" : app.getDisbursalAccountNumber().trim();
+        String ifsc = app.getDisbursalIfsc() == null ? "" : app.getDisbursalIfsc().trim();
+        if (!ACCOUNT.matcher(account).matches() || ifsc.length() != 11) {
+            throw new BusinessException("MANDATE_NO_ACCOUNT",
+                    "No verified bank account on file for this customer, so a mandate cannot be set up");
+        }
+        CustomerProfile profile = profiles.findByApplicationId(appId).orElse(null);
+        // The existing offer-journey screen, deliberately NOT a new standalone page.
+        // LIMITATION: that page's useOffer() redirects any application whose status is not SANCTIONED to
+        // /loan/status, so this link only completes for a borrower still inside the offer journey. For a
+        // customer whose loan is already live it will bounce — reaching them needs a few lines in that
+        // page, not a new one. Staff-copied links and the message itself still work; the self-serve
+        // completion for live loans does not yet.
+        String link = frontendBaseUrl.replaceAll("/+$", "") + "/loan/mandate";
+        eventPublisher.publishEvent(new MandateInviteEvent(app.getCustomerId(), appId,
+                profile == null ? null : profile.getFullName(), link, Instant.now()));
+        log.info("Mandate invite sent applicationId={} customerId={}", appId, app.getCustomerId());
+        return link;
     }
 
     /** 2 x max(formula limit, sanctioned principal); zero would satisfy any reuse check, so it is refused. */

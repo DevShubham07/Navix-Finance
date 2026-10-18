@@ -516,6 +516,51 @@ class MandateServiceTest {
         assertThat(crn).matches("^[0-9A-Za-z]{1,20}$").doesNotContain("-").contains("4471");
     }
 
+    // ---- invite(): the only route for someone whose loan is already live -----------------------------
+
+    /** The link is ours, never Digio's expiring authentication_url, and nothing is filed by inviting. */
+    @Test
+    void invitePublishesALinkToOurOwnPageAndFilesNothing() {
+        String link = service.invite(1L);
+        assertThat(link).isEqualTo("http://localhost:3000/loan/mandate");
+        var c = ArgumentCaptor.forClass(com.navix.common.notification.event.MandateInviteEvent.class);
+        verify(eventPublisher).publishEvent(c.capture());
+        assertThat(c.getValue().link()).isEqualTo(link);
+        assertThat(c.getValue().customerId()).isEqualTo(4471L);
+        assertThat(c.getValue().name()).isEqualTo("Asha Rao");
+        verify(port, never()).register(any());
+    }
+
+    /**
+     * "Everyone without a mandate" cannot include someone whose bank details were never proven: init
+     * would refuse them on arrival, and a link that leads to an error is worse than refusing here.
+     */
+    @Test
+    void inviteRefusesWhenThereIsNoVerifiedAccountToMandate() {
+        app.setDisbursalAccountNumber(null);
+        assertThatThrownBy(() -> service.invite(1L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "MANDATE_NO_ACCOUNT");
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    /** No point nagging someone who already has one. */
+    @Test
+    void inviteRefusesWhenTheCustomerAlreadyHoldsAUsableMandate() {
+        Mandate active = new Mandate();
+        active.setStatus(Mandate.Status.ACTIVE);
+        active.setUmrn("UMRN1");
+        active.setAccountLast4("9012");
+        active.setIfsc("HDFC0001234");
+        active.setMaximumAmountPaise(99_999_00L);
+        when(mandates.findFirstByCustomerIdAndStatusAndUmrnIsNotNullOrderByIdDesc(4471L, Mandate.Status.ACTIVE))
+                .thenReturn(Optional.of(active));
+        assertThatThrownBy(() -> service.invite(1L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "MANDATE_ALREADY_ACTIVE");
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
     // ---- the gates on init(): it is a borrower-reachable endpoint, not only a journey step ------------
 
     /**

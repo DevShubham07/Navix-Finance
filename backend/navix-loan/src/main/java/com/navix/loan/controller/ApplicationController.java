@@ -429,12 +429,40 @@ public class ApplicationController {
         return ApiResponse.ok(ApplicationView.of(flow.adminForceDisbursementPending(id, req.notes())));
     }
 
-    /** Staff view of the latest eMandate attempt: no authentication url, last four of the account only. */
+    /**
+     * The latest eMandate attempt: no authentication url, last four of the account only.
+     *
+     * <p>Readable by the owning borrower as well as staff — it is their own mandate, and the dashboard
+     * shows them their UMRN once a loan is live so auto-repayment is visible rather than invisible.
+     * Every field in {@code MandateView} is the borrower's own data; nothing staff-only is in it.
+     */
     @GetMapping("/{id}/mandate")
     public ApiResponse<com.navix.loan.service.MandateService.MandateView> mandate(@PathVariable Long id) {
-        requireStaff();
+        requireBorrowerOwnsOrStaff(id);
         return ApiResponse.ok(mandateService.staffView(id).orElse(null));
     }
+
+    /**
+     * Invite this customer to set up auto-repayment, for someone who never saw the mandate step
+     * because their loan was already live. Returns the link so staff can copy it, and the
+     * notification engine also sends it on every channel the customer has.
+     *
+     * <p>Authorisation is an ALLOWLIST, like the manual debit: this sends a message to a real customer
+     * in our name, so a role we have not thought about must not inherit it by omission (CLAUDE.md
+     * section 7 — several controllers here gate with a deny-list and are open-by-default).
+     */
+    @PostMapping("/{id}/mandate/invite")
+    public ApiResponse<java.util.Map<String, String>> mandateInvite(@PathVariable Long id) {
+        String role = ActorContext.get() == null ? null : ActorContext.get().role();
+        if (role == null || !MANDATE_INVITE_ROLES.contains(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE",
+                    "This action requires role COLLECTION_HEAD, COLLECTION_EXECUTIVE, DISBURSEMENT_HEAD or ADMIN");
+        }
+        return ApiResponse.ok(java.util.Map.of("link", mandateService.invite(id)));
+    }
+
+    private static final java.util.Set<String> MANDATE_INVITE_ROLES = java.util.Set.of(
+            "COLLECTION_HEAD", "COLLECTION_EXECUTIVE", "DISBURSEMENT_HEAD", "ADMIN");
 
     /** DISBURSEMENT_HEAD/ADMIN: let a BANK_UNSUPPORTED file through the mandate gate (reason required). */
     @PostMapping("/{id}/mandate/override")

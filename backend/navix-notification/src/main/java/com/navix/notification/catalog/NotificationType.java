@@ -161,6 +161,17 @@ public enum NotificationType {
      */
     MANDATE_BANK_UNSUPPORTED(SYSTEM, Set.of(IN_APP), Set.of(TO_DISBURSEMENT_HEADS)),
 
+    /**
+     * Staff invited a customer to set up auto-repayment outside the offer journey (their loan is
+     * already live, so they never saw the mandate step). All four channels on purpose — the whole
+     * point is to reach someone who is not currently in the app.
+     *
+     * <p>SMS and WhatsApp will NOT deliver until an operator approves the DLT template and the Meta
+     * template {@code db_mandate_invite}; the dispatcher logs the failure per channel and the other
+     * channels still go, which is why nothing here depends on a send succeeding (CLAUDE.md section 12).
+     */
+    MANDATE_SETUP_INVITE(SYSTEM, Set.of(IN_APP, SMS, EMAIL, WHATSAPP), Set.of(TO_BORROWER)),
+
     // ---- REFERRAL ----
     // A referral qualified (referred borrower's first loan disbursed) — alert the Disbursement Heads
     // who settle the two pending ₹-reward payouts.

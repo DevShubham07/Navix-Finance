@@ -11,6 +11,7 @@ import com.navix.common.notification.event.VerificationStepLinkEvent;
 import com.navix.common.notification.event.KycReminderEvent;
 import com.navix.common.notification.event.WaitlistSubmittedEvent;
 import com.navix.common.notification.event.MandateBankUnsupportedEvent;
+import com.navix.common.notification.event.MandateInviteEvent;
 import com.navix.common.notification.event.PaymentReminderEvent;
 import com.navix.common.notification.event.ProviderHealthEvent;
 import com.navix.common.notification.event.ReferralPayoutCreatedEvent;
@@ -392,6 +393,21 @@ public class NotificationEventListener {
                 .applicationId(e.applicationId())
                 .put("bankName", e.bankName() == null ? "The borrower's bank" : e.bankName())
                 .put("applicationId", String.valueOf(e.applicationId()))
+                .build());
+    }
+
+    /**
+     * Staff invited a customer to set up auto-repayment out of band. Goes on every channel we have,
+     * because the recipient is by definition not in the app right now.
+     */
+    @Async("notificationExecutor")
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onMandateInvite(MandateInviteEvent e) {
+        dispatcher.dispatch(NotificationType.MANDATE_SETUP_INVITE, NotificationContext.builder()
+                .customerId(e.customerId())
+                .applicationId(e.applicationId())
+                .put("name", e.name() == null || e.name().isBlank() ? "Customer" : e.name())
+                .put("link", e.link())
                 .build());
     }
 

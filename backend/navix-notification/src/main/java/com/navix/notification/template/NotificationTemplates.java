@@ -203,6 +203,21 @@ public class NotificationTemplates {
                 "Hi {name},\n\nUnfortunately your loan application #{applicationId} was declined at the "
                         + "disbursement stage.\n\n— DhanBoost");
 
+        inApp(NotificationType.MANDATE_SETUP_INVITE, "Set up auto-repayment",
+                "Set up auto-repayment for your DhanBoost loan so your instalment is collected "
+                        + "automatically. It takes a minute: {link}");
+        // Rs. not the rupee glyph, and the URL must be portal-whitelisted (CLAUDE.md section 14).
+        // GO-LIVE: this wording needs DLT approval before it can send at all.
+        sms(NotificationType.MANDATE_SETUP_INVITE,
+                "Dear {name}, set up auto-repayment for your DhanBoost loan so we can collect your "
+                        + "instalment automatically. Complete it here: {link} - DhanBoost");
+        email(NotificationType.MANDATE_SETUP_INVITE, "Set up auto-repayment for your DhanBoost loan",
+                "Hi {name},\n\nYou can now set up auto-repayment (eMandate) for your DhanBoost loan. "
+                        + "Once it is in place your instalment is collected from your bank account "
+                        + "automatically on the due date, so you do not have to remember to pay.\n\n"
+                        + "Set it up here: {link}\n\nYou authorise it with your bank, and you can cancel "
+                        + "it with your bank at any time.\n\n— DhanBoost");
+
         inApp(NotificationType.LOAN_DISBURSED, "Money on the way",
                 "Your loan is disbursed: {netDisbursed} credited. Repay {totalRepayable} by {dueDate}.");
         sms(NotificationType.LOAN_DISBURSED,
@@ -375,6 +390,8 @@ public class NotificationTemplates {
                 "name", "applicationId", "amount", "previousAmount");
         whatsapp(NotificationType.LOAN_LIMIT_REVISED, "db_limit_increased", "name", "limit");
         whatsapp(NotificationType.DISBURSEMENT_REJECTED, "db_disbursal_declined", "name", "applicationId");
+        // Template name must already exist and be approved at Meta; the wording lives there, not here.
+        whatsapp(NotificationType.MANDATE_SETUP_INVITE, "db_mandate_invite", "name", "link");
         whatsapp(NotificationType.LOAN_DISBURSED, "db_loan_disbursed",
                 "name", "netDisbursed", "totalRepayable", "dueDate");
         whatsapp(NotificationType.SANCTION_LETTER_SIGNED, "db_sanction_letter_signed", "name", "applicationId");

@@ -2,8 +2,8 @@
 
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, ShieldOff } from "lucide-react";
-import { EmptyState, Skeleton, toast } from "@/components/ui";
+import { Check, Copy, Loader2, Send, ShieldCheck, ShieldOff } from "lucide-react";
+import { Badge, EmptyState, Skeleton, toast } from "@/components/ui";
 import { useCan, errMessage } from "@/components/staff/pipeline/hooks";
 import { collectionsApi, featureFlagsApi, staffApi } from "@/lib/api/applications";
 import { formatDateTime } from "@/lib/utils";
@@ -14,6 +14,15 @@ const STATUS_LABEL: Record<string, string> = {
   AUTHORIZATION_FAILED: "Authorisation failed",
   EXPIRED: "Expired",
   BANK_UNSUPPORTED: "Bank does not support online mandates",
+};
+
+/** Badge tone per mandate state — the status is the first thing staff need, so it leads the card. */
+const STATUS_TONE: Record<string, "success" | "warning" | "error" | "neutral"> = {
+  ACTIVE: "success",
+  PENDING_AUTHORIZATION: "warning",
+  AUTHORIZATION_FAILED: "error",
+  EXPIRED: "error",
+  BANK_UNSUPPORTED: "warning",
 };
 
 const inr2 = (paise: number) =>
@@ -66,6 +75,8 @@ export function MandateTab({
   const { data: flags } = useQuery({ queryKey: ["feature-flags"], queryFn: () => featureFlagsApi.get() });
   const debitEnabled = flags?.["digio-debit"] === true;
   const mayDebit = can("mandate:debit") && loanId != null;
+  // Same roles the backend allowlists on POST .../mandate/invite, plus the Disbursement Head.
+  const mayInvite = can("mandate:debit") || can("mandate:override");
   const caseQ = useQuery({
     queryKey: ["staff-debit-case", loanId],
     queryFn: () => collectionsApi.caseByLoan(loanId as number),
@@ -93,6 +104,28 @@ export function MandateTab({
     },
   });
 
+  // Invite: for a customer who never saw the mandate step because their loan was already live. Files
+  // nothing — it returns the link and asks the notification engine to send it on every channel.
+  const [inviteLink, setInviteLink] = React.useState<string>();
+  const [copied, setCopied] = React.useState(false);
+  const invite = useMutation({
+    mutationFn: () => staffApi.mandateInvite(applicationId as number),
+    onSuccess: (r) => {
+      setInviteLink(r.link);
+      toast.success("Invite sent; link ready to copy");
+    },
+  });
+  const copyLink = async () => {
+    if (!inviteLink) return;
+    try {
+      await navigator.clipboard.writeText(inviteLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error("Couldn't copy — select the link and copy it manually");
+    }
+  };
+
   if (applicationId == null) {
     return <EmptyState icon={<ShieldOff size={28} />} title="No application yet." hint="A mandate is registered after sanction." />;
   }
@@ -104,11 +137,9 @@ export function MandateTab({
   }
 
   const rows: [string, string][] = [
-    ["Status", (STATUS_LABEL[m.status] ?? m.status) + (m.carriedOver ? " (carried over from an earlier advance)" : "")],
-    ["UMRN", m.umrn ?? "—"],
     ["Bank", m.bankName ?? "—"],
     ["Account", m.accountLast4 ? `•••• ${m.accountLast4}` : "—"],
-    ["Authorised at", m.authenticatedAt ? formatDateTime(m.authenticatedAt) : "—"],
+    ["Authorised", m.authenticatedAt ? formatDateTime(m.authenticatedAt) : "—"],
     ["Attempt", String(m.attemptNo)],
   ];
   if (m.rejectReason) rows.push(["Reject reason", m.rejectReason]);
@@ -124,15 +155,72 @@ export function MandateTab({
     : null;
 
   return (
-    <div className="space-y-4">
-      <dl className="grid max-w-xl grid-cols-[10rem_1fr] gap-y-2 text-sm">
-        {rows.map(([k, v]) => (
-          <React.Fragment key={k}>
-            <dt className="text-muted">{k}</dt>
-            <dd className="font-medium text-navy">{v}</dd>
-          </React.Fragment>
-        ))}
-      </dl>
+    <div className="space-y-5">
+      <div className="max-w-2xl overflow-hidden rounded-lg border border-line bg-white shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-grey-50 px-4 py-3">
+          <div className="flex items-center gap-2">
+            <ShieldCheck size={16} className={m.status === "ACTIVE" ? "text-success-600" : "text-muted"} />
+            <span className="text-sm font-semibold text-navy">Auto-repayment mandate</span>
+          </div>
+          <Badge variant={STATUS_TONE[m.status] ?? "neutral"}>{STATUS_LABEL[m.status] ?? m.status}</Badge>
+        </div>
+
+        {m.umrn ? (
+          <div className="border-b border-line px-4 py-3">
+            <div className="text-[11px] uppercase tracking-wide text-muted">UMRN</div>
+            <div className="mt-0.5 font-mono text-sm font-semibold text-navy">{m.umrn}</div>
+          </div>
+        ) : null}
+
+        <dl className="grid grid-cols-[8rem_1fr] gap-y-2 px-4 py-3 text-sm">
+          {rows.map(([k, v]) => (
+            <React.Fragment key={k}>
+              <dt className="text-muted">{k}</dt>
+              <dd className="font-medium text-navy">{v}</dd>
+            </React.Fragment>
+          ))}
+        </dl>
+
+        {m.carriedOver ? (
+          <p className="border-t border-line bg-grey-50 px-4 py-2 text-xs text-muted">
+            Carried over from an earlier advance — not registered on this application.
+          </p>
+        ) : null}
+      </div>
+
+      {m.status !== "ACTIVE" && mayInvite && (
+        <div className="max-w-2xl space-y-2 rounded-lg border border-line bg-grey-50 p-4">
+          <div className="flex items-center gap-2 text-sm font-semibold text-navy">
+            <Send size={15} /> Invite the customer to set up auto-repayment
+          </div>
+          <p className="text-xs leading-relaxed text-muted">
+            Sends the customer a link on every channel they have, and gives you the same link to copy.
+            Nothing is filed until they open it and authorise with their bank, so this is safe to repeat.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => invite.mutate()}
+              disabled={invite.isPending}
+              className="btn btn-sm btn-navy disabled:opacity-50"
+            >
+              {invite.isPending && <Loader2 size={14} className="animate-spin" />} Send invite
+            </button>
+            {inviteLink && (
+              <button type="button" onClick={() => void copyLink()} className="btn btn-sm">
+                {copied ? <Check size={14} className="text-success-600" /> : <Copy size={14} />}
+                {copied ? "Copied" : "Copy link"}
+              </button>
+            )}
+          </div>
+          {inviteLink && (
+            <p className="break-all rounded border border-line bg-white px-2 py-1.5 font-mono text-[11px] text-muted">
+              {inviteLink}
+            </p>
+          )}
+          {invite.isError && <p className="text-xs text-error-700">{errMessage(invite.error)}</p>}
+        </div>
+      )}
 
       {showDebit && (
         <div className="max-w-md space-y-2 rounded border border-line bg-grey-50 p-3">

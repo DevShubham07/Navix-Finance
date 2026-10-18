@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Wallet, CalendarClock, ArrowRight, AlertTriangle, CheckCircle2, Sparkles, FileClock,
+  Wallet, CalendarClock, ArrowRight, AlertTriangle, CheckCircle2, Sparkles, FileClock, ShieldCheck,
 } from "lucide-react";
 import { Badge } from "@/components/ui";
 import type { BorrowerStatus } from "@/lib/domain/borrower";
@@ -24,7 +24,7 @@ import {
 } from "@/lib/api/applications";
 import { useOnboardingStore } from "@/stores/application-store";
 import { daysBetween } from "@/lib/calc/loan-math";
-import { formatINR0, formatDate } from "@/lib/utils";
+import { formatINR0, formatDate, formatDateTime } from "@/lib/utils";
 import {
   nextBorrowerMilestone,
   type BorrowerMilestoneIcon,
@@ -64,6 +64,16 @@ export default function DashboardPage() {
   // it reaches the borrower on the application (revamp.md decision 33). Zero until they do.
   const approvedPaise = app ? preferredApprovedAmountPaise(app) : null;
   const limitRupees = approvedPaise != null ? Math.round(approvedPaise / 100) : 0;
+
+  // Auto-repayment (eMandate). Shown on a live loan so the borrower can see that a debit will happen
+  // and what authorises it — a mandate the lender can act on but the borrower cannot see is not consent
+  // they can check. 404/null simply means they have none, which is the common case today.
+  const mandateQuery = useQuery({
+    queryKey: ["live-mandate", appId],
+    queryFn: () => borrowerApi.mandate(appId as number),
+    enabled: appId != null,
+    retry: false,
+  });
 
   // "Repaid" is the sum of VERIFIED payments — not total − outstanding, since the (now penalty- and
   // prepayment-aware) outstanding can be below the on-time total without any payment being made.
@@ -168,6 +178,30 @@ export default function DashboardPage() {
           ) : (
             <PreApprovedBanner limitRupees={limitRupees} href="/signup/start" />
           )}
+
+          {active && mandateQuery.data?.status === "ACTIVE" && mandateQuery.data.umrn ? (
+            <div className="mt-4 rounded border border-line bg-white p-5 shadow-sm">
+              <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-navy">
+                <ShieldCheck size={16} className="text-success-600" /> Auto-repayment is on
+              </div>
+              <p className="text-xs leading-relaxed text-muted">
+                Your repayment will be collected automatically from your{" "}
+                {mandateQuery.data.bankName ?? "bank"} account
+                {mandateQuery.data.accountLast4 ? ` ending ${mandateQuery.data.accountLast4}` : ""} on the
+                due date. You can cancel this mandate with your bank at any time.
+              </p>
+              <dl className="mt-3 grid grid-cols-[7rem_1fr] gap-y-1 text-xs">
+                <dt className="text-muted">UMRN</dt>
+                <dd className="font-mono font-semibold text-navy">{mandateQuery.data.umrn}</dd>
+                {mandateQuery.data.authenticatedAt ? (
+                  <>
+                    <dt className="text-muted">Authorised</dt>
+                    <dd className="text-navy">{formatDateTime(mandateQuery.data.authenticatedAt)}</dd>
+                  </>
+                ) : null}
+              </dl>
+            </div>
+          ) : null}
         </div>
 
         <aside className="flex flex-col gap-4">

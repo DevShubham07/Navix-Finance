@@ -466,6 +466,22 @@ public class OfferService {
     // ---------------------------------------------------------------- 11. eMandate
 
     /**
+     * Statuses from which a borrower may set up a mandate. Deliberately wide: the capability is now
+     * offered to anyone without one (a live loan never saw the mandate step), and the money guards that
+     * matter — the kill switch, the account having been proven, the attempt cap — live in
+     * {@link MandateService#init} where every caller passes through them.
+     *
+     * <p>What is excluded is what has nothing to mandate or no business mandating: a file still being
+     * decided (no proven account yet) and a dead one. DEFAULTED and WRITTEN_OFF are in, because a
+     * mandate is exactly how a defaulted balance might still be collected.
+     */
+    private static final java.util.Set<ApplicationStatus> MANDATE_SETUP_ALLOWED = java.util.EnumSet.of(
+            ApplicationStatus.PRE_APPROVED, ApplicationStatus.SANCTIONED, ApplicationStatus.DISBURSEMENT_PENDING,
+            ApplicationStatus.DISBURSEMENT_FAILED, ApplicationStatus.DISBURSED, ApplicationStatus.ACTIVE,
+            ApplicationStatus.OVERDUE, ApplicationStatus.DEFAULTED, ApplicationStatus.WRITTEN_OFF,
+            ApplicationStatus.CLOSED);
+
+    /**
      * PRE_APPROVED is admitted alongside SANCTIONED on purpose. The reborrow fast-track in
      * {@code ApplicationFlowService.apply} gates on the same mandate but has no offer journey behind it,
      * so a borrower parked there was told MANDATE_REQUIRED with no endpoint that would let them register
@@ -476,7 +492,7 @@ public class OfferService {
     public StepResult mandateInit(Long appId) {
         LoanApplication app = applicationRepo.findById(appId)
                 .orElseThrow(() -> new ResourceNotFoundException("LoanApplication", String.valueOf(appId)));
-        if (app.getStatus() != ApplicationStatus.SANCTIONED && app.getStatus() != ApplicationStatus.PRE_APPROVED) {
+        if (!MANDATE_SETUP_ALLOWED.contains(app.getStatus())) {
             throw new BusinessException("NOT_APPLICABLE", "This offer isn't ready");
         }
         return mandateService.init(appId);
