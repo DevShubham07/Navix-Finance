@@ -292,12 +292,12 @@ public class MandateService {
                     "No verified bank account on file for this customer, so a mandate cannot be set up");
         }
         CustomerProfile profile = profiles.findByApplicationId(appId).orElse(null);
-        // The existing offer-journey screen, deliberately NOT a new standalone page.
-        // LIMITATION: that page's useOffer() redirects any application whose status is not SANCTIONED to
-        // /loan/status, so this link only completes for a borrower still inside the offer journey. For a
-        // customer whose loan is already live it will bounce — reaching them needs a few lines in that
-        // page, not a new one. Staff-copied links and the message itself still work; the self-serve
-        // completion for live loans does not yet.
+        // The existing offer-journey screen, deliberately NOT a new standalone page. That page resolves
+        // the application through useLiveApplication (not useOffer, which redirects anything other than
+        // SANCTIONED to /loan/status), so an invited borrower with a live part-repaid loan — or a closed
+        // one setting this up before their next advance — completes it there too. No token and no app id
+        // in the link: /mine is scoped server-side to the borrower's own JWT, so the page adopts their
+        // current application on a fresh device and can never resolve someone else's.
         String link = frontendBaseUrl.replaceAll("/+$", "") + "/loan/mandate";
         eventPublisher.publishEvent(new MandateInviteEvent(app.getCustomerId(), appId,
                 profile == null ? null : profile.getFullName(), link, Instant.now()));

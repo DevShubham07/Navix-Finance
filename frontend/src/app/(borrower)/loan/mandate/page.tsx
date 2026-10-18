@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, Loader2, PhoneCall, RefreshCw } from "lucide-react";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { offerApi, type StepResult } from "@/lib/api/applications";
-import { useOffer, completeOfferStep, nextOfferRoute } from "@/lib/offer";
+import { completeOfferStep, nextOfferRoute } from "@/lib/offer";
+import { useLiveApplication } from "@/lib/api/live-journey";
 import { formatApiError } from "@/lib/api/errors";
 
 type Phase = "checking" | "ready" | "waiting" | "stalled" | "done" | "failed" | "unsupported";
@@ -34,7 +35,15 @@ function isDigioUrl(raw: string): boolean {
  */
 export default function MandatePage() {
   const router = useRouter();
-  const { appId } = useOffer();
+  // useLiveApplication, NOT useOffer: useOffer redirects any application that is not SANCTIONED to
+  // /loan/status, which is correct for every other offer step and wrong for this one. A borrower with a
+  // live part-repaid loan — or a closed one setting auto-repayment up before their next advance — is
+  // exactly who an invite link is for, and bouncing them was an artefact of the shared hook, not a rule.
+  // The backend decides who may actually register (OfferService.MANDATE_SETUP_ALLOWED).
+  const { appId, app } = useLiveApplication({ needLoan: false });
+  // In the journey this step is blocking and success advances it. Reached by invite on a loan that has
+  // already left the journey, success is simply the end: there is nothing to advance to.
+  const inJourney = app?.status === "SANCTIONED";
   const [phase, setPhase] = React.useState<Phase>("checking");
   const [error, setError] = React.useState<string>();
   const [busy, setBusy] = React.useState(false);
@@ -93,10 +102,10 @@ export default function MandatePage() {
   }, [appId, classify, pollKey]);
 
   React.useEffect(() => {
-    if (phase === "done" && appId != null) {
+    if (phase === "done" && appId != null && inJourney) {
       void completeOfferStep(appId, "OFFER_MANDATE", router, nextOfferRoute("mandate"));
     }
-  }, [phase, appId, router]);
+  }, [phase, appId, router, inJourney]);
 
   // Start, and also the retry: init mints a fresh attempt and a new redirect URL each time.
   const start = async () => {
@@ -157,11 +166,16 @@ export default function MandatePage() {
         <p className="lead mt-4 mb-1">{phase === "done" ? "Auto-repayment set up" : phase === "waiting" ? "Confirming with your bank" : "Loading…"}</p>
         <p className="text-sm text-muted">
           {phase === "done"
-            ? "Taking you to the next step…"
+            ? inJourney
+              ? "Taking you to the next step…"
+              : "Your repayment will now be collected automatically on the due date. There's nothing else to do."
             : phase === "waiting"
               ? "Your bank's page opened in a new tab. Authorise the mandate there, then come back to this tab — we'll continue automatically. Please keep this tab open."
               : "This takes a few seconds — please don't close this page."}
         </p>
+        {phase === "done" && !inJourney ? (
+          <a href="/dashboard" className="btn btn-gold mt-4">Back to my dashboard</a>
+        ) : null}
         {phase === "waiting" ? (
           popupBlocked && bankUrl ? (
             <a href={bankUrl} target="_blank" rel="noopener noreferrer" className="btn btn-gold mt-4">
@@ -202,8 +216,8 @@ export default function MandatePage() {
         <p className="lead mt-4 mb-1">We&apos;ll be in touch</p>
         <p className="text-sm text-muted">
           Your bank can&apos;t set up automatic repayment online. Our team will be in touch with you to
-          finish this step, so you don&apos;t need to do anything or try again. Your advance will move
-          forward once it is done.
+          finish this step, so you don&apos;t need to do anything or try again.
+          {inJourney ? " Your advance will move forward once it is done." : ""}
         </p>
       </div>
     );
@@ -219,9 +233,11 @@ export default function MandatePage() {
           a marker in the copy: the previous marker rendered to borrowers.
         */}
         <p className="mb-4 text-sm text-muted">
-          To receive your advance, authorise an eMandate with your bank so your repayment can be collected
-          automatically on the due date. The mandate allows debits up to a maximum amount (ceiling) that is
-          higher than your advance.
+          {inJourney
+            ? "To receive your advance, authorise an eMandate with your bank so your repayment can be collected automatically on the due date."
+            : "Authorise an eMandate with your bank so your repayment is collected automatically on the due date — nothing to remember, and no late fee for forgetting."}{" "}
+          The mandate allows debits up to a maximum amount (ceiling) that is higher than your advance.
+          You can cancel it with your bank at any time.
         </p>
         {phase === "failed" ? (
           <p className="mb-3 flex items-start gap-2 text-sm text-error-600">
