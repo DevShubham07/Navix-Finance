@@ -126,6 +126,44 @@ export function MandateTab({
     }
   };
 
+  // Rendered BOTH with a mandate on file and without one. The no-mandate case is exactly the cohort an
+  // invite is for — a DISBURSEMENT_PENDING or live application that never reached the step — and the
+  // first cut of this panel sat after the `if (!m) return <EmptyState/>` early return, so it was
+  // invisible to precisely the people who needed it.
+  const invitePanel = mayInvite ? (
+        <div className="max-w-2xl space-y-2 rounded-lg border border-line bg-grey-50 p-4">
+          <div className="flex items-center gap-2 text-sm font-semibold text-navy">
+            <Send size={15} /> Invite the customer to set up auto-repayment
+          </div>
+          <p className="text-xs leading-relaxed text-muted">
+            Sends the customer a link on every channel they have, and gives you the same link to copy.
+            Nothing is filed until they open it and authorise with their bank, so this is safe to repeat.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => invite.mutate()}
+              disabled={invite.isPending}
+              className="btn btn-sm btn-navy disabled:opacity-50"
+            >
+              {invite.isPending && <Loader2 size={14} className="animate-spin" />} Send invite
+            </button>
+            {inviteLink && (
+              <button type="button" onClick={() => void copyLink()} className="btn btn-sm">
+                {copied ? <Check size={14} className="text-success-600" /> : <Copy size={14} />}
+                {copied ? "Copied" : "Copy link"}
+              </button>
+            )}
+          </div>
+          {inviteLink && (
+            <p className="break-all rounded border border-line bg-white px-2 py-1.5 font-mono text-[11px] text-muted">
+              {inviteLink}
+            </p>
+          )}
+          {invite.isError && <p className="text-xs text-error-700">{errMessage(invite.error)}</p>}
+        </div>
+  ) : null;
+
   if (applicationId == null) {
     return <EmptyState icon={<ShieldOff size={28} />} title="No application yet." hint="A mandate is registered after sanction." />;
   }
@@ -133,7 +171,20 @@ export function MandateTab({
   if (q.isError) return <p className="text-sm text-error-700">{errMessage(q.error)}</p>;
   const m = q.data;
   if (!m) {
-    return <EmptyState icon={<ShieldOff size={28} />} title="No mandate started." hint="The borrower registers it in the offer journey." />;
+    return (
+      <div className="space-y-5">
+        <EmptyState
+          icon={<ShieldOff size={28} />}
+          title="No mandate started."
+          hint={
+            mayInvite
+              ? "The borrower registers it in the offer journey — or send them the link below."
+              : "The borrower registers it in the offer journey."
+          }
+        />
+        {invitePanel}
+      </div>
+    );
   }
 
   const rows: [string, string][] = [
@@ -188,39 +239,8 @@ export function MandateTab({
         ) : null}
       </div>
 
-      {m.status !== "ACTIVE" && mayInvite && (
-        <div className="max-w-2xl space-y-2 rounded-lg border border-line bg-grey-50 p-4">
-          <div className="flex items-center gap-2 text-sm font-semibold text-navy">
-            <Send size={15} /> Invite the customer to set up auto-repayment
-          </div>
-          <p className="text-xs leading-relaxed text-muted">
-            Sends the customer a link on every channel they have, and gives you the same link to copy.
-            Nothing is filed until they open it and authorise with their bank, so this is safe to repeat.
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => invite.mutate()}
-              disabled={invite.isPending}
-              className="btn btn-sm btn-navy disabled:opacity-50"
-            >
-              {invite.isPending && <Loader2 size={14} className="animate-spin" />} Send invite
-            </button>
-            {inviteLink && (
-              <button type="button" onClick={() => void copyLink()} className="btn btn-sm">
-                {copied ? <Check size={14} className="text-success-600" /> : <Copy size={14} />}
-                {copied ? "Copied" : "Copy link"}
-              </button>
-            )}
-          </div>
-          {inviteLink && (
-            <p className="break-all rounded border border-line bg-white px-2 py-1.5 font-mono text-[11px] text-muted">
-              {inviteLink}
-            </p>
-          )}
-          {invite.isError && <p className="text-xs text-error-700">{errMessage(invite.error)}</p>}
-        </div>
-      )}
+
+      {m.status !== "ACTIVE" ? invitePanel : null}
 
       {showDebit && (
         <div className="max-w-md space-y-2 rounded border border-line bg-grey-50 p-3">
