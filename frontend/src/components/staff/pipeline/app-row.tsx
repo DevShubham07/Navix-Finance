@@ -103,6 +103,7 @@ export function AppRow({
         <td className="whitespace-nowrap">
           <DueCell
             dueDate={app.loanDueDate}
+            loanStatus={app.loanStatus}
             markedPendingAt={app.markedPendingAt}
             pendingReason={app.pendingReason}
           />

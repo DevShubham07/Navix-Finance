@@ -422,7 +422,7 @@ function CustomersPageInner() {
             { header: "Amount (₹)", value: (c) => (c.amountPaise != null ? (c.amountPaise / 100).toFixed(2) : "") },
             { header: "Amount type", value: (c) => (c.amountPaise == null ? "" : c.amountIsRequested ? "requested" : "eligible limit") },
             { header: "Due date", value: (c) => (c.loanDueDate ? formatDate(c.loanDueDate) : "") },
-            { header: "DPD", value: (c) => (dpdFor(c.loanDueDate) || "") },
+            { header: "DPD", value: (c) => (dpdFor(c.loanDueDate, c.loanStatus) || "") },
             { header: "Owner", value: (c) => c.ownerName ?? "Unallocated" },
             { header: "Applications", value: (c) => c.applicationCount },
             { header: "Loans", value: (c) => c.loanCount },
@@ -669,7 +669,7 @@ function CustomersPageInner() {
                       </span>
                     </td>
                     <td className="whitespace-nowrap">
-                      <DueCell dueDate={c.loanDueDate} markedPendingAt={c.markedPendingAt} />
+                      <DueCell dueDate={c.loanDueDate} loanStatus={c.loanStatus} markedPendingAt={c.markedPendingAt} />
                     </td>
                     <td className="staff-cell text-ink">{c.ownerName ?? <span className="text-muted">Unallocated</span>}</td>
                     <td className="num text-ink">{c.loanCount} <span className="text-xs text-muted">/ {c.applicationCount} apps</span></td>

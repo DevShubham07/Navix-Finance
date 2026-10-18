@@ -235,10 +235,29 @@ export interface StaffPerformanceSummary {
  * True when a disbursed loan is past its due date — the DPD definition used across this product
  * (`daysBetween` compares calendar dates, so this is timezone-safe). Falls back to the application
  * status only when no loan due date is known.
+ *
+ * A settled loan is never overdue, however late it was repaid: the due date stays on file forever,
+ * and `LoanStatus.OVERDUE` is compute-on-read (nothing writes it), so the date is the only live
+ * signal and it needs the status beside it. Same guard, same reason, as `dpdFor`.
  */
 export function isLoanOverdue(app: ApplicationView, asOf: Date = new Date()): boolean {
+  if (isSettledLoanStatus(app.loanStatus)) return false;
   if (!app.loanDueDate) return app.status === "OVERDUE";
   return daysBetween(new Date(`${app.loanDueDate}T00:00:00`), asOf) > 0;
+}
+
+const SETTLED_LOAN_STATUSES = new Set(["CLOSED", "REPAID", "WRITTEN_OFF", "DECLINED"]);
+
+/**
+ * True when the loan has stopped running, so its due date is history rather than a debt.
+ *
+ * Mirrors `CollectionsService.TERMINAL_LOAN_STATUSES`, which drops exactly these cases off the
+ * collections worklist for the same reason; DECLINED joins them because nothing was ever disbursed.
+ * One definition on purpose — every surface that reads a due date as arrears (`isLoanOverdue`,
+ * `dpdFor`) must agree on when a loan is done.
+ */
+export function isSettledLoanStatus(status: string | null | undefined): boolean {
+  return SETTLED_LOAN_STATUSES.has(status ?? "");
 }
 
 /**

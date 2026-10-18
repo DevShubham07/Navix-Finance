@@ -7,13 +7,21 @@
  * Only these two cells are genuinely identical; everything else stays local to its table.
  */
 
-import { paiseToINR } from "@/lib/api/applications";
+import { isSettledLoanStatus, paiseToINR } from "@/lib/api/applications";
 import { daysBetween } from "@/lib/calc/loan-math";
 import { formatDate } from "@/lib/utils";
 
-/** Days past due for a yyyy-mm-dd due date; 0 when absent or not yet due. */
-export function dpdFor(dueDate: string | null | undefined): number {
-  if (!dueDate) return 0;
+/**
+ * Days past due for a yyyy-mm-dd due date; 0 when absent, not yet due, or the loan has settled.
+ *
+ * The status guard is not cosmetic. A borrower who repaid late keeps that past due date on file
+ * forever, so without it every closed-late loan reads as a live `+37d` arrears in red — on the
+ * customers register, in its CSV, and in the queue rows — against a customer who owes nothing.
+ * `loanStatus` is optional only so a caller with no loan in hand (a file still in credit) can skip
+ * it; pass it wherever the row carries one.
+ */
+export function dpdFor(dueDate: string | null | undefined, loanStatus?: string | null): number {
+  if (!dueDate || isSettledLoanStatus(loanStatus)) return 0;
   return Math.max(0, daysBetween(new Date(`${dueDate}T00:00:00`), new Date()));
 }
 
@@ -66,14 +74,17 @@ export function AmountCell({
  */
 export function DueCell({
   dueDate,
+  loanStatus,
   markedPendingAt,
   pendingReason,
 }: {
   dueDate: string | null | undefined;
+  /** The loan's status, so a settled loan's past due date stops reading as arrears — see `dpdFor`. */
+  loanStatus?: string | null;
   markedPendingAt?: string | null;
   pendingReason?: string | null;
 }) {
-  const dpd = dpdFor(dueDate);
+  const dpd = dpdFor(dueDate, loanStatus);
   return (
     <>
       {dueDate ? (
