@@ -1,7 +1,12 @@
 # Digio eMandate + NACH debit — production enablement runbook
 
-**Status: nothing in this feature runs in production today.** Both flags ship disabled, and
-`NAVIX_DIGIO_PROVIDER` defaults to `mock`. The code is merged and deployed; it is inert.
+**Status as of 2026-10-18:** steps 1-4 are DONE on the live stack. All five Digio parameters are in
+SSM under `/navix/dev/navix/digio/`, `provider=digio`, the service restarted onto task-def revision
+169, and the **`digio-mandate` flag is ON** — borrowers now see the eMandate step. `digio-debit` is
+still OFF, so no debit is presented and none ever has been.
+
+Remaining: confirm a real registration (§3 "Confirming which adapter is actually serving"), then
+steps 5 and 6.
 
 This file is the ordered list of things that must happen to change that, and what each one
 proves. Steps 1–3 are configuration; steps 4–6 are the only way the debit path gets verified,
@@ -58,25 +63,65 @@ AWS_PROFILE=navix-dev aws ssm put-parameter \
   --value "<the lender's settlement account>" --overwrite
 ```
 
-## 3. Point the task definition at the real provider
+## 3. Flip the provider — an SSM parameter, NOT a task-definition change
 
-Clone the live revision, add the env + secrets, register, roll the service — the full recipe with
-its warnings is in [`aws.md`](../../aws.md) §"Redeploy". The Digio-specific delta is:
+**There is nothing to change on the task definition.** `application.yml` imports the whole
+parameter subtree:
 
-- env `NAVIX_DIGIO_PROVIDER=digio`
-- `secrets` entries mapping `NAVIX_DIGIO_CLIENT_ID`, `NAVIX_DIGIO_CLIENT_SECRET`,
-  `NAVIX_DIGIO_WEBHOOK_SECRET`, `NAVIX_DIGIO_CORPORATE_CONFIG_ID`,
-  `NAVIX_DIGIO_CORPORATE_ACCOUNT_NUMBER` to the SSM paths above
+```yaml
+spring.config.import: optional:aws-parameterstore:/navix/${NAVIX_ENV:dev}/
+```
 
-⚠️ `aws.md` warns that a cloned revision can drop env the live one carried. **Diff the env list
-before and after.** Dropping `NAVIX_SMS_OTP_TEMPLATE` breaks every OTP send.
+so `/navix/dev/navix/digio/client-id` binds straight to `navix.digio.client-id`, and an imported
+parameter outranks the `${NAVIX_DIGIO_CLIENT_ID:}` default in `application.yml`. That is already how
+`spring.datasource.password` and the mandatory `navix.esign.callback-url` reach the app — the live
+task definition carries **zero** `secrets` entries and only two env vars (`NAVIX_ENV`, `AWS_REGION`).
 
-After the roll, confirm the running task is on the new revision before going further.
+An earlier draft of this file had you clone the task definition and add five `secrets` mappings. That
+was wrong and strictly worse: it is redundant, and registering a new revision is the step `aws.md`
+warns can silently drop env the live one carried.
+
+Set the provider as a parameter and restart on the **same** revision:
+
+```bash
+export AWS_PROFILE=navix-dev
+aws ssm put-parameter --name /navix/dev/navix/digio/provider \
+  --type String --overwrite --value 'digio'
+
+aws ecs update-service --cluster navix-cluster --service navix-backend --force-new-deployment
+aws ecs wait services-stable --cluster navix-cluster --services navix-backend
+```
+
+**SSM is read at startup only**, so set every parameter — including the settlement account — *before*
+this restart, or you will need another one.
+
+If the service does not go stable, the app refused to boot: `DigioConfig.require` throws on a blank
+credential by design. Look for `must be set when navix.digio.provider=digio` in
+`aws logs tail /ecs/navix-finance`. The old tasks keep serving while it rolls back.
+
+### Confirming which adapter is actually serving
+
+`management.endpoints.web.exposure.include` is `health,info`, so there is no `/actuator/env` to read
+the live value from, and **both providers boot cleanly** — a clean start is not proof. The first
+registration tells you unambiguously:
+
+| | `provider=digio` | mock still serving |
+|---|---|---|
+| Auth URL | on `digio.in` | `https://mock.digio.invalid/auth` |
+| `mandate.digio_mandate_id` | `ENA26…` | `ENAMOCK<customerId>-<attempt>` |
+| UMRN | minutes after the borrower authorises | instantly, prefixed `MOCK` |
+
+The borrower cannot be silently served a fake: the mandate page refuses to navigate anywhere but
+`digio.in` (`isDigioUrl`), so a mock URL surfaces as "We could not open your bank's page".
+
+⚠️ `MockMandateAdapter.refuseInProd()` keys off `NAVIX_ENV`, which is **`dev`** on this stack even
+though it is the live environment. That safety net is therefore **not armed here** — the mandate-id
+prefix above is the real tell.
 
 ## 4. Enable mandate registration for a small allowlist
 
 ```sql
-update feature_flag set enabled = true where key = 'digio-mandate';
+update feature_flag set enabled = true where flag_key = 'digio-mandate';
 ```
 
 There is no per-customer flag, so "allowlist" means **enable it, watch the first few borrowers,
@@ -111,7 +156,7 @@ was credited VERIFIED with its UTR.
 ## 6. Only then, enable the scheduled sweep
 
 ```sql
-update feature_flag set enabled = true where key = 'digio-debit';
+update feature_flag set enabled = true where flag_key = 'digio-debit';
 ```
 
 Presentations fire at DPD 1, 3, 5 and 9. Check **Staff → Collections → Refunds owed** in the first
