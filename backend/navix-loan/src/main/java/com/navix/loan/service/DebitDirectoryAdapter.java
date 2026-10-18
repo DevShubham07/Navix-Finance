@@ -20,4 +20,14 @@ public class DebitDirectoryAdapter implements DebitDirectory {
         DebitService.DebitView v = debitService.present(loanId, amountPaise, Trigger.MANUAL, actorId);
         return new Result(v.id(), v.status().name(), v.amountPaise(), v.settlementDate(), v.attemptNo());
     }
+
+    @Override
+    public java.util.List<DebitRecord> history(Long loanId) {
+        return debitService.history(loanId);
+    }
+
+    @Override
+    public java.util.List<DebitRecord> overpayments() {
+        return debitService.overpayments();
+    }
 }

@@ -7,6 +7,7 @@ import com.navix.common.featureflag.FeatureFlagService;
 import com.navix.common.loan.DebitDirectory;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
+import java.util.Optional;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -26,6 +27,8 @@ public class ManualDebitService {
 
     static final String FLAG = "digio-debit";
     private static final Set<String> ALLOWED = Set.of("COLLECTION_HEAD", "COLLECTION_EXECUTIVE", "ADMIN");
+    /** The cross-book refund register is not case-scoped, so an executive does not get it. */
+    private static final Set<String> REGISTER_ALLOWED = Set.of("COLLECTION_HEAD", "ADMIN");
 
     private final CollectionCaseRepository caseRepository;
     private final CollectionsService collectionsService;
@@ -42,6 +45,49 @@ public class ManualDebitService {
             log.warn("Manual debit denied loanId={} actor={} code={}", loanId, actorId, e.getCode());
             throw e;
         }
+    }
+
+    /**
+     * Presentation history for one loan. Same allowlist and case-assignment rule as {@link #debit}, but
+     * deliberately NOT gated on the feature flag: after the flag is switched off, the debits it already
+     * presented still have to be auditable — the outcome of real money is not a feature you turn off.
+     */
+    public java.util.List<DebitDirectory.DebitRecord> history(Long loanId) {
+        String role = requireCollectionsStaff();
+        Optional<CollectionCase> c = caseRepository.findByLoanId(loanId);
+        if (c.isPresent()) {
+            collectionsService.assertCaseAccessible(c.get().getId()); // CASE_NOT_ASSIGNED for someone else's case
+        } else if (!REGISTER_ALLOWED.contains(role)) {
+            // Fails CLOSED for an executive. The scheduled sweep can present a debit on a loan that has no
+            // case, so a head or ADMIN must still be able to read that history — but with no case there is
+            // no assignment to check, and letting an executive through would scope them to nothing at all.
+            throw new BusinessException("CASE_NOT_FOUND", "Open a collection case for this loan first");
+        }
+        return debits.history(loanId);
+    }
+
+    /**
+     * The refund register — money taken from borrowers who had already repaid. Not case-scoped (it is a
+     * cross-book finance view) so it is COLLECTION_HEAD and ADMIN only; an executive sees overpayments on
+     * their own cases through {@link #history}.
+     */
+    public java.util.List<DebitDirectory.DebitRecord> overpayments() {
+        CurrentActor actor = ActorContext.get();
+        String role = actor == null ? null : actor.role();
+        if (role == null || !REGISTER_ALLOWED.contains(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE", "This action requires role COLLECTION_HEAD or ADMIN");
+        }
+        return debits.overpayments();
+    }
+
+    /** The caller's real JWT role, once it is known to be allowed here. */
+    private String requireCollectionsStaff() {
+        CurrentActor actor = ActorContext.get();
+        String role = actor == null ? null : actor.role();
+        if (role == null || !ALLOWED.contains(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE", "This action requires role COLLECTION_HEAD, COLLECTION_EXECUTIVE or ADMIN");
+        }
+        return role;
     }
 
     private DebitDirectory.Result attempt(CurrentActor actor, Long loanId, Long amountPaise) {

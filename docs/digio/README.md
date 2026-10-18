@@ -22,7 +22,10 @@ Debit presentation was built afterwards, behind the separate `digio-debit` flag 
 - A successful debit is credited through `LoanDirectory.creditCollectionPayment` and auto-verifies — no Accountant step.
 - **There is still no webhook receiver.** Outcomes come from a polling reconcile pass capped at 50 rows per run (a deliberate stopgap).
 - Still not built: UPI AutoPay debit, mandate amendment/cancellation, consolidated settlement reconciliation.
-- **GO-LIVE BLOCKER:** the re-presentable reject-code allowlist in `DebitService` is invented — no debit has ever been presented, so Digio's real `failure_code` format is unobserved. It fails closed; if the real codes are numeric, nothing is ever re-presented and the DPD 3/5/9 retries never fire. Confirm against one real failure before enabling the flag.
+- **Enabling this in production: [`14-production-enablement-runbook.md`](14-production-enablement-runbook.md)** — the ordered steps, and which of them is the one that cannot be skipped (presenting one real debit by hand).
+- **Re-presentation is a terminal denylist, not an allowlist.** `DebitService.TERMINAL_MARKERS` lists the reasons another attempt cannot help (account closed/blocked/invalid, mandate cancelled/expired/not found, payer deceased, duplicate reference) and matches them against the failure code **and** the failure reason, so a numeric NPCI code still resolves through its text. Everything else — insufficient funds, a technical decline, a code we have never seen — is re-presented. This replaced an allowlist of three guessed strings, which failed closed: against numeric codes it matched nothing, so the DPD 3/5/9 presentations never fired and a loan was silently never collected after its first attempt. `MAX_ATTEMPTS` (4), `MAX_PRESENTATIONS_PER_ROW` (3) and the usable-mandate check bound the downside.
+- **Still unverified:** no debit has ever been presented, so Digio's real `failure_code` vocabulary remains unobserved. Review the denylist against the first live failure. Also unverified: that Digio dedupes on a repeated `unique_key` (the recovery path's double-charge backstop) and the `by_crn` 404 shape.
+- **UNVERIFIED (unchanged):** there is no webhook receiver; outcomes are read by the polling reconcile sweep, capped at 50 rows per pass.
 
 ## Contents
 

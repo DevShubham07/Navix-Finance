@@ -66,6 +66,14 @@ export function MandateTab({
     enabled: mayDebit && q.data?.status === "ACTIVE",
     retry: false,
   });
+  // History is read whenever the loan exists, independent of the case and of the mandate being ACTIVE:
+  // the outcome of real money has to stay visible after the loan closes or the flag is switched off.
+  const historyQ = useQuery({
+    queryKey: ["staff-debit-history", loanId],
+    queryFn: () => collectionsApi.debits(loanId as number),
+    enabled: mayDebit,
+    retry: false,
+  });
   const [amountText, setAmountText] = React.useState("");
   const [confirming, setConfirming] = React.useState(false);
   const debit = useMutation({
@@ -74,6 +82,7 @@ export function MandateTab({
       toast.success(`Debit of ${inr2(r.amountPaise)} requested`);
       setConfirming(false);
       qc.invalidateQueries({ queryKey: ["staff-debit-case", loanId] });
+      qc.invalidateQueries({ queryKey: ["staff-debit-history", loanId] });
       onChanged?.();
     },
   });
@@ -171,6 +180,43 @@ export function MandateTab({
             </>
           )}
           {debit.isError && <p className="text-xs text-error-700">{errMessage(debit.error)}</p>}
+        </div>
+      )}
+
+      {mayDebit && (historyQ.data?.length ?? 0) > 0 && (
+        <div className="max-w-2xl space-y-2">
+          <h4 className="text-sm font-semibold text-navy">Debit attempts</h4>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-line text-left text-muted">
+                <th className="py-1.5 pr-3 font-medium">#</th>
+                <th className="py-1.5 pr-3 font-medium">Status</th>
+                <th className="py-1.5 pr-3 font-medium">Amount</th>
+                <th className="py-1.5 pr-3 font-medium">Settlement</th>
+                <th className="py-1.5 pr-3 font-medium">UTR</th>
+                <th className="py-1.5 font-medium">Trigger</th>
+              </tr>
+            </thead>
+            <tbody>
+              {historyQ.data?.map((d) => (
+                <tr key={d.debitId} className="border-b border-line/60 last:border-0">
+                  <td className="py-1.5 pr-3">{d.attemptNo}</td>
+                  <td className="py-1.5 pr-3">
+                    {d.status}
+                    {/* Real money taken from a borrower who had already repaid — a refund is owed. */}
+                    {d.overpayment && <span className="ml-1 font-semibold text-error-700">· refund owed</span>}
+                    {d.status === "FAILED" && !d.representable && (
+                      <span className="ml-1 text-muted">· not retryable</span>
+                    )}
+                  </td>
+                  <td className="py-1.5 pr-3 font-mono">{inr2(d.amountPaise)}</td>
+                  <td className="py-1.5 pr-3">{d.settlementDate ?? "—"}</td>
+                  <td className="py-1.5 pr-3 font-mono">{d.utr ?? "—"}</td>
+                  <td className="py-1.5">{d.trigger ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 

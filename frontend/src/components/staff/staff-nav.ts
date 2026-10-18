@@ -141,6 +141,11 @@ export const NAV: NavGroup[] = [
       { label: "DPD buckets (all loans)", href: "/staff/collections", Icon: HandCoins, perm: ["collections:interact", "collections:manage", "collections:overview"], collectionBuckets: true, labelFor: { COLLECTION_EXECUTIVE: "My DPD cases" } },
       // Collection Executive can see settlements they proposed; approve stays PermissionGate-gated.
       { label: "Settlements", href: "/staff/collections/settlements", Icon: HandCoins, perm: ["collections:interact", "collections:manage"], labelFor: { COLLECTION_HEAD: "Settlement approvals", COLLECTION_EXECUTIVE: "My settlements" } },
+      // Refunds owed is a cross-book finance view, not case-scoped, so it follows the backend's own
+      // COLLECTION_HEAD/ADMIN rule rather than collections:interact.
+      // Deliberately NOT flag-gated: if digio-debit is switched off during an incident, the money already
+      // taken is still owed back, and this register is the only record of it.
+      { label: "Refunds owed", href: "/staff/collections/refunds", Icon: HandCoins, perm: "collections:manage" },
       {
         label: "Loans",
         href: "/staff/loans",

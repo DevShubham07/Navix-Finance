@@ -152,4 +152,61 @@ class DebitAuthorizationTest {
             lg.detachAppender(appender);
         }
     }
+
+    // ---- the read surface (history / refund register) ------------------------------------------------
+
+    /** Same case-assignment rule as the debit itself: an executive never reads someone else's case. */
+    @Test
+    void historyIsScopedToTheExecutivesOwnCase() {
+        actAs("COLLECTION_EXECUTIVE");
+        org.mockito.Mockito.doThrow(new BusinessException("CASE_NOT_ASSIGNED", "not yours"))
+                .when(collections).assertCaseAccessible(caseId);
+        assertThatThrownBy(() -> service.history(LOAN))
+                .isInstanceOf(BusinessException.class).extracting("code").isEqualTo("CASE_NOT_ASSIGNED");
+        verifyNoInteractions(directory);
+    }
+
+    /**
+     * Fails CLOSED with no case. The scheduled sweep can present a debit on a loan nobody opened a case
+     * for, and with no case there is no assignment to check — so an executive must be refused rather than
+     * scoped to nothing, while a head still gets the history.
+     */
+    @Test
+    void historyWithNoCaseIsRefusedForAnExecutiveButAllowedForAHead() {
+        when(cases.findByLoanId(LOAN)).thenReturn(Optional.empty());
+
+        actAs("COLLECTION_EXECUTIVE");
+        assertThatThrownBy(() -> service.history(LOAN))
+                .isInstanceOf(BusinessException.class).extracting("code").isEqualTo("CASE_NOT_FOUND");
+        verifyNoInteractions(directory);
+
+        actAs("COLLECTION_HEAD");
+        when(directory.history(LOAN)).thenReturn(List.of());
+        assertThat(service.history(LOAN)).isEmpty();
+        verify(directory).history(LOAN);
+    }
+
+    /** The refund register is cross-book, so it is not an executive's to read. */
+    @Test
+    void refundRegisterIsHeadAndAdminOnly() {
+        actAs("COLLECTION_EXECUTIVE");
+        assertThatThrownBy(() -> service.overpayments())
+                .isInstanceOf(BusinessException.class).extracting("code").isEqualTo("FORBIDDEN_ROLE");
+        verifyNoInteractions(directory);
+
+        actAs("ADMIN");
+        when(directory.overpayments()).thenReturn(List.of());
+        assertThat(service.overpayments()).isEmpty();
+    }
+
+    /** Reads are deliberately NOT flag-gated: money already taken is still owed back. */
+    @Test
+    void readsKeepWorkingAfterTheFlagIsSwitchedOff() {
+        when(flags.isEnabled("digio-debit", false)).thenReturn(false);
+        actAs("COLLECTION_HEAD");
+        when(directory.history(LOAN)).thenReturn(List.of());
+        assertThat(service.history(LOAN)).isEmpty();
+        assertThatThrownBy(() -> service.debit(LOAN, null))
+                .isInstanceOf(BusinessException.class).extracting("code").isEqualTo("DEBIT_DISABLED");
+    }
 }

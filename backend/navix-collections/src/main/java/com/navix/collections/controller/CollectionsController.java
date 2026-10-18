@@ -185,6 +185,18 @@ public class CollectionsController {
         return ApiResponse.ok(manualDebitService.debit(loanId, body == null ? null : body.get("amountPaise")));
     }
 
+    /** Every NACH debit presented on this loan, newest attempt first. Read-only; no provider text. */
+    @GetMapping("/loans/{loanId}/debits")
+    public ApiResponse<java.util.List<DebitDirectory.DebitRecord>> debits(@PathVariable Long loanId) {
+        return ApiResponse.ok(manualDebitService.history(loanId));
+    }
+
+    /** The refund register: debits that collected money a borrower no longer owed. COLLECTION_HEAD/ADMIN. */
+    @GetMapping("/debits/overpayments")
+    public ApiResponse<java.util.List<DebitDirectory.DebitRecord>> overpayments() {
+        return ApiResponse.ok(manualDebitService.overpayments());
+    }
+
     /** Assign a collections officer (a real ACTIVE executive) to a case. */
     @PostMapping("/cases/{caseId}/assign")
     public ApiResponse<CaseDetailView> assignOfficer(@PathVariable UUID caseId,

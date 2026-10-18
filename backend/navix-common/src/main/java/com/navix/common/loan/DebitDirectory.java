@@ -16,7 +16,25 @@ public interface DebitDirectory {
      */
     Result presentForCase(Long loanId, Long amountPaise, Long actorId);
 
+    /** Every presentation made on one loan, newest attempt first. Read-only; works with the flag off. */
+    java.util.List<DebitRecord> history(Long loanId);
+
+    /**
+     * Debits that took money a borrower no longer owed, newest first — the refund register. Read-only.
+     */
+    java.util.List<DebitRecord> overpayments();
+
     /** What a caller may see: no provider message, no failure code. */
     record Result(Long debitId, String status, long amountPaise, LocalDate settlementDate, int attemptNo) {
+    }
+
+    /**
+     * One presentation as staff see it. The provider's failure code and message are deliberately absent
+     * (the message echoes account numbers); {@code representable} is what staff actually need from them —
+     * whether another attempt is possible.
+     */
+    record DebitRecord(Long debitId, Long loanId, String status, long amountPaise, LocalDate settlementDate,
+                       int attemptNo, String trigger, String utr, boolean overpayment, boolean representable,
+                       java.time.Instant createdAt) {
     }
 }

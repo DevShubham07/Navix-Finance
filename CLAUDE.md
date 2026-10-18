@@ -692,14 +692,19 @@ What holds across all of it, and does not belong in that file:
   `defaultWhenMissing = FALSE` for the same reason as `bureau-auto-reject`: with `NAVIX_DIGIO_PROVIDER=digio` it
   files a real, legally binding NPCI mandate and there is no sandbox, so a missing row must leave it off;
   the `ProductionConfigGuard` refusal of `navix.digio.provider=mock` in prod is gated on **this flag**, so a
-  prod deploy is never blocked for a disabled feature),
+  prod deploy is never blocked for a disabled feature. `MandateService.init` holds the money guards itself —
+  the flag as a kill switch, the account having been confirmed or penny-dropped, and a 10-attempt ceiling per
+  application — because `POST .../offer/mandate/init` is borrower-reachable without the journey),
   `digio-debit` (**off, V85** — NACH debit presentation: the scheduled sweep at DPD 1/3/5/9 plus the manual
   collections debit; `defaultWhenMissing = FALSE` because it **moves real money** out of a borrower's account
-  with no sandbox and no idempotency key. **GO-LIVE BLOCKER: do not enable** until the re-presentable
-  reject-code allowlist in `DebitService` (`BALANCE_INSUFFICIENT` + two siblings) is confirmed against one
-  real Digio `failure_code` — those strings are invented, no debit has ever been presented, and the list
-  fails closed, so if the real codes are numeric nothing is ever re-presented and the DPD 3/5/9 retries
-  silently never fire),
+  with no sandbox and no idempotency key. Re-presentation is decided by a **terminal denylist**
+  (`DebitService.TERMINAL_MARKERS`, matched against the failure code *and* the reason, so a numeric NPCI
+  code still resolves through its text): account/mandate dead, payer deceased, or a duplicate reference
+  stops further attempts; **anything else, including a code we have never seen, is re-presented**. That
+  replaced a three-string allowlist that failed closed — which against numeric codes matched nothing, so
+  the DPD 3/5/9 retries silently never fired at all. `MAX_ATTEMPTS` (4), `MAX_PRESENTATIONS_PER_ROW` (3)
+  and the usable-mandate check bound the downside. **Still unproven: no debit has ever been presented**,
+  so review the denylist against the first real `failure_code`),
   `employment-auto-retry` (on — the hourly re-run of
   EPFO checks a vendor outage parked), `global-search` (**on, V73** — the staff Cmd/Ctrl+K palette;
   the one flag read with `defaultWhenMissing = TRUE`, since search takes no money-affecting action

@@ -1,6 +1,7 @@
 package com.navix.loan.service;
 
 import com.navix.common.exception.BusinessException;
+import com.navix.common.loan.DebitDirectory;
 import com.navix.common.loan.LoanDirectory;
 import com.navix.common.loan.LoanSummary;
 import com.navix.common.verification.MandatePort;
@@ -17,6 +18,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
@@ -57,16 +59,35 @@ public class DebitService {
     /** Keeps the loan-keyed advisory lock out of the customer-keyed one MandateService takes. */
     private static final long LOCK_NAMESPACE = 1L << 40;
     /**
-     * The only reject codes that may be re-presented. NPCI flags exactly one return reason "Allow RPN: Yes" —
-     * balance insufficient (docs/digio/06 section 5). Anything else, and anything not listed, is terminal: failing
-     * closed costs one missed retry, failing open burns the monthly allowance. Numeric NPCI codes are
-     * deliberately absent until a live failure_code has been observed; add them when seen.
+     * Reject reasons that may NEVER be re-presented: the mandate or the account is gone, the payer is
+     * gone, or the reference collided — another attempt cannot succeed, and each attempt is a real
+     * provider call. Matched as substrings against the failure code AND the failure reason, upper-cased
+     * with punctuation folded to {@code _}, because Digio's {@code failure_code} vocabulary is still
+     * unobserved and may well be numeric NPCI codes — in which case the human-readable reason is the
+     * only text there is to match on.
+     *
+     * <p><b>Everything else is re-presented, including a code we have never seen.</b> That is the
+     * deliberate inversion of what this started as. An allowlist of three guessed strings failed
+     * closed, which sounds conservative and is not: against numeric codes it matches nothing, so the
+     * DPD 3/5/9 presentations never fire, the sweep logs look healthy, and the loan is silently never
+     * collected after its first attempt. Re-presenting a dead mandate costs one rejected presentation;
+     * never re-presenting costs the whole debt. {@link #MAX_ATTEMPTS}, {@link #MAX_PRESENTATIONS_PER_ROW}
+     * and the usable-mandate check in {@link #prepare} are what bound the downside.
+     *
+     * <p>{@code DUPLICATE} is terminal for the opposite reason: a duplicate-reference reject means the
+     * original presentation did land, so stopping is what prevents a second debit.
      */
-    private static final Set<String> REPRESENTABLE_CODES =
-            Set.of("BALANCE_INSUFFICIENT", "INSUFFICIENT_BALANCE", "INSUFFICIENT_FUNDS");
-    // UNVERIFIED: these strings are our guess at Digio's failure_code vocabulary, not observed values.
-    // GO-LIVE BLOCKER: confirm against a real failure_code before the digio-debit flag is enabled.
-    // Fail-closed until then: a wrong guess means no re-presentation, never a wrong one.
+    private static final List<String> TERMINAL_MARKERS = List.of(
+            "ACCOUNT_CLOSED", "ACCOUNT_BLOCKED", "ACCOUNT_FROZEN", "ACCOUNT_INOPERATIVE",
+            "ACCOUNT_TRANSFERRED", "ACCOUNT_DORMANT", "DORMANT", "NO_SUCH_ACCOUNT",
+            "INVALID_ACCOUNT", "ACCOUNT_DOES_NOT_EXIST", "ACCOUNT_NOT_FOUND",
+            "DEBIT_NOT_ALLOWED", "DEBIT_BLOCKED", "DEBIT_STOPPED", "PAYMENT_STOPPED",
+            "MANDATE_CANCELLED", "MANDATE_REVOKED", "MANDATE_EXPIRED", "MANDATE_INVALID",
+            "MANDATE_NOT_FOUND", "MANDATE_NOT_REGISTERED", "NO_MANDATE", "UMRN_NOT_FOUND",
+            "DECEASED", "KYC_PENDING", "AMOUNT_EXCEEDS", "LIMIT_EXCEEDED", "DUPLICATE");
+    // UNVERIFIED: our reading of the NPCI return-reason vocabulary (docs/digio/06 section 5), not values
+    // observed from Digio. Review this list against the first real failure_code; unlike the allowlist it
+    // replaced, a gap here costs one pointless re-presentation rather than every retry on the loan.
 
     /** DPD 1/3/5/9 is the schedule, so four presentations is the ceiling per loan. NPCI's own caps are invisible to us. */
     static final int MAX_ATTEMPTS = 4;
@@ -180,13 +201,21 @@ public class DebitService {
         return view(row);
     }
 
-    /** True only for a failed debit whose reject code NPCI allows to be re-presented. Unknown is terminal. */
+    /**
+     * True for a failed debit that is worth presenting again: anything but a {@link #TERMINAL_MARKERS}
+     * reason. An unrecognised code is re-presentable — see that field for why that is the safe default.
+     * Only {@code FAILED} qualifies; {@code FAILED_TECHNICAL} goes down the recover-by-key path instead.
+     */
     public boolean eligibleForRepresentation(MandateDebit d) {
-        if (d == null || d.getStatus() != Status.FAILED || d.getFailureCode() == null) {
+        if (d == null || d.getStatus() != Status.FAILED) {
             return false;
         }
-        String code = d.getFailureCode().trim().toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9]+", "_");
-        return REPRESENTABLE_CODES.contains(code);
+        String text = normalise(d.getFailureCode()) + "_" + normalise(d.getFailureReason());
+        return TERMINAL_MARKERS.stream().noneMatch(text::contains);
+    }
+
+    private static String normalise(String s) {
+        return s == null ? "" : s.trim().toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9]+", "_");
     }
 
     // ---- presentation ------------------------------------------------------------------------------------
@@ -418,6 +447,24 @@ public class DebitService {
         row.setPaymentId(paymentId);
         row.setOverpayment(overpayment);
         tx.execute(s -> debits.save(row));
+    }
+
+    // ---- reads -------------------------------------------------------------------------------------
+
+    /** Every presentation on one loan, newest attempt first. (No @Transactional here — see the class note.) */
+    public List<DebitDirectory.DebitRecord> history(Long loanId) {
+        return debits.findByLoanIdOrderByAttemptNoDesc(loanId).stream().map(this::record).toList();
+    }
+
+    /** The refund register: money taken from borrowers who no longer owed it, newest first. */
+    public List<DebitDirectory.DebitRecord> overpayments() {
+        return debits.findByOverpaymentTrueOrderByIdDesc().stream().map(this::record).toList();
+    }
+
+    private DebitDirectory.DebitRecord record(MandateDebit d) {
+        return new DebitDirectory.DebitRecord(d.getId(), d.getLoanId(), d.getStatus().name(), d.getAmountPaise(),
+                d.getSettlementDate(), d.getAttemptNo(), d.getTriggeredBy() == null ? null : d.getTriggeredBy().name(),
+                d.getUtr(), d.isOverpayment(), eligibleForRepresentation(d), d.getCreatedAt());
     }
 
     private DebitView view(MandateDebit d) {

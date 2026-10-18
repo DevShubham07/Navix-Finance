@@ -1911,6 +1911,26 @@ export interface DebitResult {
   attemptNo: number;
 }
 
+/**
+ * One presented NACH debit as staff see it. The provider's failure code and message are deliberately
+ * absent (the message echoes account numbers) — `representable` is what staff need from them: whether
+ * another attempt is possible. `overpayment` means money was taken from a borrower who had already
+ * repaid, i.e. a refund is owed.
+ */
+export interface DebitRecord {
+  debitId: number;
+  loanId: number;
+  status: string;
+  amountPaise: number;
+  settlementDate: string | null;
+  attemptNo: number;
+  trigger: string | null;
+  utr: string | null;
+  overpayment: boolean;
+  representable: boolean;
+  createdAt: string | null;
+}
+
 export interface MandateView {
   status: "PENDING_AUTHORIZATION" | "ACTIVE" | "AUTHORIZATION_FAILED" | "EXPIRED" | "BANK_UNSUPPORTED";
   umrn: string | null;
@@ -4115,6 +4135,12 @@ export const collectionsApi = {
   /** Present a NACH debit now (real money). Omit `amountPaise` for the full outstanding; it may only be lower. */
   debit: (loanId: number, amountPaise?: number) =>
     bff<DebitResult>(`${COLLECTIONS_BASE}/loans/${loanId}/debit`, "POST", amountPaise == null ? {} : { amountPaise }),
+
+  /** Every debit presented on this loan, newest attempt first. Read-only; works with the flag off. */
+  debits: (loanId: number) => bff<DebitRecord[]>(`${COLLECTIONS_BASE}/loans/${loanId}/debits`, "GET"),
+
+  /** The refund register: debits that collected money a borrower no longer owed. COLLECTION_HEAD/ADMIN. */
+  overpayments: () => bff<DebitRecord[]>(`${COLLECTIONS_BASE}/debits/overpayments`, "GET"),
 
   /**
    * One page of the worklist, narrowed server-side.

@@ -46,6 +46,12 @@ public class MandateService {
     private static final Pattern CRN = Pattern.compile("^[0-9A-Za-z-]{1,20}$");
     private static final Pattern ACCOUNT = Pattern.compile("^\\d{8,18}$");
     private static final long BANKS_TTL_MS = 24L * 60 * 60 * 1000;
+    /**
+     * Attempts one application may file. The borrower retries this screen until it works (a failed
+     * authorisation is normal), so the cap is generous — but it must exist: {@code init} is
+     * borrower-reachable and every call is a billable provider create.
+     */
+    static final int MAX_ATTEMPTS_PER_APPLICATION = 10;
 
     private final MandatePort port;
     private final MandateRepository mandates;
@@ -73,6 +79,10 @@ public class MandateService {
         // ponytail: serialised, not deduplicated — the second init still mints a fresh attempt, exactly as
         // the borrower's own "Try again" does. Collapsing those two would need the authorisation URL stored.
         mandates.lockCustomer(customerId);
+        // AFTER the lock, not before: the attempt cap is a read-then-write, so two concurrent inits that
+        // both read count = MAX - 1 would both proceed and file MAX + 1 mandates. The same lock that stops
+        // them computing the same attempt_no is what makes the count trustworthy.
+        requireMandateAllowed(app);
 
         String account = app.getDisbursalAccountNumber() == null ? "" : app.getDisbursalAccountNumber().trim();
         if (!ACCOUNT.matcher(account).matches()) {
@@ -205,6 +215,35 @@ public class MandateService {
         apply(m, port.fetch(m.getDigioMandateId()));
         mandates.save(m);
         return view(m, null);
+    }
+
+    /**
+     * The three gates {@code init} is the only place to hold, because it is the only place that files
+     * a mandate. The journey never routes a borrower here unless {@link #mandateRequired} is true, but
+     * {@code POST .../mandate/init} is a borrower-reachable endpoint of its own and reached none of this:
+     *
+     * <ul>
+     *   <li><b>The kill switch.</b> With {@code digio-mandate} off NOTHING may file a mandate — that is
+     *       what a kill switch is for. Checked here rather than via {@link #mandateRequired}, whose
+     *       second clause (no usable mandate) is false on the legitimate reuse path below.</li>
+     *   <li><b>The account.</b> A mandate authorises debits from one account, so it may only be filed
+     *       against the account we proved — the one the borrower confirmed, or (on the PRE_APPROVED
+     *       fast-track, which has no confirm step) the penny-dropped account carried from the last advance.</li>
+     *   <li><b>A ceiling on attempts.</b> Retrying is expected and allowed; looping is not.</li>
+     * </ul>
+     */
+    private void requireMandateAllowed(LoanApplication app) {
+        if (!featureFlags.isEnabled("digio-mandate", false)) {
+            throw new BusinessException("MANDATE_NOT_ENABLED", "eMandate registration is not available");
+        }
+        if (app.getDisbursalConfirmedAt() == null && !Boolean.TRUE.equals(app.getDisbursalAccountVerified())) {
+            throw new BusinessException("MANDATE_ACCOUNT_UNCONFIRMED",
+                    "Confirm your repayment bank account before setting up auto-repayment");
+        }
+        if (mandates.countByLoanApplicationId(app.getId()) >= MAX_ATTEMPTS_PER_APPLICATION) {
+            throw new BusinessException("MANDATE_ATTEMPTS_EXHAUSTED",
+                    "Too many mandate attempts. Our team will get in touch.");
+        }
     }
 
     /** 2 x max(formula limit, sanctioned principal); zero would satisfy any reuse check, so it is refused. */

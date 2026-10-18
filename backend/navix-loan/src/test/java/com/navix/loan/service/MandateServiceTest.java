@@ -51,7 +51,11 @@ class MandateServiceTest {
         service = new MandateService(port, mandates, applications, profiles, new LoanMath(), featureFlags,
                 eventPublisher);
         app = new LoanApplication();
+        app.setId(1L);
         app.setCustomerId(4471L);
+        // The journey only ever routes a borrower to this step with the flag on and the account confirmed;
+        // init() now enforces both itself, because POST .../mandate/init is reachable without the journey.
+        app.setDisbursalConfirmedAt(java.time.Instant.now());
         app.setDisbursalAccountNumber("123456789012");
         app.setDisbursalIfsc("HDFC0001234");
         app.setDisbursalBank("HDFC Bank");
@@ -60,6 +64,7 @@ class MandateServiceTest {
         profile.setFullName("Asha Rao");
         profile.setMobile("9876543210");
         profile.setMonthlySalaryPaise(40_000_00L);
+        org.mockito.Mockito.lenient().when(featureFlags.isEnabled("digio-mandate", false)).thenReturn(true);
         org.mockito.Mockito.lenient().when(applications.findById(1L)).thenReturn(Optional.of(app));
         org.mockito.Mockito.lenient().when(profiles.findByApplicationId(1L)).thenReturn(Optional.of(profile));
     }
@@ -495,5 +500,71 @@ class MandateServiceTest {
         assertThat(v.carriedOver()).isTrue();
         assertThat(v.overridable()).isFalse();
         assertThat(service.isBankUnsupported(1L)).isFalse();
+    }
+
+    // ---- the gates on init(): it is a borrower-reachable endpoint, not only a journey step ------------
+
+    /**
+     * With digio-mandate off NOTHING may file a mandate. The flag is the kill switch for a feature that
+     * files real NPCI mandates and bills per create; the journey callers were gated and this endpoint
+     * was not, so an authenticated borrower could drive it with the feature switched off.
+     */
+    @Test
+    void refusesToFileAMandateWhileTheKillSwitchIsOff() {
+        when(featureFlags.isEnabled("digio-mandate", false)).thenReturn(false);
+        assertThatThrownBy(() -> service.init(1L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "MANDATE_NOT_ENABLED");
+        verify(port, never()).register(any());
+    }
+
+    /** A mandate authorises debits from ONE account, so it may only be filed against the proven one. */
+    @Test
+    void refusesWhenTheAccountWasNeverConfirmedOrVerified() {
+        app.setDisbursalConfirmedAt(null);
+        app.setDisbursalAccountVerified(Boolean.FALSE);
+        assertThatThrownBy(() -> service.init(1L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "MANDATE_ACCOUNT_UNCONFIRMED");
+        verify(port, never()).register(any());
+    }
+
+    /**
+     * The PRE_APPROVED fast-track has no confirm step, so a penny-dropped account carried from the last
+     * advance is what stands in for it — otherwise that borrower is gated on a mandate they cannot file.
+     */
+    @Test
+    void acceptsACarriedVerifiedAccountWithNoConfirmTimestamp() {
+        app.setDisbursalConfirmedAt(null);
+        app.setDisbursalAccountVerified(Boolean.TRUE);
+        bankOk();
+        when(port.register(any())).thenReturn(new MandateSession("DID1", "partial", "https://x"));
+        assertThat(service.init(1L).status()).isEqualTo("PENDING");
+        verify(port).register(any());
+    }
+
+    /**
+     * The cap is a read-then-write, so it must be read while the customer lock is HELD — otherwise two
+     * concurrent inits both see MAX - 1 and both file, taking the total past the cap.
+     */
+    @Test
+    void readsTheAttemptCountOnlyAfterTakingTheCustomerLock() {
+        bankOk();
+        when(port.register(any())).thenReturn(new MandateSession("DID1", "partial", "https://x"));
+        service.init(1L);
+        var order = org.mockito.Mockito.inOrder(mandates);
+        order.verify(mandates).lockCustomer(4471L);
+        order.verify(mandates).countByLoanApplicationId(1L);
+    }
+
+    /** Retrying is expected; looping is not. Every attempt is a billable provider create. */
+    @Test
+    void refusesOnceTheAttemptCapForThisApplicationIsReached() {
+        when(mandates.countByLoanApplicationId(1L))
+                .thenReturn((long) MandateService.MAX_ATTEMPTS_PER_APPLICATION);
+        assertThatThrownBy(() -> service.init(1L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "MANDATE_ATTEMPTS_EXHAUSTED");
+        verify(port, never()).register(any());
     }
 }

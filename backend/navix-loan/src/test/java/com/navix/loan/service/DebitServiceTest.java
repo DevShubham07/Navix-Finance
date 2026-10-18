@@ -298,9 +298,10 @@ class DebitServiceTest {
         verify(port, never()).presentDebit(any());
     }
 
+    /** Only a genuinely terminal reason stops a presentation; an unknown code no longer does (see below). */
     @Test
     void doesNotRepresentAfterATerminalRejectCode() {
-        for (String code : new String[] {"ACCOUNT_CLOSED", "SOMETHING_NEW_99", null}) {
+        for (String code : new String[] {"ACCOUNT_CLOSED", "MANDATE_CANCELLED", "DUPLICATE_REFERENCE"}) {
             when(debits.findFirstByLoanIdOrderByAttemptNoDesc(LOAN)).thenReturn(Optional.of(row(Status.FAILED, code)));
             assertCode(() -> service.present(LOAN, null, Trigger.MANUAL, 9L), "DEBIT_NOT_REPRESENTABLE");
         }
@@ -433,10 +434,52 @@ class DebitServiceTest {
         verify(port, times(DebitService.MAX_PRESENTATIONS_PER_ROW - 1)).presentDebit(any());
     }
 
+    /**
+     * The inversion. Digio's failure_code vocabulary is unobserved and may be numeric NPCI codes, so an
+     * unrecognised code must be RE-PRESENTABLE: treating it as terminal means the DPD 3/5/9 presentations
+     * never fire and the loan is silently never collected after its first attempt. MAX_ATTEMPTS and
+     * MAX_PRESENTATIONS_PER_ROW are what bound it.
+     */
     @Test
-    void unknownRejectCodeIsTreatedAsTerminal() {
-        assertThat(service.eligibleForRepresentation(row(Status.FAILED, "SOMETHING_NEW_99"))).isFalse();
-        assertThat(service.eligibleForRepresentation(row(Status.FAILED, null))).isFalse();
+    void unknownRejectCodeIsRepresentedRatherThanSilentlyRetired() {
+        assertThat(service.eligibleForRepresentation(row(Status.FAILED, "SOMETHING_NEW_99"))).isTrue();
+        assertThat(service.eligibleForRepresentation(row(Status.FAILED, "0198"))).isTrue();
+        assertThat(service.eligibleForRepresentation(row(Status.FAILED, null))).isTrue();
+        // FAILED_TECHNICAL is the recover-by-key path, never the re-present path.
         assertThat(service.eligibleForRepresentation(row(Status.FAILED_TECHNICAL, "BALANCE_INSUFFICIENT"))).isFalse();
+    }
+
+    /** A numeric code carries no meaning, so the human-readable reason is what has to be matched. */
+    @Test
+    void terminalReasonIsMatchedEvenWhenTheCodeIsNumeric() {
+        MandateDebit numeric = row(Status.FAILED, "0121");
+        numeric.setFailureReason("Account closed");
+        assertThat(service.eligibleForRepresentation(numeric)).isFalse();
+
+        MandateDebit cancelled = row(Status.FAILED, "15");
+        cancelled.setFailureReason("mandate cancelled by customer");
+        assertThat(service.eligibleForRepresentation(cancelled)).isFalse();
+
+        MandateDebit duplicate = row(Status.FAILED, "99");
+        duplicate.setFailureReason("Duplicate reference number");
+        assertThat(service.eligibleForRepresentation(duplicate)).isFalse();
+
+        MandateDebit funds = row(Status.FAILED, "0118");
+        funds.setFailureReason("Insufficient funds");
+        assertThat(service.eligibleForRepresentation(funds)).isTrue();
+    }
+
+    /** The refund register is the only way anyone finds money owed back to a borrower. */
+    @Test
+    void overpaymentsListsOnlyDebitsThatTookMoneyNoLongerOwed() {
+        MandateDebit over = row(Status.SUCCEEDED, null);
+        over.setOverpayment(true);
+        over.setUtr("UTR999");
+        when(debits.findByOverpaymentTrueOrderByIdDesc()).thenReturn(java.util.List.of(over));
+        var found = service.overpayments();
+        assertThat(found).hasSize(1);
+        assertThat(found.get(0).overpayment()).isTrue();
+        assertThat(found.get(0).utr()).isEqualTo("UTR999");
+        assertThat(found.get(0).loanId()).isEqualTo(LOAN);
     }
 }

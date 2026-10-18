@@ -41,6 +41,16 @@ public interface MandateDebitRepository extends JpaRepository<MandateDebit, Long
     @Query("update MandateDebit d set d.updatedAt = ?2 where d.id = ?1")
     void touch(Long id, Instant at);
 
+    /** Every presentation on one loan, newest attempt first — the staff history for that loan. */
+    List<MandateDebit> findByLoanIdOrderByAttemptNoDesc(Long loanId);
+
+    /**
+     * The refund register: debits that collected money from a borrower who no longer owed it (the loan
+     * settled while the debit was in flight). Until this existed an overpayment was a boolean column and
+     * one WARN line, so nobody could find the money owed back.
+     */
+    List<MandateDebit> findByOverpaymentTrueOrderByIdDesc();
+
     boolean existsByLoanIdAndStatusIn(Long loanId, Collection<MandateDebit.Status> statuses);
 
     /** Attempts that ended without collecting money; the retry cap counts only these. */

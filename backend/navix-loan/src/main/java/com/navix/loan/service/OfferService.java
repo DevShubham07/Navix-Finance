@@ -465,9 +465,20 @@ public class OfferService {
 
     // ---------------------------------------------------------------- 11. eMandate
 
+    /**
+     * PRE_APPROVED is admitted alongside SANCTIONED on purpose. The reborrow fast-track in
+     * {@code ApplicationFlowService.apply} gates on the same mandate but has no offer journey behind it,
+     * so a borrower parked there was told MANDATE_REQUIRED with no endpoint that would let them register
+     * one — a dead end not even ADMIN could rescue. The money guards (kill switch, proven account,
+     * attempt cap) live in {@code MandateService.init} and apply to both statuses alike.
+     */
     @Transactional
     public StepResult mandateInit(Long appId) {
-        requireSanctioned(appId);
+        LoanApplication app = applicationRepo.findById(appId)
+                .orElseThrow(() -> new ResourceNotFoundException("LoanApplication", String.valueOf(appId)));
+        if (app.getStatus() != ApplicationStatus.SANCTIONED && app.getStatus() != ApplicationStatus.PRE_APPROVED) {
+            throw new BusinessException("NOT_APPLICABLE", "This offer isn't ready");
+        }
         return mandateService.init(appId);
     }
 
