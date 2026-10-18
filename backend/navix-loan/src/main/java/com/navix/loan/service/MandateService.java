@@ -43,7 +43,15 @@ public class MandateService {
 
     /** ECS runs UTC; collection dates are Indian calendar dates (see RepaymentService.IST). */
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
-    private static final Pattern CRN = Pattern.compile("^[0-9A-Za-z-]{1,20}$");
+    /**
+     * Digio's own constraint on {@code customer_ref_number}: {@code ^[0-9A-Za-z]{0,}$}, max 20 —
+     * "ALPHA and NUMERIC allowed". <b>No hyphen.</b> This pattern used to permit one, and it cost a
+     * live failure: {@code 7682036-1} came back {@code HTTP 400 REQUEST_VALIDATION_FAILED}
+     * (Digio ref {@code EX261018203058579ESC}) on the first real registration attempt. Keep this
+     * identical to the provider's pattern — a validation of ours that is WIDER than theirs is not a
+     * validation, it just moves the rejection to a place where the reason is invisible.
+     */
+    private static final Pattern CRN = Pattern.compile("^[0-9A-Za-z]{1,20}$");
     private static final Pattern ACCOUNT = Pattern.compile("^\\d{8,18}$");
     private static final long BANKS_TTL_MS = 24L * 60 * 60 * 1000;
     /**
@@ -101,7 +109,10 @@ public class MandateService {
 
         int attemptNo = mandates.findFirstByCustomerIdOrderByAttemptNoDesc(customerId)
                 .map(m -> m.getAttemptNo() + 1).orElse(1);
-        String crn = customerId + "-" + attemptNo;
+        // "C<customerId>A<attemptNo>" — alphanumeric per the pattern above. Both halves are pure digits
+        // and the single 'A' separates them, so the mapping stays injective: no two (customer, attempt)
+        // pairs can collide, which matters because uq_mandate_crn is what stops a double filing.
+        String crn = "C" + customerId + "A" + attemptNo;
         if (!CRN.matcher(crn).matches()) {
             throw new BusinessException("INVALID_CUSTOMER_REF", "Cannot form a mandate reference");
         }

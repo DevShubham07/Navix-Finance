@@ -119,7 +119,7 @@ class MandateServiceTest {
         bankOk();
         when(port.register(any())).thenReturn(new MandateSession("DID1", "partial", "https://x"));
         service.init(1L);
-        assertThat(register().customerRefNumber()).isEqualTo("4471-1");
+        assertThat(register().customerRefNumber()).isEqualTo("C4471A1");
 
         Mandate prev = new Mandate();
         prev.setAttemptNo(1);
@@ -128,14 +128,14 @@ class MandateServiceTest {
         service.init(1L);
         ArgumentCaptor<MandateRequest> c = ArgumentCaptor.forClass(MandateRequest.class);
         verify(port, times(2)).register(c.capture());
-        assertThat(c.getAllValues().get(1).customerRefNumber()).isEqualTo("4471-2");
+        assertThat(c.getAllValues().get(1).customerRefNumber()).isEqualTo("C4471A2");
     }
 
     @Test
     void recoversByCrnInsteadOfCreatingTwiceOnTimeout() {
         bankOk();
         when(port.register(any())).thenThrow(new RuntimeException("timeout"));
-        when(port.findByRef("4471-1")).thenReturn(Optional.of(
+        when(port.findByRef("C4471A1")).thenReturn(Optional.of(
                 new MandateResult("DIDX", "partial", null, null, null, null, null, null)));
         service.init(1L);
         verify(port, times(1)).register(any());
@@ -197,7 +197,7 @@ class MandateServiceTest {
         when(port.register(any()))
                 .thenThrow(new RuntimeException("timeout"))
                 .thenReturn(new MandateSession("DID2", "partial", "https://y"));
-        when(port.findByRef("4471-1")).thenReturn(Optional.of(
+        when(port.findByRef("C4471A1")).thenReturn(Optional.of(
                 new MandateResult("DIDX", "partial", "created", null, null, null, null, null)));
         var first = service.init(1L);
         assertThat(first.status()).isEqualTo("FAIL");
@@ -211,7 +211,7 @@ class MandateServiceTest {
         var second = service.init(1L);
         ArgumentCaptor<MandateRequest> r = ArgumentCaptor.forClass(MandateRequest.class);
         verify(port, times(2)).register(r.capture());
-        assertThat(r.getAllValues().get(1).customerRefNumber()).isEqualTo("4471-2");
+        assertThat(r.getAllValues().get(1).customerRefNumber()).isEqualTo("C4471A2");
         assertThat(second.derived().get("url")).isEqualTo("https://y");
     }
 
@@ -219,7 +219,7 @@ class MandateServiceTest {
     void recoveredMandateWithUmrnIsActive() {
         bankOk();
         when(port.register(any())).thenThrow(new RuntimeException("timeout"));
-        when(port.findByRef("4471-1")).thenReturn(Optional.of(
+        when(port.findByRef("C4471A1")).thenReturn(Optional.of(
                 new MandateResult("DIDX", "auth_success", "ack_received", "UMRN9", null, null, null, null)));
         assertThat(service.init(1L).status()).isEqualTo("PASS");
     }
@@ -314,7 +314,7 @@ class MandateServiceTest {
         bankOk();
         RuntimeException failure = new RuntimeException("timeout");
         when(port.register(any())).thenThrow(failure);
-        when(port.findByRef("4471-1")).thenReturn(Optional.of(
+        when(port.findByRef("C4471A1")).thenReturn(Optional.of(
                 new MandateResult(null, "partial", null, null, null, null, null, null)));
         assertThatThrownBy(() -> service.init(1L)).isSameAs(failure);
         verify(mandates, never()).save(any());
@@ -500,6 +500,20 @@ class MandateServiceTest {
         assertThat(v.carriedOver()).isTrue();
         assertThat(v.overridable()).isFalse();
         assertThat(service.isBankUnsupported(1L)).isFalse();
+    }
+
+    /**
+     * Pins the reference against DIGIO'S OWN pattern, not ours. The first live registration attempt was
+     * rejected HTTP 400 REQUEST_VALIDATION_FAILED because the reference was "7682036-1" and Digio allows
+     * alphanumerics only. A test that asserted our old wider pattern would have passed throughout.
+     */
+    @Test
+    void customerRefNumberIsAlphanumericAsDigioRequires() {
+        bankOk();
+        when(port.register(any())).thenReturn(new MandateSession("DID1", "partial", "https://x"));
+        service.init(1L);
+        String crn = register().customerRefNumber();
+        assertThat(crn).matches("^[0-9A-Za-z]{1,20}$").doesNotContain("-").contains("4471");
     }
 
     // ---- the gates on init(): it is a borrower-reachable endpoint, not only a journey step ------------

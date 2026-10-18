@@ -478,3 +478,39 @@ with no UPI entry.
 provisions it, expect a **second Sponsor Bank Profile** at `#/mandates/book/bank-profiles` with its
 own auto-generated `Corporate Profile Id`; that id, not `TSE2610…`, is what `auth_mode: "upi"` needs.
 `11-` Q4 stays **CLOSED — not provisioned**, pending that.
+
+
+## 11. First live registration through the platform — rejected, and why (2026-10-18)
+
+With `provider=digio` and the `digio-mandate` flag on, the first real borrower registration through
+the offer journey failed:
+
+```
+WARN DigioMandateClient - Digio create_form failed: http=400 code=REQUEST_VALIDATION_FAILED
+                          details=EX261018203058579ESC
+WARN MandateService      - Mandate register failed crn=7682036-1
+POST /api/applications/11792/offer/mandate/init -> 422
+```
+
+**Cause: our `customer_ref_number` contained a hyphen.** Digio's own schema for `create_form`
+(`api-reference/schemas/final_post_createMandateForm.json`) constrains it to
+`^[0-9A-Za-z]{0,}$`, max 20 — *"ALPHA and NUMERIC allowed"*. `MandateService` was building
+`<customerId>-<attemptNo>`, and its own validation pattern `^[0-9A-Za-z-]{1,20}$` **explicitly
+permitted the character the provider rejects**. The mandate that succeeded during discovery (§9) used
+`DB<yymmddHHMMSS>` — no separator — which is why this never surfaced before.
+
+Fixed: the reference is now `C<customerId>A<attemptNo>` and the validation pattern is byte-identical
+to Digio's. The lesson is general: **a validation of ours that is wider than the provider's is not a
+validation** — it only moves the rejection somewhere the reason is invisible.
+
+Two things this incident also settled:
+
+1. **`provider=digio` is confirmed live.** The mock adapter makes no network call at all; this was a
+   real HTTP round trip to `api.digio.in`. The parameter-store route (§3 of `14-`) works.
+2. **The debit path does NOT share the bug.** `unique_key` on `createScheduledPlan` is
+   `^[A-Za-z0-9-_]*$`, max 30, so hyphens are legal there and `DBM<loanId>-<attempt>` is valid.
+
+**Still invisible:** which field Digio objected to. `classify()` logs op/status/code/`details` and
+deliberately omits the provider `message`, because that message echoes account numbers (§9 finding 4).
+That tradeoff held up — the code plus the schema was enough to find this in one pass — but it is worth
+knowing that a field-level reason will never be in our logs.
