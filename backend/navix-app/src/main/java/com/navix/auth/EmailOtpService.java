@@ -6,6 +6,7 @@ import com.navix.common.verification.EmailOtpPort;
 import com.navix.common.verification.OtpVerifierPort.OtpRequestResult;
 import com.navix.notification.config.EmailProperties;
 import com.navix.notification.email.EmailClient;
+import com.navix.notification.email.EmailHtmlRenderer;
 import com.navix.notification.email.EmailMessage;
 import com.navix.notification.email.EmailResult;
 import com.navix.notification.suppression.EmailSuppressionService;
@@ -42,17 +43,20 @@ public class EmailOtpService implements EmailOtpPort {
     private final EmailProperties emailProperties;
     private final EmailSuppressionService suppression;
     private final AttemptLimiter limiter;
+    private final EmailHtmlRenderer htmlRenderer;
     private final Map<String, Otp> store = new ConcurrentHashMap<>();
 
     private record Otp(String code, Instant expiresAt, int attempts) {
     }
 
     public EmailOtpService(EmailClient emailClient, EmailProperties emailProperties,
-                           EmailSuppressionService suppression, AttemptLimiter limiter) {
+                           EmailSuppressionService suppression, AttemptLimiter limiter,
+                           EmailHtmlRenderer htmlRenderer) {
         this.emailClient = emailClient;
         this.emailProperties = emailProperties;
         this.suppression = suppression;
         this.limiter = limiter;
+        this.htmlRenderer = htmlRenderer;
     }
 
     private static String key(String purpose, String email) {
@@ -77,15 +81,18 @@ public class EmailOtpService implements EmailOtpPort {
             // A bounced/complained address must not be re-mailed — mirrors EmailSender's SUPPRESSED skip.
             log.info("EMAIL OTP suppressed to={} — not sent", Masking.maskEmail(address));
         } else if (Boolean.TRUE.equals(emailProperties.enabled())) {
-            String subject = "Your DhanBoost verification code";
+            String subject = code + " is your DhanBoost verification code";
+            int minutes = TTL_SECONDS / 60;
             String body = "Your DhanBoost email verification code is " + code + ". It is valid for "
-                    + (TTL_SECONDS / 60) + " minutes. Do not share it with anyone.\n\n— DhanBoost";
+                    + minutes + " minutes. Do not share it with anyone.\n\n— DhanBoost";
+            String html = htmlRenderer.renderOtp("Verify your email address",
+                    "Use this code to verify your email address on DhanBoost:", code, minutes);
             if ("log".equalsIgnoreCase(emailProperties.provider())) {
                 // Dev/demo convenience, mirrors PasswordResetService's reset-link log line — no real
                 // mail goes out with the log provider, so surface the code for local testing.
                 log.info("DEV email OTP for {}: {}", Masking.maskEmail(address), code);
             }
-            EmailResult result = emailClient.send(new EmailMessage(address, subject, body, null));
+            EmailResult result = emailClient.send(new EmailMessage(address, subject, body, html));
             sent = result.ok();
             if (!sent) {
                 log.warn("email OTP to {} failed: {}", Masking.maskEmail(address), result.error());
