@@ -6,7 +6,7 @@ import { AlertTriangle, CheckCircle2, Loader2, PhoneCall, RefreshCw } from "luci
 import { Reassurance } from "@/components/borrower/reassurance";
 import { offerApi, type StepResult } from "@/lib/api/applications";
 import { completeOfferStep, nextOfferRoute } from "@/lib/offer";
-import { useLiveApplication } from "@/lib/api/live-journey";
+import { useBorrowerSession, useLiveApplication } from "@/lib/api/live-journey";
 import { formatApiError } from "@/lib/api/errors";
 
 type Phase = "checking" | "ready" | "waiting" | "stalled" | "done" | "failed" | "unsupported";
@@ -40,7 +40,16 @@ export default function MandatePage() {
   // live part-repaid loan — or a closed one setting auto-repayment up before their next advance — is
   // exactly who an invite link is for, and bouncing them was an artefact of the shared hook, not a rule.
   // The backend decides who may actually register (OfferService.MANDATE_SETUP_ALLOWED).
-  const { appId, app } = useLiveApplication({ needLoan: false });
+  const { appId, app, isLoading: appLoading } = useLiveApplication({ needLoan: false });
+  // The invite link carries no token, so it is often opened signed out (SMS on a phone, a fresh browser).
+  // Without a session /mine never resolves an app id and the page spun on "Loading…" for ever — send the
+  // borrower to sign in and bring them straight back here.
+  const { data: session, isLoading: sessionLoading } = useBorrowerSession();
+  React.useEffect(() => {
+    if (!sessionLoading && session === null) router.replace("/login?next=/loan/mandate");
+  }, [session, sessionLoading, router]);
+  // Signed in, /mine settled, still nothing to point at: say so instead of spinning.
+  const noApplication = !!session && appId == null && !appLoading;
   // In the journey this step is blocking and success advances it. Reached by invite on a loan that has
   // already left the journey, success is simply the end: there is nothing to advance to.
   const inJourney = app?.status === "SANCTIONED";
@@ -158,6 +167,20 @@ export default function MandatePage() {
     setPhase("waiting");
     setPollKey((k) => k + 1);
   };
+
+  if (noApplication) {
+    return (
+      <div className="form-card text-center">
+        <AlertTriangle size={28} className="mx-auto text-warning-800" />
+        <p className="lead mt-4 mb-1">No advance found</p>
+        <p className="text-sm text-muted">
+          We couldn&apos;t find an advance on this account to set up auto-repayment for. If you signed in
+          with a different mobile number, sign out and use the one your advance is on.
+        </p>
+        <a href="/dashboard" className="btn btn-gold mt-4">Go to my dashboard</a>
+      </div>
+    );
+  }
 
   if (appId == null || phase === "checking" || phase === "waiting" || phase === "done") {
     return (
