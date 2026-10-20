@@ -43,4 +43,17 @@ class EmailHtmlRendererTest {
         String html = renderer.render("S", null);
         assertThat(html).contains("<!DOCTYPE html>");
     }
+
+    @Test
+    void rendersOtpCodeInBrandedShell() {
+        String html = renderer.renderOtp("Verify your email address", "Use this code:", "482913", 10);
+        assertThat(html).contains("Verify your email address").contains(">482913</td>")
+                .contains("10 minutes").contains("Never share this code");
+    }
+
+    @Test
+    void escapesOtpInputs() {
+        String html = renderer.renderOtp("<b>", "<i>", "<x>", 10);
+        assertThat(html).doesNotContain("<b>").doesNotContain("<i>").doesNotContain("<x>");
+    }
 }
