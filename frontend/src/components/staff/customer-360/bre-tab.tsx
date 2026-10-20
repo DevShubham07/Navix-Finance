@@ -182,7 +182,7 @@ function Summary({ rules, counts, reportLine }: { rules: BreRule[]; counts: Reco
       </div>
       <p className="mt-2 text-[10.4px] text-muted">
         Flags only — these rules never reject or block a loan. {reportLine} The bank statement analyser is not live yet,
-        so rule 5 reads the CRIF report and rule 9 compares what is on file.
+        so rule 6 reads the CRIF report and rule 10 compares what is on file.
       </p>
     </Section>
   );

@@ -479,12 +479,69 @@ public class MandateService {
      */
     @Transactional(readOnly = true)
     public Optional<MandateView> staffView(Long appId) {
-        Optional<MandateView> own = mandates.findFirstByLoanApplicationIdOrderByAttemptNoDesc(appId)
-                .map(m -> toView(m, m.getStatus() == Mandate.Status.BANK_UNSUPPORTED, false));
-        if (own.isPresent()) {
-            return own;
+        // The EFFECTIVE mandate first. An ACTIVE UMRN is what actually governs this application, and a
+        // later unauthorised attempt stacked on top of it does not change that. Showing the newest row
+        // instead told staff "Awaiting borrower authorisation" for a customer who already held a live
+        // mandate, while the borrower kept pressing and filing more (docs/digio/13 section 13).
+        Optional<Mandate> usable = applications.findById(appId).flatMap(this::usableMandate);
+        if (usable.isPresent()) {
+            Mandate m = usable.get();
+            return Optional.of(toView(m, false, !appId.equals(m.getLoanApplicationId())));
         }
-        return applications.findById(appId).flatMap(this::usableMandate).map(m -> toView(m, false, true));
+        return mandates.findFirstByLoanApplicationIdOrderByAttemptNoDesc(appId)
+                .map(m -> toView(m, m.getStatus() == Mandate.Status.BANK_UNSUPPORTED, false));
+    }
+
+    /** One row of the attempt history. No authorisation url — it is a bearer link to a binding mandate. */
+    public record MandateAttempt(Long id, Long applicationId, int attemptNo, String status, String umrn,
+                                 String bankName, String accountLast4, String digioState, String digioBankState,
+                                 String authSubMode, String rejectReason, long maximumAmountPaise,
+                                 Instant createdAt, Instant authenticatedAt, boolean reusable) {}
+
+    /**
+     * Every mandate this CUSTOMER has ever attempted, newest first — across applications, because a
+     * mandate is a per-customer authority and a reborrower's earlier one may well be the live one.
+     */
+    @Transactional(readOnly = true)
+    public List<MandateAttempt> history(Long appId) {
+        LoanApplication app = applications.findById(appId)
+                .orElseThrow(() -> new BusinessException("APPLICATION_NOT_FOUND", "Application not found"));
+        Long effective = usableMandate(app).map(Mandate::getId).orElse(null);
+        return mandates.findByCustomerIdOrderByAttemptNoDesc(app.getCustomerId()).stream()
+                .map(m -> new MandateAttempt(m.getId(), m.getLoanApplicationId(), m.getAttemptNo(),
+                        m.getStatus().name(), m.getUmrn(), m.getBankName(), m.getAccountLast4(),
+                        m.getDigioState(), m.getDigioBankState(), m.getAuthSubMode(), m.getRejectReason(),
+                        m.getMaximumAmountPaise(), m.getCreatedAt(), m.getAuthenticatedAt(),
+                        m.getId().equals(effective)))
+                .toList();
+    }
+
+    /**
+     * Re-reads every unsettled attempt from the provider and writes back what it says.
+     *
+     * <p>This is the staff-side counterpart to {@link #settleEarlierAttempts}: Digio's
+     * {@code auth_failed} is not terminal, so a row we recorded as failed may since have completed, and
+     * nothing in the borrower journey will notice unless they press the button again. Read-only at the
+     * provider — it files nothing and cancels nothing.
+     */
+    @Transactional
+    public List<MandateAttempt> refresh(Long appId) {
+        LoanApplication app = applications.findById(appId)
+                .orElseThrow(() -> new BusinessException("APPLICATION_NOT_FOUND", "Application not found"));
+        for (Mandate m : mandates.findByCustomerIdOrderByAttemptNoDesc(app.getCustomerId())) {
+            boolean settled = m.getStatus() == Mandate.Status.ACTIVE || m.getStatus() == Mandate.Status.BANK_UNSUPPORTED;
+            if (settled) {
+                continue;
+            }
+            try {
+                apply(m, port.fetch(m.getDigioMandateId()));
+                mandates.save(m);
+            } catch (RuntimeException e) {
+                log.warn("Mandate refresh failed crn={} exception={}", m.getCustomerRefNumber(),
+                        e.getClass().getSimpleName());
+            }
+        }
+        return history(appId);
     }
 
     private static MandateView toView(Mandate m, boolean overridable, boolean carriedOver) {

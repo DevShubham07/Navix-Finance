@@ -37,6 +37,7 @@ const clean = (): BreInput => ({
   profile,
   steps: [
     step("PAN", { fullName: "ASHA VERMA", panNumber: "ABCDE1234F", aadhaarLinked: true }),
+    step("PAN_AADHAAR_LINK", { linked: true, code: "EF40124" }),
     step("AADHAAR", { fullName: "Asha Verma", maskedAadhaar: "XXXXXXXX1234" }),
     step("EMPLOYMENT", { found: true, employed: true, uan: "100000000001", employerName: "SPRINKLR INDIA PVT LTD" }),
     step("EMAIL", { establishmentMatched: true, companyName: "Sprinklr", domain: "sprinklr.com" }),
@@ -55,16 +56,16 @@ describe("evaluateBre — a clean file", () => {
   const { rules, counts } = evaluateBre(clean());
 
   it("validates the bureau and occupation rules", () => {
-    expect([1, 2, 3, 4, 5].map((id) => byId(rules, id).outcome)).toEqual(["PASS", "PASS", "PASS", "PASS", "PASS"]);
+    expect([1, 2, 3, 4, 5, 6].map((id) => byId(rules, id).outcome)).toEqual(["PASS", "PASS", "PASS", "PASS", "PASS", "PASS"]);
   });
 
   it("asks for a manual look where only pictures or slips can settle it", () => {
-    expect([6, 7, 8, 9].map((id) => byId(rules, id).outcome)).toEqual(["MANUAL", "MANUAL", "MANUAL", "MANUAL"]);
-    expect(counts).toEqual({ PASS: 5, FLAG: 0, MANUAL: 4, UNKNOWN: 0 });
+    expect([7, 8, 9, 10].map((id) => byId(rules, id).outcome)).toEqual(["MANUAL", "MANUAL", "MANUAL", "MANUAL"]);
+    expect(counts).toEqual({ PASS: 6, FLAG: 0, MANUAL: 4, UNKNOWN: 0 });
   });
 
   it("shows each comparison side by side with the documents a reviewer can open", () => {
-    const r8 = byId(rules, 8);
+    const r8 = byId(rules, 9);
     expect(r8.compare?.map((c) => c.outcome)).toEqual(["PASS", "PASS", "MANUAL"]);
     expect(r8.compare?.[2].docTypes).toContain("AADHAAR_CARD_FRONT");
   });
@@ -80,100 +81,109 @@ describe("evaluateBre — flags", () => {
     expect(byId(evaluateBre(j).rules, 1).summary).toContain("PAN does not match");
   });
 
-  it("rule 2: only an old personal loan", () => {
+  it("rule 2: PAN not linked to Aadhaar flags; no check yet is unknown", () => {
     const i = clean();
-    i.report = report([acct({ status: "CLOSED", statusLabel: "Closed", openedOn: "2023-01-01", closedOn: "2024-03-28" })]);
+    i.steps = i.steps.map((x) => (x.checkType === "PAN_AADHAAR_LINK" ? step("PAN_AADHAAR_LINK", { linked: false, code: "EF40125" }, "REVIEW") : x));
     expect(byId(evaluateBre(i).rules, 2).outcome).toBe("FLAG");
+    const j = clean();
+    j.steps = j.steps.filter((x) => x.checkType !== "PAN_AADHAAR_LINK");
+    expect(byId(evaluateBre(j).rules, 2).outcome).toBe("UNKNOWN");
   });
 
-  it("rule 3: a guarantor loan in the window", () => {
+  it("rule 3: only an old personal loan", () => {
+    const i = clean();
+    i.report = report([acct({ status: "CLOSED", statusLabel: "Closed", openedOn: "2023-01-01", closedOn: "2024-03-28" })]);
+    expect(byId(evaluateBre(i).rules, 3).outcome).toBe("FLAG");
+  });
+
+  it("rule 4: a guarantor loan in the window", () => {
     const i = clean();
     i.report = report([acct({ ownership: "GUARANTOR", ownershipLabel: "Guarantor" })]);
-    const r3 = byId(evaluateBre(i).rules, 3);
+    const r3 = byId(evaluateBre(i).rules, 4);
     expect(r3.outcome).toBe("FLAG");
     expect(r3.accounts?.[0].flagged).toBe(true);
   });
 
-  it("rule 4: no NBFC loan, and an NBFC loan with DPD over 10 days", () => {
+  it("rule 5: no NBFC loan, and an NBFC loan with DPD over 10 days", () => {
     const i = clean();
     i.report = report([acct({})]);
-    expect(byId(evaluateBre(i).rules, 4).outcome).toBe("FLAG");
+    expect(byId(evaluateBre(i).rules, 5).outcome).toBe("FLAG");
     const j = clean();
     j.report = report([acct({ isNbfc: true, lenderType: "NBF", history: [{ month: "2026-08", dpd: 11, npa: false }] })]);
-    const r4 = byId(evaluateBre(j).rules, 4);
+    const r4 = byId(evaluateBre(j).rules, 5);
     expect(r4.outcome).toBe("FLAG");
     expect(r4.summary).toContain("11 DPD");
   });
 
-  it("rule 4: DPD of exactly 10 days or before the window does not flag", () => {
+  it("rule 5: DPD of exactly 10 days or before the window does not flag", () => {
     const i = clean();
     i.report = report([acct({ isNbfc: true, lenderType: "NBF", history: [{ month: "2026-08", dpd: 10, npa: false }, { month: "2025-11", dpd: 90, npa: false }] })]);
-    expect(byId(evaluateBre(i).rules, 4).outcome).toBe("PASS");
+    expect(byId(evaluateBre(i).rules, 5).outcome).toBe("PASS");
   });
 
-  it("rule 5: self-employed, army, advocate and Ministry of Home Affairs", () => {
+  it("rule 6: self-employed, army, advocate and Ministry of Home Affairs", () => {
     const self = clean();
     self.profile = { ...profile, employmentStatus: "SELF_EMPLOYED" };
-    expect(byId(evaluateBre(self).rules, 5).outcome).toBe("FLAG");
+    expect(byId(evaluateBre(self).rules, 6).outcome).toBe("FLAG");
 
     const army = clean();
     army.profile = { ...profile, employer: "Indian Army" };
-    expect(byId(evaluateBre(army).rules, 5).summary).toContain("Army");
+    expect(byId(evaluateBre(army).rules, 6).summary).toContain("Army");
 
     const lawyer = clean();
     lawyer.steps = [...lawyer.steps.filter((s) => s.checkType !== "EMPLOYMENT"), step("EMPLOYMENT", { found: true, employed: true, employerName: "KUMAR & ASSOCIATES ADVOCATES" })];
-    expect(byId(evaluateBre(lawyer).rules, 5).summary).toContain("Lawyer");
+    expect(byId(evaluateBre(lawyer).rules, 6).summary).toContain("Lawyer");
 
     const mha = clean();
     mha.profile = { ...profile, officialEmail: "asha@mha.gov.in" };
     mha.steps = mha.steps.filter((s) => s.checkType !== "EMAIL");
-    expect(byId(evaluateBre(mha).rules, 5).summary).toContain("Ministry of Home Affairs");
+    expect(byId(evaluateBre(mha).rules, 6).summary).toContain("Ministry of Home Affairs");
 
     const bureau = clean();
     bureau.report = report(bureau.report!.accounts, { occupations: [{ value: "Self Employed Professional", reportedOn: null, where: "x" }] });
-    expect(byId(evaluateBre(bureau).rules, 5).outcome).toBe("FLAG");
+    expect(byId(evaluateBre(bureau).rules, 6).outcome).toBe("FLAG");
   });
 
-  it("rule 5: an employer address on a business park is not self-employment", () => {
+  it("rule 6: an employer address on a business park is not self-employment", () => {
     const i = clean();
     i.report = report(i.report!.accounts, { addresses: [{ value: "SAMPLE EMPLOYER PVT LTD BUSINESS PARK", reportedOn: null, where: "Address" }] });
-    expect(byId(evaluateBre(i).rules, 5).outcome).toBe("PASS");
+    expect(byId(evaluateBre(i).rules, 6).outcome).toBe("PASS");
   });
 
-  it("rule 6: Aadhaar not linked, or a different name on Aadhaar", () => {
+  it("rule 7: Aadhaar not linked, or a different name on Aadhaar", () => {
     const i = clean();
     i.steps = [step("PAN", { fullName: "ASHA VERMA", aadhaarLinked: false }), ...i.steps.slice(1)];
-    expect(byId(evaluateBre(i).rules, 6).outcome).toBe("FLAG");
+    expect(byId(evaluateBre(i).rules, 7).outcome).toBe("FLAG");
     const j = clean();
     j.steps = [j.steps[0], step("AADHAAR", { fullName: "RAVI KUMAR", maskedAadhaar: "XXXXXXXX1234" }), ...j.steps.slice(2)];
-    expect(byId(evaluateBre(j).rules, 6).outcome).toBe("FLAG");
+    expect(byId(evaluateBre(j).rules, 7).outcome).toBe("FLAG");
   });
 
-  it("rule 7: no EPFO record, a different employer, or a different UAN", () => {
+  it("rule 8: no EPFO record, a different employer, or a different UAN", () => {
     const none = clean();
     none.steps = [...none.steps.filter((s) => s.checkType !== "EMPLOYMENT"), step("EMPLOYMENT", { found: false })];
-    expect(byId(evaluateBre(none).rules, 7).outcome).toBe("FLAG");
+    expect(byId(evaluateBre(none).rules, 8).outcome).toBe("FLAG");
     const other = clean();
     other.steps = [...other.steps.filter((s) => s.checkType !== "EMPLOYMENT"), step("EMPLOYMENT", { found: true, employed: true, uan: "100000000001", employerName: "ECLERX SERVICES LIMITED" })];
-    expect(byId(evaluateBre(other).rules, 7).outcome).toBe("FLAG");
+    expect(byId(evaluateBre(other).rules, 8).outcome).toBe("FLAG");
     const uan = clean();
     uan.profile = { ...profile, uan: "100000000009" };
-    expect(byId(evaluateBre(uan).rules, 7).outcome).toBe("FLAG");
+    expect(byId(evaluateBre(uan).rules, 8).outcome).toBe("FLAG");
   });
 
-  it("rule 8: typed Aadhaar disagrees with DigiLocker", () => {
+  it("rule 9: typed Aadhaar disagrees with DigiLocker", () => {
     const i = clean();
     i.aadhaar = "234567899999";
-    expect(byId(evaluateBre(i).rules, 8).outcome).toBe("FLAG");
+    expect(byId(evaluateBre(i).rules, 9).outcome).toBe("FLAG");
   });
 
-  it("rule 9: bank-statement salary off by more than 10%", () => {
+  it("rule 10: bank-statement salary off by more than 10%", () => {
     const i = clean();
     i.bankAnalyserLive = true;
     i.bankSalaryPaise = 3_000_000;
-    expect(byId(evaluateBre(i).rules, 9).outcome).toBe("FLAG");
+    expect(byId(evaluateBre(i).rules, 10).outcome).toBe("FLAG");
     i.bankSalaryPaise = 4_800_000;
-    expect(byId(evaluateBre(i).rules, 9).outcome).toBe("MANUAL");
+    expect(byId(evaluateBre(i).rules, 10).outcome).toBe("MANUAL");
   });
 });
 
@@ -182,7 +192,7 @@ describe("evaluateBre — missing data is never a pass or a fail", () => {
     const i = clean();
     i.report = null;
     i.bureau = { state: "NOT_FETCHED", score: null, source: null, generatedAt: null };
-    expect([1, 2, 3, 4].map((id) => byId(evaluateBre(i).rules, id).outcome)).toEqual(["UNKNOWN", "UNKNOWN", "UNKNOWN", "UNKNOWN"]);
+    expect([1, 3, 4, 5].map((id) => byId(evaluateBre(i).rules, id).outcome)).toEqual(["UNKNOWN", "UNKNOWN", "UNKNOWN", "UNKNOWN"]);
   });
 
   it("a confirmed no-hit flags the score", () => {
@@ -196,14 +206,14 @@ describe("evaluateBre — missing data is never a pass or a fail", () => {
     const i = clean();
     i.steps = i.steps.filter((s) => s.checkType !== "AADHAAR");
     const { rules } = evaluateBre(i);
-    expect(byId(rules, 6).outcome).toBe("UNKNOWN");
-    expect(byId(rules, 8).outcome).toBe("UNKNOWN");
+    expect(byId(rules, 7).outcome).toBe("UNKNOWN");
+    expect(byId(rules, 9).outcome).toBe("UNKNOWN");
   });
 
   it("parsed tradelines carry no ownership, so rule 3 says so", () => {
     const i = clean();
     i.report = report([acct({ ownership: null, ownershipLabel: null })], { source: "PARSED" });
-    expect(byId(evaluateBre(i).rules, 3).outcome).toBe("UNKNOWN");
+    expect(byId(evaluateBre(i).rules, 4).outcome).toBe("UNKNOWN");
   });
 });
 
@@ -214,16 +224,16 @@ describe("evaluateBre — against the real CRIF samples", () => {
     const i = { ...base, report: parseBureauReport(combine as unknown as JsonValue, 318), bureau: { ...base.bureau, score: 799, generatedAt: "2026-08-22T00:00:00Z" } };
     const { rules } = evaluateBre(i);
     expect(byId(rules, 1).outcome).toBe("PASS");
-    expect(byId(rules, 2).outcome).toBe("FLAG");
-    expect(byId(rules, 4).outcome).toBe("FLAG");
+    expect(byId(rules, 3).outcome).toBe("FLAG");
+    expect(byId(rules, 5).outcome).toBe("FLAG");
   });
 
   it("KBA sample: score 510 and an NBFC consumer loan 900 days past due", () => {
     const i = { ...base, report: parseBureauReport(kba as unknown as JsonValue, 9), bureau: { ...base.bureau, score: 510 } };
     const { rules } = evaluateBre(i);
     expect(byId(rules, 1).outcome).toBe("FLAG");
-    expect(byId(rules, 4).outcome).toBe("FLAG");
-    expect(byId(rules, 4).summary).toContain("900 DPD");
+    expect(byId(rules, 5).outcome).toBe("FLAG");
+    expect(byId(rules, 5).summary).toContain("900 DPD");
   });
 });
 
@@ -240,15 +250,15 @@ describe("helpers", () => {
     expect(merged.map((s) => [s.checkType, s.derived.a])).toEqual([["PAN", 1], ["BUREAU", undefined]]);
   });
 
-  it("staging pass: rules 1, 3, 5, 6, 8 report PASS; 2, 4, 7, 9 stay real", () => {
+  it("staging pass: rules 1, 4, 6, 7, 9 report PASS; 3, 5, 8, 10 stay real", () => {
     const i = clean();
     i.bureau = { ...i.bureau, score: 500 };
     i.aadhaar = "234567899999";
     i.report = report([acct({ status: "CLOSED", statusLabel: "Closed", openedOn: "2023-01-01", closedOn: "2024-03-28" })]);
     const real = evaluateBre(i).rules;
-    expect([1, 2, 8].map((id) => byId(real, id).outcome)).toEqual(["FLAG", "FLAG", "FLAG"]);
+    expect([1, 3, 9].map((id) => byId(real, id).outcome)).toEqual(["FLAG", "FLAG", "FLAG"]);
     const staged = evaluateBre({ ...i, stagingPass: true }).rules;
-    expect([1, 3, 5, 6, 8].map((id) => byId(staged, id).outcome)).toEqual(["PASS", "PASS", "PASS", "PASS", "PASS"]);
-    expect([2, 4, 7, 9].map((id) => byId(staged, id).outcome)).toEqual([2, 4, 7, 9].map((id) => byId(real, id).outcome));
+    expect([1, 4, 6, 7, 9].map((id) => byId(staged, id).outcome)).toEqual(["PASS", "PASS", "PASS", "PASS", "PASS"]);
+    expect([3, 5, 8, 10].map((id) => byId(staged, id).outcome)).toEqual([3, 5, 8, 10].map((id) => byId(real, id).outcome));
   });
 });

@@ -1,7 +1,7 @@
 /**
  * BRE — the Business Rule Engine shown on the staff Customer 360 "BRE" tab.
  *
- * Nine credit-policy rules evaluated in the browser from data the platform already holds (bureau
+ * Ten credit-policy rules evaluated in the browser from data the platform already holds (bureau
  * report, verification rows, profile, documents). **Flags only**: nothing here rejects, blocks or
  * changes a file — CLAUDE.md §14 "no verification hard-blocks a borrower".
  *
@@ -51,7 +51,7 @@ export interface BreEvidence {
   mono?: boolean;
 }
 
-/** One side of a side-by-side comparison (rules 6-9). `docTypes` = documents a reviewer can open. */
+/** One side of a side-by-side comparison (rules 7-10). `docTypes` = documents a reviewer can open. */
 export interface BreCompare {
   label: string;
   value: string | null;
@@ -111,8 +111,8 @@ export interface BreInput {
   stagingPass?: boolean;
 }
 
-/** Rules a staging build reports as passed. Rules 2, 4, 7 and 9 always evaluate for real. */
-export const STAGING_PASS_RULES: readonly number[] = [1, 3, 5, 6, 8];
+/** Rules a staging build reports as passed. Rules 3, 5, 8 and 10 always evaluate for real. */
+export const STAGING_PASS_RULES: readonly number[] = [1, 4, 6, 7, 9];
 
 function stagingPassed(r: BreRule): BreRule {
   return { ...r, outcome: "PASS", summary: "Validated", checks: r.checks.map((c) => ({ ...c, outcome: "PASS" })), compare: r.compare?.map((c) => ({ ...c, outcome: "PASS" })), accounts: r.accounts?.map((a) => ({ ...a, flagged: false })) };
@@ -223,7 +223,7 @@ function r1Score(input: BreInput): BreRule {
 const personalLoansInWindow = (input: BreInput, w: Window) => (input.report?.accounts ?? []).filter((a) => a.isPersonalLoan && inWindow(a, w));
 const nbfcLoansInWindow = (input: BreInput, w: Window) => (input.report?.accounts ?? []).filter((a) => a.isNbfc === true && inWindow(a, w));
 
-function r2PersonalLoan(input: BreInput, w: Window): BreRule {
+function rPersonalLoan(input: BreInput, w: Window): BreRule {
   const label = `Personal loan active or closed in the last ${LOOKBACK_MONTHS} months`;
   const pls = personalLoansInWindow(input, w);
   const allPls = (input.report?.accounts ?? []).filter((a) => a.isPersonalLoan);
@@ -235,7 +235,7 @@ function r2PersonalLoan(input: BreInput, w: Window): BreRule {
         : { label, outcome: "FLAG", detail: allPls.length > 0 ? `${allPls.length} personal loan(s) on file, none in ${windowLabel(w)}` : "No personal loan on the bureau report" },
   ];
   return rule({
-    id: 2,
+    id: 3,
     key: "personal-loan",
     title: `Personal loan in the last ${LOOKBACK_MONTHS} months`,
     policy: `At least one personal loan, active or closed, in the ${LOOKBACK_MONTHS} months up to the bureau report.`,
@@ -248,6 +248,34 @@ function r2PersonalLoan(input: BreInput, w: Window): BreRule {
     ],
     accounts: pls.map((a) => row(a, w)),
     sourceTab: "credit",
+  });
+}
+
+function r2PanAadhaarLink(input: BreInput): BreRule {
+  const label = "PAN is linked to the borrower's Aadhaar";
+  const d = derivedOf(input.steps, "PAN_AADHAAR_LINK");
+  const linked = bool(d.linked);
+  const panRecordLinked = bool(derivedOf(input.steps, "PAN").aadhaarLinked);
+  const checks: BreCheck[] = [
+    linked == null
+      ? { label, outcome: "UNKNOWN", detail: stepOf(input.steps, "PAN_AADHAAR_LINK")?.message ?? "Link check has not run yet" }
+      : { label, outcome: linked ? "PASS" : "FLAG", detail: linked ? "Signzy confirms the PAN is linked" : "Signzy reports the PAN is not linked to this Aadhaar" },
+  ];
+  if (panRecordLinked != null) {
+    checks.push({ label: "Link flag on the PAN record", outcome: panRecordLinked ? "PASS" : "FLAG", detail: panRecordLinked ? "Linked" : "Not linked", informational: true });
+  }
+  return rule({
+    id: 2,
+    key: "pan-aadhaar-link",
+    title: "PAN linked to Aadhaar",
+    policy: "The PAN must be linked to the Aadhaar number the borrower typed (Signzy PAN-KYC ID link status); otherwise flag.",
+    checks,
+    evidence: [
+      { label: "PAN", value: str(derivedOf(input.steps, "PAN").panNumber) ?? str(input.profile?.pan), mono: true },
+      { label: "Aadhaar", value: input.aadhaar ? maskAadhaar(input.aadhaar) : null, mono: true },
+      { label: "Provider status", value: str(d.code), mono: true },
+    ],
+    sourceTab: "kyc",
   });
 }
 
@@ -272,7 +300,7 @@ function r3Ownership(input: BreInput, w: Window): BreRule {
     checks.push({ label: "Guarantor on other accounts", outcome: "FLAG", detail: `${guarantorElsewhere.length} other account(s) list the borrower as guarantor`, informational: true });
   }
   return rule({
-    id: 3,
+    id: 4,
     key: "ownership",
     title: "Individual ownership, not guarantor",
     policy: "The loans relied on (rules 2 and 4) must be the borrower's own — individual ownership, not as a guarantor.",
@@ -329,7 +357,7 @@ function r4Nbfc(input: BreInput, w: Window): BreRule {
     checks.push({ label: hasLabel, outcome: "FLAG", detail: `No NBFC loan in ${windowLabel(w)}` });
   }
   return rule({
-    id: 4,
+    id: 5,
     key: "nbfc",
     title: `NBFC loan in the last ${LOOKBACK_MONTHS} months, no DPD over ${MAX_NBFC_DPD_DAYS} days`,
     policy: `There must be an NBFC loan in the last ${LOOKBACK_MONTHS} months, and none of those NBFC loans may have been more than ${MAX_NBFC_DPD_DAYS} days past due in that period.`,
@@ -375,7 +403,7 @@ function r5Occupation(input: BreInput, analysis: ProfileAnalysis): BreRule {
     checks.push({ label: "No self-employment signal elsewhere", outcome: "FLAG", detail: selfHits.map((h) => `${h.source}: "${h.value}"`).join("; ") });
   }
   return rule({
-    id: 5,
+    id: 6,
     key: "occupation",
     title: "Not self-employed, army, lawyer or MHA",
     policy: "No loans to the self-employed, the army, lawyers/advocates or the Ministry of Home Affairs. The bank statement analyser is not live, so this reads the CRIF report and KYC data.",
@@ -413,7 +441,7 @@ function r6AadhaarPan(input: BreInput): BreRule {
     cardCheck,
   ];
   return rule({
-    id: 6,
+    id: 7,
     key: "aadhaar-pan",
     title: "Aadhaar–PAN linkage and name",
     policy: "Aadhaar must be linked to the PAN, and the Aadhaar must carry the same name as the PAN and the uploaded card pictures.",
@@ -465,7 +493,7 @@ function r7UanEmployer(input: BreInput): BreRule {
       : { label: "UAN and employer on the salary slips", outcome: "UNKNOWN", detail: "No salary slips uploaded" },
   ];
   return rule({
-    id: 7,
+    id: 8,
     key: "uan-employer",
     title: "UAN and company name",
     policy: "The UAN must be verified on EPFO and against the salary slips, and the company name must match.",
@@ -512,7 +540,7 @@ function r8AadhaarTriangle(input: BreInput): BreRule {
   if (fraud) checks.push({ label: "No Aadhaar mismatch recorded", outcome: "FLAG", detail: "The verification flow recorded an Aadhaar mismatch (fraud rule)" });
   if (duplicate && duplicate.status !== "PASS") checks.push({ label: "Aadhaar not held by another customer", outcome: "FLAG", detail: duplicate.message ?? "Same Aadhaar number on another customer" });
   return rule({
-    id: 8,
+    id: 9,
     key: "aadhaar-match",
     title: "Aadhaar: typed vs DigiLocker vs photo",
     policy: "The Aadhaar number the borrower typed, the last 4 digits DigiLocker returns and the number on the uploaded photo must all agree; otherwise flag.",
@@ -552,7 +580,7 @@ function r9Salary(input: BreInput): BreRule {
   ];
   const income = input.report?.incomes[0];
   return rule({
-    id: 9,
+    id: 10,
     key: "salary-match",
     title: "Salary: bank statement vs slips vs declared",
     policy: `The salary from the bank statement analyser, the salary slips and the borrower's declaration must agree (within ${Math.round(SALARY_MATCH_TOLERANCE * 100)}%).`,
@@ -577,7 +605,8 @@ export function evaluateBre(input: BreInput): BreResult {
   const analysis = analyseProfile(input.report, input.profile, input.steps, input.bureau.generatedAt, input.today);
   const rules = [
     r1Score(input),
-    r2PersonalLoan(input, window),
+    r2PanAadhaarLink(input),
+    rPersonalLoan(input, window),
     r3Ownership(input, window),
     r4Nbfc(input, window),
     r5Occupation(input, analysis),

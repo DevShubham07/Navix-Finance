@@ -1953,6 +1953,26 @@ export interface DebitRecord {
   createdAt: string | null;
 }
 
+/** One mandate attempt. The authorisation url is deliberately absent — it is a bearer link. */
+export interface MandateAttempt {
+  id: number;
+  applicationId: number | null;
+  attemptNo: number;
+  status: string;
+  umrn: string | null;
+  bankName: string | null;
+  accountLast4: string | null;
+  digioState: string | null;
+  digioBankState: string | null;
+  authSubMode: string | null;
+  rejectReason: string | null;
+  maximumAmountPaise: number;
+  createdAt: string | null;
+  authenticatedAt: string | null;
+  /** True for the attempt that actually governs this application right now. */
+  reusable: boolean;
+}
+
 export interface MandateView {
   status: "PENDING_AUTHORIZATION" | "ACTIVE" | "AUTHORIZATION_FAILED" | "EXPIRED" | "BANK_UNSUPPORTED";
   umrn: string | null;
@@ -2211,6 +2231,12 @@ export const staffApi = {
    * Invite this customer to set up auto-repayment — the only route for someone whose loan was already
    * live when the mandate step shipped. Returns the link to copy; the engine also sends it.
    */
+  /** Every mandate attempt this customer has made, newest first. */
+  mandateHistory: (id: number) => bff<MandateAttempt[]>(`${STAFF_BASE}/${id}/mandate/history`, "GET"),
+
+  /** Re-read unsettled attempts from Digio. Files nothing; adopts one that completed after we gave up. */
+  mandateRefresh: (id: number) => bff<MandateAttempt[]>(`${STAFF_BASE}/${id}/mandate/refresh`, "POST", {}),
+
   mandateInvite: (id: number) =>
     bff<{ link: string }>(`${STAFF_BASE}/${id}/mandate/invite`, "POST", {}),
 

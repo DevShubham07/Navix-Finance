@@ -2,10 +2,10 @@
 
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, Loader2, Send, ShieldCheck, ShieldOff } from "lucide-react";
+import { Check, Copy, Loader2, RefreshCw, Send, ShieldCheck, ShieldOff } from "lucide-react";
 import { Badge, EmptyState, Skeleton, toast } from "@/components/ui";
 import { useCan, errMessage } from "@/components/staff/pipeline/hooks";
-import { collectionsApi, featureFlagsApi, staffApi } from "@/lib/api/applications";
+import { collectionsApi, featureFlagsApi, staffApi, type MandateAttempt } from "@/lib/api/applications";
 import { formatDateTime } from "@/lib/utils";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -126,6 +126,89 @@ export function MandateTab({
     }
   };
 
+  // Every attempt this customer has made, across applications — a mandate is a per-customer authority,
+  // so a reborrower's earlier one may be the live one.
+  const attemptsQ = useQuery({
+    queryKey: ["staff-mandate-history", applicationId],
+    queryFn: () => staffApi.mandateHistory(applicationId as number),
+    enabled: applicationId != null,
+  });
+  // Re-read unsettled attempts from Digio. Files nothing. Exists because auth_failed is not terminal:
+  // an attempt we recorded as failed may since have completed, and only a re-read reveals it.
+  const refresh = useMutation({
+    mutationFn: () => staffApi.mandateRefresh(applicationId as number),
+    onSuccess: (rows) => {
+      const live = rows.find((r) => r.status === "ACTIVE");
+      toast.success(live ? `Active mandate found — UMRN ${live.umrn}` : "Checked with the bank; nothing changed");
+      qc.invalidateQueries({ queryKey: ["staff-mandate", applicationId] });
+      qc.invalidateQueries({ queryKey: ["staff-mandate-history", applicationId] });
+      onChanged?.();
+    },
+  });
+
+  const refreshButton = mayInvite ? (
+    <button
+      type="button"
+      onClick={() => refresh.mutate()}
+      disabled={refresh.isPending}
+      className="btn btn-sm disabled:opacity-50"
+    >
+      {refresh.isPending ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+      Re-check with bank
+    </button>
+  ) : null;
+
+  const historyPanel =
+    (attemptsQ.data?.length ?? 0) > 0 ? (
+      <div className="max-w-3xl space-y-2">
+        <h4 className="text-sm font-semibold text-navy">
+          Mandate attempts <span className="font-normal text-muted">({attemptsQ.data?.length})</span>
+        </h4>
+        <div className="overflow-x-auto rounded-lg border border-line">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-line bg-grey-50 text-left text-muted">
+                <th className="px-3 py-2 font-medium">#</th>
+                <th className="px-3 py-2 font-medium">Status</th>
+                <th className="px-3 py-2 font-medium">UMRN</th>
+                <th className="px-3 py-2 font-medium">Mode</th>
+                <th className="px-3 py-2 font-medium">Ceiling</th>
+                <th className="px-3 py-2 font-medium">Started</th>
+                <th className="px-3 py-2 font-medium">App</th>
+              </tr>
+            </thead>
+            <tbody>
+              {attemptsQ.data?.map((a: MandateAttempt) => (
+                <tr
+                  key={a.id}
+                  className={`border-b border-line/60 last:border-0 ${a.reusable ? "bg-success-50" : ""}`}
+                >
+                  <td className="px-3 py-2">{a.attemptNo}</td>
+                  <td className="px-3 py-2">
+                    {STATUS_LABEL[a.status] ?? a.status}
+                    {a.reusable && <span className="ml-1 font-semibold text-success-700">· in force</span>}
+                    {a.rejectReason && <div className="text-muted">{a.rejectReason}</div>}
+                  </td>
+                  <td className="px-3 py-2 font-mono">{a.umrn ?? "—"}</td>
+                  <td className="px-3 py-2">{a.authSubMode ?? a.digioState ?? "—"}</td>
+                  <td className="px-3 py-2 font-mono">{inr2(a.maximumAmountPaise)}</td>
+                  <td className="px-3 py-2">{a.createdAt ? formatDateTime(a.createdAt) : "—"}</td>
+                  <td className="px-3 py-2 font-mono">{a.applicationId ? `#${a.applicationId}` : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {(attemptsQ.data?.filter((a) => a.status === "PENDING_AUTHORIZATION").length ?? 0) > 1 && (
+          <p className="text-xs text-warning-800">
+            More than one attempt is still awaiting authorisation. Each is a live mandate request at the
+            bank — if the customer completes one of the older ones they get a second UMRN. Ask them to
+            close any open bank tabs.
+          </p>
+        )}
+      </div>
+    ) : null;
+
   // Rendered BOTH with a mandate on file and without one. The no-mandate case is exactly the cohort an
   // invite is for — a DISBURSEMENT_PENDING or live application that never reached the step — and the
   // first cut of this panel sat after the `if (!m) return <EmptyState/>` early return, so it was
@@ -183,6 +266,8 @@ export function MandateTab({
           }
         />
         {invitePanel}
+        {refreshButton && <div>{refreshButton}</div>}
+        {historyPanel}
       </div>
     );
   }
@@ -239,6 +324,8 @@ export function MandateTab({
         ) : null}
       </div>
 
+
+      {refreshButton && <div className="flex flex-wrap gap-2">{refreshButton}</div>}
 
       {m.status !== "ACTIVE" ? invitePanel : null}
 
@@ -333,6 +420,8 @@ export function MandateTab({
           </table>
         </div>
       )}
+
+      {historyPanel}
 
       {m.overridable && status === "SANCTIONED" && can("mandate:override") && (
         <div className="max-w-md space-y-2 rounded border border-line bg-grey-50 p-3">

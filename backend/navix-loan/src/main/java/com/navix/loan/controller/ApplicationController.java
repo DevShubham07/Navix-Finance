@@ -469,6 +469,32 @@ public class ApplicationController {
         return ApiResponse.ok(java.util.Map.of("link", mandateService.invite(id)));
     }
 
+    /**
+     * Every mandate attempt this customer has made, newest first. Staff-only read; no authorisation url.
+     */
+    @GetMapping("/{id}/mandate/history")
+    public ApiResponse<java.util.List<com.navix.loan.service.MandateService.MandateAttempt>> mandateHistory(
+            @PathVariable Long id) {
+        requireStaff();
+        return ApiResponse.ok(mandateService.history(id));
+    }
+
+    /**
+     * Re-read every unsettled attempt from the provider. Files nothing and cancels nothing — it exists
+     * because Digio's {@code auth_failed} is not terminal, so a row we wrote off may since have completed
+     * and only a re-read will show it.
+     */
+    @PostMapping("/{id}/mandate/refresh")
+    public ApiResponse<java.util.List<com.navix.loan.service.MandateService.MandateAttempt>> mandateRefresh(
+            @PathVariable Long id) {
+        String role = ActorContext.get() == null ? null : ActorContext.get().role();
+        if (role == null || !MANDATE_INVITE_ROLES.contains(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE",
+                    "This action requires role COLLECTION_HEAD, COLLECTION_EXECUTIVE, DISBURSEMENT_HEAD or ADMIN");
+        }
+        return ApiResponse.ok(mandateService.refresh(id));
+    }
+
     private static final java.util.Set<String> MANDATE_INVITE_ROLES = java.util.Set.of(
             "COLLECTION_HEAD", "COLLECTION_EXECUTIVE", "DISBURSEMENT_HEAD", "ADMIN");
 

@@ -603,6 +603,58 @@ class MandateServiceTest {
         verify(port).register(any());
     }
 
+    /**
+     * The staff tab read the NEWEST attempt, so a customer who already held a live mandate was shown
+     * "Awaiting borrower authorisation" because attempt 8 was pending on top of an ACTIVE attempt 1.
+     * The effective authority is what governs the application, not the most recent click.
+     */
+    @Test
+    void staffViewShowsTheMandateInForceNotTheNewestAttempt() {
+        Mandate active = attempt(1, Mandate.Status.ACTIVE, "KKBK7022010261001406");
+        Mandate newer = attempt(8, Mandate.Status.PENDING_AUTHORIZATION, null);
+        when(mandates.findFirstByCustomerIdAndStatusAndUmrnIsNotNullOrderByIdDesc(4471L, Mandate.Status.ACTIVE))
+                .thenReturn(Optional.of(active));
+        lenient().when(mandates.findFirstByLoanApplicationIdOrderByAttemptNoDesc(1L)).thenReturn(Optional.of(newer));
+
+        var v = service.staffView(1L).orElseThrow();
+
+        assertThat(v.status()).isEqualTo("ACTIVE");
+        assertThat(v.umrn()).isEqualTo("KKBK7022010261001406");
+        assertThat(v.attemptNo()).isEqualTo(1);
+    }
+
+    /** History is per CUSTOMER, and marks which attempt is actually in force. */
+    @Test
+    void historyListsEveryAttemptAndFlagsTheOneInForce() {
+        Mandate active = attempt(1, Mandate.Status.ACTIVE, "KKBK7022010261001406");
+        Mandate pending = attempt(2, Mandate.Status.PENDING_AUTHORIZATION, null);
+        when(mandates.findFirstByCustomerIdAndStatusAndUmrnIsNotNullOrderByIdDesc(4471L, Mandate.Status.ACTIVE))
+                .thenReturn(Optional.of(active));
+        when(mandates.findByCustomerIdOrderByAttemptNoDesc(4471L)).thenReturn(List.of(pending, active));
+
+        var rows = service.history(1L);
+
+        assertThat(rows).hasSize(2);
+        assertThat(rows.get(0).attemptNo()).isEqualTo(2);
+        assertThat(rows.get(0).reusable()).isFalse();
+        assertThat(rows.get(1).reusable()).isTrue();
+    }
+
+    /** refresh() re-reads what is unsettled and adopts a completion; it files nothing. */
+    @Test
+    void refreshAdoptsAnAttemptThatCompletedSinceWeGaveUp() {
+        Mandate failed = attempt(1, Mandate.Status.AUTHORIZATION_FAILED, null);
+        when(mandates.findByCustomerIdOrderByAttemptNoDesc(4471L)).thenReturn(List.of(failed));
+        when(port.fetch("ENA1")).thenReturn(new MandateResult("ENA1", "auth_success", "ack_received",
+                "KKBK7022010261001406", "debit", null, null, java.time.Instant.now()));
+
+        service.refresh(1L);
+
+        assertThat(failed.getStatus()).isEqualTo(Mandate.Status.ACTIVE);
+        assertThat(failed.getUmrn()).isEqualTo("KKBK7022010261001406");
+        verify(port, never()).register(any());
+    }
+
     // ---- invite(): the only route for someone whose loan is already live -----------------------------
 
     /** The link is ours, never Digio's expiring authentication_url, and nothing is filed by inviting. */
