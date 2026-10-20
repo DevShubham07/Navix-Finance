@@ -516,6 +516,93 @@ class MandateServiceTest {
         assertThat(crn).matches("^[0-9A-Za-z]{1,20}$").doesNotContain("-").contains("4471");
     }
 
+    // ---- the duplicate-filing incident, 2026-10-20 (docs/digio/13 section 13) ------------------------
+
+    private Mandate attempt(int no, Mandate.Status status, String umrn) {
+        Mandate m = new Mandate();
+        m.setId((long) no);
+        m.setCustomerId(4471L);
+        m.setLoanApplicationId(1L);
+        m.setAttemptNo(no);
+        m.setCustomerRefNumber("C4471A" + no);
+        m.setDigioMandateId("ENA" + no);
+        m.setStatus(status);
+        m.setUmrn(umrn);
+        m.setAccountLast4("9012");
+        m.setIfsc("HDFC0001234");
+        m.setMaximumAmountPaise(99_999_00L);
+        m.setRegisteredAt(java.time.Instant.now());
+        return m;
+    }
+
+    /**
+     * THE incident. Digio's auth_failed is not terminal: the borrower retried on the same Digio page and
+     * succeeded seven minutes after we had written the attempt off. init must re-read it and adopt the
+     * UMRN rather than file a second NPCI mandate — that second filing is what made the bank start
+     * refusing every verification mode as a duplicate.
+     */
+    @Test
+    void adoptsAnAttemptThatSucceededAfterWeRecordedItAsFailed() {
+        Mandate failed = attempt(1, Mandate.Status.AUTHORIZATION_FAILED, null);
+        when(mandates.findByLoanApplicationIdOrderByAttemptNoDesc(1L)).thenReturn(List.of(failed));
+        when(port.fetch("ENA1")).thenReturn(new MandateResult("ENA1", "auth_success", "ack_received",
+                "KKBK7022010261001406", "debit", null, null, java.time.Instant.now()));
+
+        var r = service.init(1L);
+
+        assertThat(r.status()).isEqualTo("PASS");
+        assertThat(failed.getStatus()).isEqualTo(Mandate.Status.ACTIVE);
+        assertThat(failed.getUmrn()).isEqualTo("KKBK7022010261001406");
+        verify(port, never()).register(any()); // the whole point: no second mandate at NPCI
+    }
+
+    /** A borrower who closed the tab or reloaded goes back to the SAME mandate, not a new one. */
+    @Test
+    void reusesALivePendingAttemptsAuthorisationUrlInsteadOfFilingAgain() {
+        Mandate pending = attempt(1, Mandate.Status.PENDING_AUTHORIZATION, null);
+        pending.setAuthenticationUrl("https://app.digio.in/eDIGIO/EXISTING");
+        when(mandates.findByLoanApplicationIdOrderByAttemptNoDesc(1L)).thenReturn(List.of(pending));
+        when(port.fetch("ENA1")).thenReturn(new MandateResult("ENA1", "partial", "partial",
+                null, null, null, null, null));
+
+        var r = service.init(1L);
+
+        assertThat(r.derived().get("url")).isEqualTo("https://app.digio.in/eDIGIO/EXISTING");
+        verify(port, never()).register(any());
+    }
+
+    /** An expired url cannot be reused — then, and only then, a fresh mandate is filed. */
+    @Test
+    void filesAFreshMandateOnceTheStoredUrlHasExpired() {
+        Mandate stale = attempt(1, Mandate.Status.PENDING_AUTHORIZATION, null);
+        stale.setAuthenticationUrl("https://app.digio.in/eDIGIO/OLD");
+        stale.setRegisteredAt(java.time.Instant.now().minus(30, java.time.temporal.ChronoUnit.DAYS));
+        when(mandates.findByLoanApplicationIdOrderByAttemptNoDesc(1L)).thenReturn(List.of(stale));
+        when(mandates.findFirstByCustomerIdOrderByAttemptNoDesc(4471L)).thenReturn(Optional.of(stale));
+        when(port.fetch("ENA1")).thenReturn(new MandateResult("ENA1", "partial", "partial",
+                null, null, null, null, null));
+        bankOk();
+        when(port.register(any())).thenReturn(new MandateSession("DIDNEW", "partial", "https://x"));
+
+        service.init(1L);
+
+        verify(port).register(any());
+        assertThat(register().customerRefNumber()).isEqualTo("C4471A2");
+    }
+
+    /** A provider read that fails must not block a borrower who has no usable mandate at all. */
+    @Test
+    void aFailedReReadFallsThroughToFilingRatherThanThrowing() {
+        Mandate failed = attempt(1, Mandate.Status.AUTHORIZATION_FAILED, null);
+        when(mandates.findByLoanApplicationIdOrderByAttemptNoDesc(1L)).thenReturn(List.of(failed));
+        when(port.fetch("ENA1")).thenThrow(new RuntimeException("provider down"));
+        bankOk();
+        when(port.register(any())).thenReturn(new MandateSession("DIDNEW", "partial", "https://x"));
+
+        assertThat(service.init(1L).status()).isEqualTo("PENDING");
+        verify(port).register(any());
+    }
+
     // ---- invite(): the only route for someone whose loan is already live -----------------------------
 
     /** The link is ours, never Digio's expiring authentication_url, and nothing is filed by inviting. */

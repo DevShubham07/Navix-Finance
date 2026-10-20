@@ -152,6 +152,12 @@ public class ApplicationVerificationService {
      */
     public static final String BUREAU_CONSENT = "BUREAU_CONSENT";
     /**
+     * Signzy PAN-KYC ID link status — is the PAN linked to the Aadhaar number the borrower typed.
+     * Run at submit-kyc beside the credit checks; deliberately NOT in {@link #REQUIRED} (never gates a
+     * submission) and a miss is {@code REVIEW} for the credit team, not a decline. Shown as BRE rule 2.
+     */
+    public static final String PAN_AADHAAR_LINK = "PAN_AADHAAR_LINK";
+    /**
      * The borrower's OTP-proven ownership of their PERSONAL email. Deliberately NOT in
      * {@link #REQUIRED} (non-blocking — additive to the existing intake) nor in {@link #KNOWN_CHECKS}
      * (staff must not be able to manually assert that a borrower controls an inbox). Distinct from
@@ -224,7 +230,7 @@ public class ApplicationVerificationService {
 
     /** Every recognised check type — guards the staff manual-override target. */
     static final Set<String> KNOWN_CHECKS = Set.of(PAN, EMAIL, ADDRESS, DIGILOCKER, AADHAAR, BUREAU,
-            SALARY, EMPLOYMENT, PENNY_DROP, SELFIE, AGREEMENT, ESIGN, AADHAAR_DUPLICATE);
+            SALARY, EMPLOYMENT, PENNY_DROP, SELFIE, AGREEMENT, ESIGN, AADHAAR_DUPLICATE, PAN_AADHAAR_LINK);
 
     /** Permissive name-match cutoff: below this is REVIEW (not hard fail) — approver decides. */
     static final double NAME_MATCH_THRESHOLD = 0.60;
@@ -404,6 +410,35 @@ public class ApplicationVerificationService {
             rejectForAadhaarMismatch(appId, "PAN record", aadhaarMismatch);
         }
         return view(row);
+    }
+
+    /**
+     * PAN-Aadhaar link check (Signzy {@code kycIdLinkStatus}) on the typed Aadhaar number. Best-effort and
+     * non-blocking: linked = PASS; not linked, no number typed or a provider outage = REVIEW.
+     */
+    @Transactional
+    public StepResult verifyPanAadhaarLink(Long appId) {
+        CustomerProfile profile = profile(appId);
+        String pan = profile.getPan();
+        String aadhaar = com.navix.common.util.Aadhaar.normalize(profile.getAadhaar());
+        String ref = ref(appId, PAN_AADHAAR_LINK);
+        if (isBlank(pan) || isBlank(aadhaar)) {
+            return view(upsert(appId, PAN_AADHAAR_LINK, REVIEW, null, null, ref, null, null, null,
+                    new LinkedHashMap<>(), "PAN or Aadhaar number missing — link not checked"));
+        }
+        VerificationPort.PanAadhaarLinkCheck r;
+        try {
+            r = verification.verifyPanAadhaarLink(pan, aadhaar, ref);
+        } catch (RuntimeException providerFailure) {
+            return providerUnavailable(appId, PAN_AADHAAR_LINK, providerFailure,
+                    "PAN-Aadhaar link check unavailable — pending manual review");
+        }
+        Map<String, Object> derived = new LinkedHashMap<>();
+        derived.put("linked", r.linked());
+        derived.put("maskedAadhaar", r.maskedAadhaar());
+        derived.put("code", r.code());
+        return view(upsert(appId, PAN_AADHAAR_LINK, r.linked() ? PASS : REVIEW, r.provider(), null, ref,
+                null, null, null, derived, r.linked() ? "PAN linked to Aadhaar" : "PAN not linked to Aadhaar"));
     }
 
     /**
@@ -1102,7 +1137,7 @@ public class ApplicationVerificationService {
         String type = checkType == null ? "" : checkType.trim().toUpperCase();
         Map<String, Object> values = input == null ? Map.of() : input;
         CustomerProfile p = profile(appId);
-        if (!Set.of(PAN, EMAIL, ADDRESS, BUREAU, EMPLOYMENT, PENNY_DROP, SELFIE).contains(type)) {
+        if (!Set.of(PAN, PAN_AADHAAR_LINK, EMAIL, ADDRESS, BUREAU, EMPLOYMENT, PENNY_DROP, SELFIE).contains(type)) {
             throw new BusinessException("RETRY_NOT_SUPPORTED", "This verification requires a borrower session and cannot be retried here");
         }
         verificationRepo.findByApplicationIdAndCheckType(appId, type).ifPresent(row -> {
@@ -1119,6 +1154,7 @@ public class ApplicationVerificationService {
             case BUREAU -> pullBureau(appId, value(values, "otp", null), true);
             // Every input comes off the stored profile, so this one needs no borrower session at all.
             case EMPLOYMENT -> verifyEmployment(appId, true);
+            case PAN_AADHAAR_LINK -> verifyPanAadhaarLink(appId);
             case PENNY_DROP -> verifyPennyDrop(appId, value(values, "accountNumber", p.getSalaryAccountNumber()), value(values, "ifsc", p.getSalaryIfsc()), true);
             case SELFIE -> verifySelfie(appId, value(values, "selfieObjectKey", null));
             default -> throw new BusinessException("RETRY_NOT_SUPPORTED", "Unsupported verification retry");

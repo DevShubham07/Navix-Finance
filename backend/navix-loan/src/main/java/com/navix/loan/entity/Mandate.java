@@ -80,6 +80,14 @@ public class Mandate extends BaseAuditEntity {
     @Column(name = "ifsc", length = 11)
     private String ifsc;
 
+    /**
+     * The Digio authorisation url for this attempt. Held so {@code init} can return a borrower to an
+     * attempt already in flight instead of filing another NPCI mandate — the duplicate-filing incident
+     * of 2026-10-20 (docs/digio/13 section 13). Expires with the attempt; never surfaced to staff.
+     */
+    @Column(name = "authentication_url", length = 512)
+    private String authenticationUrl;
+
     @Column(name = "reject_code", length = 64)
     private String rejectCode;
 

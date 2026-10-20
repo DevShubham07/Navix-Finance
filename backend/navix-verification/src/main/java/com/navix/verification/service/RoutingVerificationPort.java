@@ -50,6 +50,7 @@ public class RoutingVerificationPort implements VerificationPort {
     private final List<String> chain;
     /** Held directly for {@link #answerBureauChallenge}, which bypasses the chain — see its javadoc. */
     private final FintrixVerificationAdapter fintrix;
+    private final SignzyVerificationAdapter signzy;
     /** See {@link #bureauAcceptable} — bureau-only, and off restores "a no-hit ends the chain". */
     private final boolean bureauNoHitFallThrough;
 
@@ -60,6 +61,7 @@ public class RoutingVerificationPort implements VerificationPort {
         // An adapter missing from this map is silently ignored by the loop below — every adapter MUST
         // be listed here.
         this.fintrix = fintrix;
+        this.signzy = signzy;
         this.bureauNoHitFallThrough = props.bureauNoHitFallThroughEnabled();
         Map<String, VerificationPort> all = Map.of("fintrix", fintrix, "signzy", signzy, "digitap", digitap);
         this.chain = props.effectiveChain();
@@ -211,6 +213,12 @@ public class RoutingVerificationPort implements VerificationPort {
     public BureauCheck answerBureauChallenge(String orderId, String reportId, String answer,
                                              String name, String mobile, String clientRef) {
         return fintrix.answerBureauChallenge(orderId, reportId, answer, name, mobile, clientRef);
+    }
+
+    /** Signzy-only capability — straight to the one provider, no chain. */
+    @Override
+    public PanAadhaarLinkCheck verifyPanAadhaarLink(String pan, String aadhaar, String clientRef) {
+        return signzy.verifyPanAadhaarLink(pan, aadhaar, clientRef);
     }
 
     @Override

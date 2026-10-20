@@ -64,6 +64,7 @@ import org.springframework.web.bind.annotation.RestController;
  * transitions. Staff identity (and thus the required role + SoD) comes from the demo actor headers
  * (X-Demo-Actor-Id / X-Demo-Actor-Role).
  */
+@lombok.extern.slf4j.Slf4j
 @RestController
 @RequestMapping("/api/applications")
 @RequiredArgsConstructor
@@ -329,6 +330,13 @@ public class ApplicationController {
         if (!verification.intakeCardsComplete(id)) {
             throw new BusinessException("KYC_INCOMPLETE",
                     "Upload both sides of your Aadhaar card and PAN card before submitting");
+        }
+        // Credit-side check that rides along with submission; never blocks it (a miss is REVIEW, and an
+        // outage is recorded by the service), so a stray exception here must not strand the borrower.
+        try {
+            verification.verifyPanAadhaarLink(id);
+        } catch (RuntimeException e) {
+            log.warn("PAN-Aadhaar link check failed application={} exception={}", id, e.getClass().getSimpleName());
         }
         return ApiResponse.ok(ApplicationView.of(flow.submitKyc(id)));
     }

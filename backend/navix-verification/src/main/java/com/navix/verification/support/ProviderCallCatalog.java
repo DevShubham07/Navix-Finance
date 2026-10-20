@@ -51,6 +51,7 @@ public final class ProviderCallCatalog {
         ROUTES.put("/api/v3/bureau/experian-lite", new Route("BUREAU", "SIGNZY_EXPERIAN"));
         ROUTES.put("/api/v3/bureau/crif", new Route("BUREAU", "SIGNZY_CRIF"));
         ROUTES.put("/api/v3/pan/compliance-206-individual-search", new Route("PAN", "SIGNZY"));
+        ROUTES.put("/api/v3/pan/kycIdLinkStatus", new Route("PAN_AADHAAR_LINK", "SIGNZY"));
         ROUTES.put("/api/v3/email/verificationV2", new Route("EMAIL", "SIGNZY"));
         ROUTES.put("/api/v3/geocoding/reverse-geocode", new Route("ADDRESS", "SIGNZY"));
         ROUTES.put("/api/v3/bankaccountverification/pennydrop-v1", new Route("PENNY_DROP", "SIGNZY"));

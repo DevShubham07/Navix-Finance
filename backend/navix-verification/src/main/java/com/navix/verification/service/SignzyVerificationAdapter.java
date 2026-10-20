@@ -62,6 +62,17 @@ public class SignzyVerificationAdapter implements VerificationPort {
     }
 
     @Override
+    public PanAadhaarLinkCheck verifyPanAadhaarLink(String pan, String aadhaar, String clientRef) {
+        SignzyDtos.PanKycLinkResponse r = panClient.kycIdLinkStatus(pan, aadhaar);
+        if (r.linked() == null) {
+            // Neither "Linked" nor "Not Linked": an invalid PAN/Aadhaar pair or an envelope we don't know.
+            throw new com.navix.verification.exception.VerificationException(
+                    "Signzy: PAN-Aadhaar link status not determinable (code=" + r.code() + ")");
+        }
+        return new PanAadhaarLinkCheck("SIGNZY", r.linked(), r.maskedKycId(), r.message(), r.code());
+    }
+
+    @Override
     public EmailCheck verifyEmail(String email, String individualName, String establishmentName, String clientRef) {
         // Signzy Email V2 (production account). The router falls back to Digitap only if this throws.
         SignzyDtos.EmailV2Response r = emailClient.verify(email);

@@ -60,6 +60,15 @@ public final class SignzyDtos {
     ) {
     }
 
+    // ---- PAN-KYC ID (Aadhaar) link status : /api/v3/pan/kycIdLinkStatus ----
+    public record PanKycLinkRequest(
+            @JsonProperty("panNumber") String panNumber,
+            @JsonProperty("kycId") String kycId) {
+    }
+
+    public record PanKycLinkResponse(Boolean linked, String maskedKycId, String message, String code) {
+    }
+
     // ---- Reverse geocoding (address) : /api/v3/geocoding/reverse-geocode ----
     public record GeocodeRequest(
             @JsonProperty("latitude") String latitude,

@@ -33,7 +33,7 @@ final class ProviderLogRedactor {
 
     /** Keys (lower-case, without {@code _}/{@code -}) whose value always identifies a person. */
     private static final Set<String> EXACT_KEYS = Set.of(
-            "pan", "panno", "pannumber", "idnumber", "aadhaar", "aadhar", "aadhaarnumber", "uid", "uidnumber",
+            "pan", "panno", "pannumber", "idnumber", "aadhaar", "aadhar", "aadhaarnumber", "kycid", "uid", "uidnumber",
             "dob", "dateofbirth", "birthdate", "otp", "email", "emailid", "emailaddress",
             "mobile", "mobileno", "mobilenumber", "phone", "phoneno", "phonenumber",
             "accountno", "accountnumber", "bankaccountnumber", "address", "pincode");

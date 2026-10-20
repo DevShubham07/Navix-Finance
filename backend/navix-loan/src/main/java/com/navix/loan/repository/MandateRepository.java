@@ -19,6 +19,9 @@ public interface MandateRepository extends JpaRepository<Mandate, Long> {
     /** The latest attempt made on one application (the override gate must not look at other advances). */
     Optional<Mandate> findFirstByLoanApplicationIdOrderByAttemptNoDesc(Long loanApplicationId);
 
+    /** Every attempt on one application, newest first — what init re-checks before filing another. */
+    java.util.List<Mandate> findByLoanApplicationIdOrderByAttemptNoDesc(Long loanApplicationId);
+
     /** Attempts filed against ONE application — the cap that stops a borrower-driven create loop. */
     long countByLoanApplicationId(Long loanApplicationId);
 

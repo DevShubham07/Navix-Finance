@@ -20,6 +20,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -61,6 +62,8 @@ public class MandateService {
      * borrower-reachable and every call is a billable provider create.
      */
     static final int MAX_ATTEMPTS_PER_APPLICATION = 10;
+    /** How many earlier attempts init re-reads before filing a new one; each one is a provider call. */
+    static final int SETTLE_LOOKBACK = 5;
 
     private final MandatePort port;
     private final MandateRepository mandates;
@@ -73,6 +76,10 @@ public class MandateService {
     /** Builds the invite link; same property the password-reset emails use. */
     @org.springframework.beans.factory.annotation.Value("${navix.app.frontend-base-url:http://localhost:3000}")
     private String frontendBaseUrl = "http://localhost:3000"; // initialised so a direct `new` is safe
+
+    /** How long Digio keeps an authorisation url alive; mirrors navix.digio.expire-in-days. */
+    @org.springframework.beans.factory.annotation.Value("${navix.digio.expire-in-days:7}")
+    private int expireInDays = 7;
 
     private volatile Map<String, BankCapability> banks;
     private volatile long banksLoadedAt;
@@ -110,6 +117,18 @@ public class MandateService {
         Optional<Mandate> done = reusable(customerId, account, ifsc, ceiling);
         if (done.isPresent()) {
             return view(done.get(), null);
+        }
+
+        // Before filing anything, settle with the provider what this application's EARLIER attempts are
+        // actually doing. Both branches exist because of the 2026-10-20 incident (docs/digio/13 section 13),
+        // where a borrower authorised attempt 1 successfully, we had already written it off as auth_failed,
+        // and seven NPCI mandates went out for one account before the bank started refusing them.
+        Optional<Mandate> settled = settleEarlierAttempts(appId, account, ifsc, ceiling);
+        if (settled.isPresent()) {
+            Mandate m0 = settled.get();
+            // A live attempt still awaiting authorisation: send them back to ITS url. A completed one:
+            // report it. Either way nothing new is filed.
+            return view(m0, m0.getStatus() == Mandate.Status.PENDING_AUTHORIZATION ? m0.getAuthenticationUrl() : null);
         }
 
         int attemptNo = mandates.findFirstByCustomerIdOrderByAttemptNoDesc(customerId)
@@ -164,6 +183,7 @@ public class MandateService {
             m.setDigioMandateId(s.digioMandateId());
             m.setDigioState(s.state());
             authUrl = s.authenticationUrl();
+            m.setAuthenticationUrl(authUrl); // so a return visit reuses THIS attempt instead of filing another
         } catch (RuntimeException failure) {
             log.warn("Mandate register failed crn={} exception={}", crn, failure.getClass().getSimpleName());
             MandateResult found;
@@ -231,6 +251,77 @@ public class MandateService {
         apply(m, port.fetch(m.getDigioMandateId()));
         mandates.save(m);
         return view(m, null);
+    }
+
+    /**
+     * Re-reads this application's earlier attempts from the provider and returns one to reuse, if any.
+     *
+     * <p>Two things are being prevented, both observed in production on 2026-10-20:
+     *
+     * <ol>
+     *   <li><b>An attempt that has since succeeded.</b> Digio's {@code auth_failed} is NOT terminal — it
+     *       means that authentication attempt failed, and the borrower may retry on the SAME Digio page
+     *       and succeed. One did, seven minutes after we had recorded AUTHORIZATION_FAILED and stopped
+     *       looking. So any attempt without a UMRN is re-fetched here, failed ones included, and adopted
+     *       if it now carries one. This is the check that makes a duplicate filing impossible whatever
+     *       the borrower's screen happened to say.</li>
+     *   <li><b>An attempt still live.</b> A pending attempt whose authorisation url has not expired is
+     *       returned as-is, so a borrower who closed the tab or reloaded the page goes back to the SAME
+     *       NPCI mandate rather than being given a second one.</li>
+     * </ol>
+     *
+     * <p>Bounded to {@link #SETTLE_LOOKBACK} attempts: this runs on a borrower-facing request and each
+     * step is a provider call. Newest first, because that is the one most likely to be live.
+     *
+     * <p>A provider read that fails is swallowed deliberately — failing to adopt costs a duplicate
+     * mandate, which is bad, but throwing here would block a borrower who has no usable mandate at all,
+     * which is worse. The attempt cap remains the backstop.
+     */
+    private Optional<Mandate> settleEarlierAttempts(Long appId, String account, String ifsc, long ceiling) {
+        String last4 = account.substring(account.length() - 4);
+        List<Mandate> attempts = mandates.findByLoanApplicationIdOrderByAttemptNoDesc(appId);
+        int looked = 0;
+        for (Mandate m : attempts) {
+            if (looked >= SETTLE_LOOKBACK) {
+                break;
+            }
+            // Only attempts against THIS account and ceiling can be reused; anything else is a different
+            // authority and must not be silently handed back (same rule as reusable()).
+            if (!last4.equals(m.getAccountLast4()) || !ifsc.equals(m.getIfsc()) || m.getMaximumAmountPaise() < ceiling) {
+                continue;
+            }
+            if (m.getStatus() == Mandate.Status.BANK_UNSUPPORTED) {
+                continue; // nothing was ever filed; the override path owns this one
+            }
+            if (m.getUmrn() != null && !m.getUmrn().isBlank() && m.getStatus() == Mandate.Status.ACTIVE) {
+                return Optional.of(m); // already settled locally
+            }
+            looked++;
+            try {
+                apply(m, port.fetch(m.getDigioMandateId()));
+                mandates.save(m);
+            } catch (RuntimeException e) {
+                log.warn("Mandate re-read failed crn={} exception={}", m.getCustomerRefNumber(),
+                        e.getClass().getSimpleName());
+                continue;
+            }
+            if (m.getStatus() == Mandate.Status.ACTIVE) {
+                log.info("Adopted a mandate that completed after we recorded it as failed crn={}",
+                        m.getCustomerRefNumber());
+                return Optional.of(m);
+            }
+            if (m.getStatus() == Mandate.Status.PENDING_AUTHORIZATION && urlStillLive(m)) {
+                return Optional.of(m);
+            }
+        }
+        return Optional.empty();
+    }
+
+    /** A stored authorisation url is only good while Digio still honours it. */
+    private boolean urlStillLive(Mandate m) {
+        return m.getAuthenticationUrl() != null && !m.getAuthenticationUrl().isBlank()
+                && m.getRegisteredAt() != null
+                && m.getRegisteredAt().isAfter(Instant.now().minus(expireInDays, java.time.temporal.ChronoUnit.DAYS));
     }
 
     /**

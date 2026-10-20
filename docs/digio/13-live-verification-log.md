@@ -597,3 +597,61 @@ in `DebitService` is the earliest the rail permits, not a conservative choice.
   (capped at 30 days), not of the outstanding balance, so a ₹1 debit on a ₹1,000 advance reduces the
   total owed by ₹1 while the loan continues accruing ₹20/day. A test debit leaves the loan overdue
   and growing; restore its due date or settle it afterwards.
+
+
+## 13. `auth_failed` is NOT terminal — the duplicate-mandate incident (2026-10-20)
+
+A real borrower (customer 6277416, application 11793, Kotak a/c ...4232) filed **seven** NACH
+mandates in 80 minutes and ended up on a Digio page with every verification mode greyed out:
+*"Duplicate request, retry next day."* The bank had started rejecting our registrations as
+duplicates of each other.
+
+**He had already succeeded on attempt 1.**
+
+| attempt | mandate id | our DB says | Digio says now |
+|---|---|---|---|
+| 1 | `ENA261020092038983N6E1US365YYSAP` | `AUTHORIZATION_FAILED` | **`auth_success` / `ack_received`, UMRN `KKBK7022010261001406`**, `debit` mode, updated **09:27:13** |
+| 4 | `ENA261020093443547ECQ4ES5ZOHBBAP` | `AUTHORIZATION_FAILED` | `auth_failed` (net_banking) — genuinely failed |
+| 2,3,5,6,7 | — | `PENDING_AUTHORIZATION` | `partial` — never authorised |
+
+Same mandate id in both columns for attempt 1. Our row is simply **stale**.
+
+### The defect, in two parts
+
+1. **`mapNoUmrn` treats Digio's `auth_failed` as terminal** (`AUTHORIZATION_FAILED`). It is not. It
+   means *this authentication attempt* failed — the borrower may retry on the **same** Digio page and
+   succeed, which is exactly what happened at 09:27:13, about seven minutes after we had written the
+   attempt off.
+2. **`status()` never re-reads a non-pending row:**
+   ```java
+   if (m.getStatus() != Mandate.Status.PENDING_AUTHORIZATION) {
+       return view(m, null);   // never looks again
+   }
+   ```
+   So the later success is invisible for ever.
+
+Together they produce the loop: borrower succeeds → we show "we could not complete the mandate setup,
+please try again" → he presses → `init` mints a **new NPCI mandate** (a fresh CRN and a fresh
+authorisation url; nothing is ever reused) → the destination bank sees same account, same amount, same
+day and blocks every verification mode → he presses again. Seven filings, one of them live.
+
+21 seconds separate attempt 1's success (09:27:13) from attempt 2's creation (09:27:34).
+
+### Contributing trigger
+
+`reopen()` on the mandate page falls through to `start()` when `bankUrl` is absent, and `bankUrl` is
+React state — a page reload loses it. So "Reopen your bank's page" files a brand-new mandate rather
+than reopening anything.
+
+### What this says about the state mapping
+
+`09-state-mapping.md` lists `auth_failed` as terminal. **That is wrong for `auth_mode: API`** and is
+now contradicted by execution. Only a UMRN (or `revoked`/`cancelled`/`expired`) is genuinely terminal;
+`auth_failed` is a retryable intermediate state at the provider.
+
+### Unknowns left open
+
+- The destination bank's duplicate key (account+amount+day? a per-day authentication cap?) is
+  **unobserved** — "retry next day" is all we were told.
+- Whether a fresh filing tomorrow is flagged against today's six stale `partial` mandates is unknown.
+- Cancelling those stale mandates is a write against real NPCI records and was not attempted.
