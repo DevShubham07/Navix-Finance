@@ -28,6 +28,14 @@ public interface MandatePort {
     List<BankCapability> liveBanks();
 
     /**
+     * Cancel a registered mandate at the provider. {@code reason} is an NPCI code — {@code C001}
+     * customer request, {@code C002} corporate request, {@code C003} account closed/frozen,
+     * {@code C004} cancelled bank-side. Returns false when the provider refuses; which states permit
+     * cancellation is undocumented (docs/digio/11 Q9), so a refusal is a normal outcome, not a bug.
+     */
+    boolean cancelMandate(String digioMandateId, String umrn, String destIfsc, String reason);
+
+    /**
      * Schedule one NACH debit against a registered mandate. Moves <b>real money</b> and is not retry-safe:
      * after an unknown outcome (timeout) do not re-present; the {@code uniqueKey} is the only handle.
      */

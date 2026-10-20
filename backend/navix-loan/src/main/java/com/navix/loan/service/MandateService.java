@@ -492,6 +492,64 @@ public class MandateService {
                 .map(m -> toView(m, m.getStatus() == Mandate.Status.BANK_UNSUPPORTED, false));
     }
 
+    /**
+     * Cancel one stale mandate attempt at the provider.
+     *
+     * <p>Built for the duplicates a borrower accumulates when the journey makes them re-press: each is a
+     * live registration request at the destination bank with its own authorisation url, so one completed
+     * weeks later yields a SECOND UMRN and a second ceiling on the same account (docs/digio/13 §13).
+     *
+     * <p>Two refusals are deliberate:
+     * <ul>
+     *   <li><b>The mandate in force is never cancellable here.</b> It is the authority collections
+     *       depends on, and killing it from a history table would be a very quiet way to stop a loan
+     *       being collected.</li>
+     *   <li><b>No ACTIVE mandate is cancellable here at all</b>, even one not in force for this
+     *       application — it may be in force for another. Revoking a live authority is a deliberate act
+     *       with a borrower conversation behind it, not a row action; that flow is not built.</li>
+     * </ul>
+     *
+     * <p>Reason {@code C002} (corporate request): we are withdrawing our own duplicate filing, not
+     * acting on the customer's instruction. The provider decides whether the state permits it at all
+     * (11- Q9 is still open), so a refusal surfaces rather than being swallowed.
+     */
+    @Transactional
+    public MandateAttempt cancel(Long appId, Long mandateId) {
+        LoanApplication app = applications.findById(appId)
+                .orElseThrow(() -> new BusinessException("APPLICATION_NOT_FOUND", "Application not found"));
+        Mandate m = mandates.findById(mandateId)
+                .orElseThrow(() -> new BusinessException("MANDATE_NOT_FOUND", "Mandate not found"));
+        if (!m.getCustomerId().equals(app.getCustomerId())) {
+            throw new BusinessException("MANDATE_NOT_FOUND", "Mandate not found");
+        }
+        if (m.getStatus() == Mandate.Status.BANK_UNSUPPORTED) {
+            throw new BusinessException("MANDATE_NOTHING_FILED",
+                    "Nothing was filed for this attempt, so there is nothing to cancel");
+        }
+        if (m.getStatus() == Mandate.Status.ACTIVE) {
+            throw new BusinessException("MANDATE_ACTIVE_NOT_CANCELLABLE",
+                    "This mandate is active. Cancelling a live mandate is not done from here.");
+        }
+        boolean cancelled = port.cancelMandate(m.getDigioMandateId(), m.getUmrn(), m.getIfsc(), "C002");
+        if (!cancelled) {
+            throw new BusinessException("MANDATE_CANCEL_REFUSED",
+                    "The bank would not cancel this mandate. It may already be closed or past the point of cancellation.");
+        }
+        // Read back rather than assume: `cancelled`/`revoked` folds onto AUTHORIZATION_FAILED in apply(),
+        // so the row records what the provider says rather than what we asked for.
+        try {
+            apply(m, port.fetch(m.getDigioMandateId()));
+        } catch (RuntimeException e) {
+            log.warn("Mandate re-read after cancel failed crn={} exception={}", m.getCustomerRefNumber(),
+                    e.getClass().getSimpleName());
+            m.setStatus(Mandate.Status.AUTHORIZATION_FAILED);
+            m.setDigioState("cancelled");
+        }
+        mandates.save(m);
+        log.info("Mandate cancelled crn={} applicationId={}", m.getCustomerRefNumber(), appId);
+        return history(appId).stream().filter(a -> a.id().equals(mandateId)).findFirst().orElseThrow();
+    }
+
     /** One row of the attempt history. No authorisation url — it is a bearer link to a binding mandate. */
     public record MandateAttempt(Long id, Long applicationId, int attemptNo, String status, String umrn,
                                  String bankName, String accountLast4, String digioState, String digioBankState,

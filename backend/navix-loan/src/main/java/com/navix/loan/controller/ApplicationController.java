@@ -495,6 +495,24 @@ public class ApplicationController {
         return ApiResponse.ok(mandateService.refresh(id));
     }
 
+    /**
+     * Cancel one stale mandate attempt. Heads and ADMIN only — this withdraws a real registration at
+     * NPCI, which is a narrower act than inviting or re-checking.
+     */
+    @PostMapping("/{id}/mandate/{mandateId}/cancel")
+    public ApiResponse<com.navix.loan.service.MandateService.MandateAttempt> mandateCancel(
+            @PathVariable Long id, @PathVariable Long mandateId) {
+        String role = ActorContext.get() == null ? null : ActorContext.get().role();
+        if (role == null || !MANDATE_CANCEL_ROLES.contains(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE",
+                    "This action requires role COLLECTION_HEAD, DISBURSEMENT_HEAD or ADMIN");
+        }
+        return ApiResponse.ok(mandateService.cancel(id, mandateId));
+    }
+
+    private static final java.util.Set<String> MANDATE_CANCEL_ROLES = java.util.Set.of(
+            "COLLECTION_HEAD", "DISBURSEMENT_HEAD", "ADMIN");
+
     private static final java.util.Set<String> MANDATE_INVITE_ROLES = java.util.Set.of(
             "COLLECTION_HEAD", "COLLECTION_EXECUTIVE", "DISBURSEMENT_HEAD", "ADMIN");
 

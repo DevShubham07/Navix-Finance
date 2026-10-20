@@ -51,6 +51,12 @@ public class MockMandateAdapter implements MandatePort {
     }
 
     @Override
+    public boolean cancelMandate(String digioMandateId, String umrn, String destIfsc, String reason) {
+        refuseInProd();
+        return true;
+    }
+
+    @Override
     public List<BankCapability> liveBanks() {
         refuseInProd();
         return List.of(new BankCapability("MOCK", true, List.of("net_banking", "aadhaar", "debit")));

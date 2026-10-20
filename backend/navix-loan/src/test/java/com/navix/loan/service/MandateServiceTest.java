@@ -655,6 +655,60 @@ class MandateServiceTest {
         verify(port, never()).register(any());
     }
 
+    /** The stale-duplicate case this was built for: withdraw our own un-authorised filing. */
+    @Test
+    void cancelWithdrawsAStalePendingAttempt() {
+        Mandate pending = attempt(2, Mandate.Status.PENDING_AUTHORIZATION, null);
+        when(mandates.findById(2L)).thenReturn(Optional.of(pending));
+        when(port.cancelMandate("ENA2", null, "HDFC0001234", "C002")).thenReturn(true);
+        when(port.fetch("ENA2")).thenReturn(new MandateResult("ENA2", "cancelled", "revoked",
+                null, null, null, null, null));
+        when(mandates.findByCustomerIdOrderByAttemptNoDesc(4471L)).thenReturn(List.of(pending));
+
+        service.cancel(1L, 2L);
+
+        assertThat(pending.getStatus()).isEqualTo(Mandate.Status.AUTHORIZATION_FAILED);
+        verify(port).cancelMandate("ENA2", null, "HDFC0001234", "C002");
+    }
+
+    /**
+     * The guard that matters: the live authority collections depends on must never be cancellable from
+     * a history row. No ACTIVE mandate is, in fact — one not in force here may be in force elsewhere.
+     */
+    @Test
+    void cancelRefusesAnActiveMandate() {
+        Mandate active = attempt(1, Mandate.Status.ACTIVE, "KKBK7022010261001406");
+        when(mandates.findById(1L)).thenReturn(Optional.of(active));
+        assertThatThrownBy(() -> service.cancel(1L, 1L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "MANDATE_ACTIVE_NOT_CANCELLABLE");
+        verify(port, never()).cancelMandate(any(), any(), any(), any());
+    }
+
+    /** Another customer's mandate is not findable through this application. */
+    @Test
+    void cancelRefusesAMandateBelongingToSomeoneElse() {
+        Mandate theirs = attempt(1, Mandate.Status.PENDING_AUTHORIZATION, null);
+        theirs.setCustomerId(9999L);
+        when(mandates.findById(1L)).thenReturn(Optional.of(theirs));
+        assertThatThrownBy(() -> service.cancel(1L, 1L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "MANDATE_NOT_FOUND");
+        verify(port, never()).cancelMandate(any(), any(), any(), any());
+    }
+
+    /** A provider refusal is reported, not swallowed — which states permit cancel is still unknown. */
+    @Test
+    void cancelSurfacesAProviderRefusal() {
+        Mandate pending = attempt(2, Mandate.Status.PENDING_AUTHORIZATION, null);
+        when(mandates.findById(2L)).thenReturn(Optional.of(pending));
+        when(port.cancelMandate(any(), any(), any(), any())).thenReturn(false);
+        assertThatThrownBy(() -> service.cancel(1L, 2L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "MANDATE_CANCEL_REFUSED");
+        assertThat(pending.getStatus()).isEqualTo(Mandate.Status.PENDING_AUTHORIZATION); // unchanged
+    }
+
     // ---- invite(): the only route for someone whose loan is already live -----------------------------
 
     /** The link is ours, never Digio's expiring authentication_url, and nothing is filed by inviting. */

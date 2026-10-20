@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, Loader2, RefreshCw, Send, ShieldCheck, ShieldOff } from "lucide-react";
+import { Check, Copy, Loader2, RefreshCw, Send, ShieldCheck, ShieldOff, XCircle } from "lucide-react";
 import { Badge, EmptyState, Skeleton, toast } from "@/components/ui";
 import { useCan, errMessage } from "@/components/staff/pipeline/hooks";
 import { collectionsApi, featureFlagsApi, staffApi, type MandateAttempt } from "@/lib/api/applications";
@@ -146,6 +146,21 @@ export function MandateTab({
     },
   });
 
+  // Cancelling withdraws a real registration at NPCI, so it is heads-only and always confirmed first.
+  const mayCancel = can("mandate:override") || can("collections:manage");
+  const [cancelId, setCancelId] = React.useState<number | null>(null);
+  const cancel = useMutation({
+    mutationFn: (mandateId: number) => staffApi.mandateCancel(applicationId as number, mandateId),
+    onSuccess: () => {
+      toast.success("Mandate cancelled");
+      setCancelId(null);
+      qc.invalidateQueries({ queryKey: ["staff-mandate", applicationId] });
+      qc.invalidateQueries({ queryKey: ["staff-mandate-history", applicationId] });
+      onChanged?.();
+    },
+    onError: (e) => toast.error(errMessage(e)),
+  });
+
   const refreshButton = mayInvite ? (
     <button
       type="button"
@@ -175,6 +190,7 @@ export function MandateTab({
                 <th className="px-3 py-2 font-medium">Ceiling</th>
                 <th className="px-3 py-2 font-medium">Started</th>
                 <th className="px-3 py-2 font-medium">App</th>
+                {mayCancel && <th className="px-3 py-2 font-medium" />}
               </tr>
             </thead>
             <tbody>
@@ -194,6 +210,40 @@ export function MandateTab({
                   <td className="px-3 py-2 font-mono">{inr2(a.maximumAmountPaise)}</td>
                   <td className="px-3 py-2">{a.createdAt ? formatDateTime(a.createdAt) : "—"}</td>
                   <td className="px-3 py-2 font-mono">{a.applicationId ? `#${a.applicationId}` : "—"}</td>
+                  {mayCancel && (
+                    <td className="px-3 py-2 text-right">
+                      {/* Never offered for the mandate in force, nor for one that was never filed. */}
+                      {a.status === "ACTIVE" || a.status === "BANK_UNSUPPORTED" ? null : cancelId === a.id ? (
+                        <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                          <span className="text-navy">Cancel this mandate?</span>
+                          <button
+                            type="button"
+                            onClick={() => cancel.mutate(a.id)}
+                            disabled={cancel.isPending}
+                            className="btn btn-sm btn-navy disabled:opacity-50"
+                          >
+                            {cancel.isPending && <Loader2 size={12} className="animate-spin" />} Yes, cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setCancelId(null)}
+                            disabled={cancel.isPending}
+                            className="btn btn-sm"
+                          >
+                            No
+                          </button>
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setCancelId(a.id)}
+                          className="inline-flex items-center gap-1 text-error-700 hover:underline"
+                        >
+                          <XCircle size={13} /> Cancel
+                        </button>
+                      )}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

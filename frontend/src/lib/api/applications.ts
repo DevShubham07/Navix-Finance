@@ -2237,6 +2237,10 @@ export const staffApi = {
   /** Re-read unsettled attempts from Digio. Files nothing; adopts one that completed after we gave up. */
   mandateRefresh: (id: number) => bff<MandateAttempt[]>(`${STAFF_BASE}/${id}/mandate/refresh`, "POST", {}),
 
+  /** Cancel one stale mandate attempt at NPCI. Never the one in force. COLLECTION_HEAD/DISB_HEAD/ADMIN. */
+  mandateCancel: (id: number, mandateId: number) =>
+    bff<MandateAttempt>(`${STAFF_BASE}/${id}/mandate/${mandateId}/cancel`, "POST", {}),
+
   mandateInvite: (id: number) =>
     bff<{ link: string }>(`${STAFF_BASE}/${id}/mandate/invite`, "POST", {}),
 

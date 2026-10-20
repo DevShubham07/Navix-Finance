@@ -186,6 +186,35 @@ public class DigioMandateClient implements MandatePort {
                 text(d.path("failure_reason")), d.path("amount_in_paise").asLong(0));
     }
 
+    /**
+     * {@code POST /v3/client/mandate/registration_cancel} (docs/digio/03 A5). The spec marks none of
+     * the four fields required; all four are sent anyway, because a cancel that silently matches the
+     * wrong mandate is worse than one that is rejected.
+     */
+    @Override
+    public boolean cancelMandate(String digioMandateId, String umrn, String destIfsc, String reason) {
+        ObjectNode body = JSON.createObjectNode();
+        body.put("digio_mandate_id", digioMandateId);
+        if (umrn != null && !umrn.isBlank()) {
+            body.put("umrn", umrn); // absent on an attempt that was never authorised
+        }
+        body.put("dest_ifsc", destIfsc);
+        body.put("reason", reason);
+        try {
+            call("registration_cancel", http.post().uri("/v3/client/mandate/registration_cancel")
+                    .contentType(MediaType.APPLICATION_JSON).body(body.toString()));
+            return true;
+        } catch (BusinessException e) {
+            // Which states permit cancellation is undocumented (11- Q9), so a business refusal is an
+            // outcome to report, not an error. Auth/transport failures carry other codes and propagate.
+            if ("SYSTEM_ERROR".equals(e.getCode()) || "DIGIO_HTTP_400".equals(e.getCode())) {
+                log.warn("Mandate cancel refused mandateId={} code={}", digioMandateId, e.getCode());
+                return false;
+            }
+            throw e;
+        }
+    }
+
     @Override
     public boolean cancelDebit(String txnId) {
         ObjectNode body = JSON.createObjectNode();
