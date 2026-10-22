@@ -1794,12 +1794,12 @@ public class CustomerService {
         //    initial entry (the borrower first typing the field in onboarding), not an edit.
         for (ProfileChangeLog c : changeLogRepository.findByCustomerIdOrderByIdDesc(customerId)) {
             boolean initial = c.getOldValue() == null;
-            String newVal = c.getNewValue() != null ? c.getNewValue() : "—";
+            String newVal = c.getNewValue() != null ? profileValue(c.getField(), c.getNewValue()) : "—";
             out.add(new ActivityEntry(
                     "PROFILE",
                     c.getApplicationId(),
-                    (initial ? "Entered " : "Updated ") + humanize(c.getField()),
-                    initial ? newVal : c.getOldValue() + " → " + newVal,
+                    (initial ? "Entered " : "Updated ") + profileFieldLabel(c.getField()),
+                    initial ? newVal : profileValue(c.getField(), c.getOldValue()) + " → " + newVal,
                     c.getCreatedBy(),
                     c.getCreatedAt()));
         }
@@ -1889,6 +1889,46 @@ public class CustomerService {
         } catch (RuntimeException e) {
             return null;
         }
+    }
+
+    /** A change-log field as staff read it: "monthlySalaryPaise" → "Monthly salary" (the unit is in the value). */
+    static String profileFieldLabel(String field) {
+        if (field != null && field.endsWith("Paise") && field.length() > "Paise".length()) {
+            return humanize(field.substring(0, field.length() - "Paise".length()));
+        }
+        return humanize(field);
+    }
+
+    /** A change-log value as staff read it: a {@code *Paise} field's "40000000" → "₹4,00,000"; else unchanged. */
+    static String profileValue(String field, String value) {
+        if (field == null || !field.endsWith("Paise") || value == null) {
+            return value;
+        }
+        long paise;
+        try {
+            paise = Long.parseLong(value.trim());
+        } catch (NumberFormatException e) {
+            return value;
+        }
+        String sign = paise < 0 ? "-" : "";
+        long abs = Math.abs(paise);
+        // Lakh grouping by hand: DecimalFormat (even for en-IN) only groups in threes.
+        String digits = Long.toString(abs / 100);
+        StringBuilder grouped = new StringBuilder();
+        int head = digits.length() - 3;
+        if (head > 0) {
+            for (int i = 0; i < head; i++) {
+                if (i > 0 && (head - i) % 2 == 0) {
+                    grouped.append(',');
+                }
+                grouped.append(digits.charAt(i));
+            }
+            grouped.append(',').append(digits, head, digits.length());
+        } else {
+            grouped.append(digits);
+        }
+        long fraction = abs % 100;
+        return sign + "₹" + grouped + (fraction == 0 ? "" : String.format(".%02d", fraction));
     }
 
     /** "monthlySalaryPaise"/"KYC_CREDIT_APPROVE" → "Monthly salary paise"/"Kyc credit approve". */

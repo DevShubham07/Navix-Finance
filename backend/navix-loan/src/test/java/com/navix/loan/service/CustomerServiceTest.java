@@ -1781,4 +1781,16 @@ class CustomerServiceTest {
         ActorContext.set(new CurrentActor("not-a-number", "Odd", "CREDIT_EXECUTIVE"));
         assertThat(service.visibleAmong(List.of(1L, 2L))).isEmpty();
     }
+
+    @Test
+    void profileActivityLabelsDropThePaiseSuffixAndFormatRupees() {
+        assertThat(CustomerService.profileFieldLabel("monthlySalaryPaise")).isEqualTo("Monthly salary");
+        assertThat(CustomerService.profileFieldLabel("employer")).isEqualTo("Employer");
+        assertThat(CustomerService.profileValue("monthlySalaryPaise", "40000000")).isEqualTo("₹4,00,000");
+        assertThat(CustomerService.profileValue("sanctionedAmountPaise", "1234550")).isEqualTo("₹12,345.50");
+        assertThat(CustomerService.profileValue("eligibleLimitPaise", "1234567800")).isEqualTo("₹1,23,45,678");
+        assertThat(CustomerService.profileValue("eligibleLimitPaise", "50000")).isEqualTo("₹500");
+        assertThat(CustomerService.profileValue("monthlySalaryPaise", "n/a")).isEqualTo("n/a");
+        assertThat(CustomerService.profileValue("salaryCreditDay", "30")).isEqualTo("30");
+    }
 }
