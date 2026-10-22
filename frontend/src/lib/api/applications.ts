@@ -4214,6 +4214,14 @@ export const collectionsApi = {
   /** Every debit presented on this loan, newest attempt first. Read-only; works with the flag off. */
   debits: (loanId: number) => bff<DebitRecord[]>(`${COLLECTIONS_BASE}/loans/${loanId}/debits`, "GET"),
 
+  /** Re-read one debit's outcome from the bank ("Check status"). Safe to repeat. */
+  reconcileDebit: (loanId: number, debitId: number) =>
+    bff<DebitRecord>(`${COLLECTIONS_BASE}/loans/${loanId}/debits/${debitId}/reconcile`, "POST", {}),
+
+  /** Cancel one in-flight debit; refused (DEBIT_CANCEL_REFUSED) once the bank has picked it up. */
+  cancelDebit: (loanId: number, debitId: number) =>
+    bff<DebitRecord>(`${COLLECTIONS_BASE}/loans/${loanId}/debits/${debitId}/cancel`, "POST", {}),
+
   /** The refund register: debits that collected money a borrower no longer owed. COLLECTION_HEAD/ADMIN. */
   overpayments: () => bff<DebitRecord[]>(`${COLLECTIONS_BASE}/debits/overpayments`, "GET"),
 

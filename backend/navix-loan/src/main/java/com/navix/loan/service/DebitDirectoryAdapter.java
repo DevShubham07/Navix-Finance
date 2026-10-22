@@ -30,4 +30,21 @@ public class DebitDirectoryAdapter implements DebitDirectory {
     public java.util.List<DebitRecord> overpayments() {
         return debitService.overpayments();
     }
+
+    @Override
+    public DebitRecord reconcile(Long loanId, Long debitId) {
+        debitService.reconcileForLoan(loanId, debitId);
+        return record(loanId, debitId);
+    }
+
+    @Override
+    public DebitRecord cancel(Long loanId, Long debitId, String actorLabel) {
+        debitService.cancel(loanId, debitId, actorLabel);
+        return record(loanId, debitId);
+    }
+
+    private DebitRecord record(Long loanId, Long debitId) {
+        return debitService.history(loanId).stream().filter(r -> r.debitId().equals(debitId)).findFirst()
+                .orElseThrow();
+    }
 }

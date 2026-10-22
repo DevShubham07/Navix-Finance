@@ -464,6 +464,79 @@ public class DebitService {
         tx.execute(s -> debits.save(row));
     }
 
+    /**
+     * Cancel one in-flight debit at the provider (Digio transaction action {@code cancel}).
+     *
+     * <p>Asks the provider first: a debit stuck as SCHEDULED in our table may already have settled or failed
+     * at the bank, and a success must be credited, not cancelled. Only a debit the provider still holds as
+     * pending is cancelled — and Digio allows that only before the bank has picked it up, so a refusal is a
+     * normal answer ({@code DEBIT_CANCEL_REFUSED}): the outcome then arrives through reconcile as usual.
+     *
+     * <p>A row with no provider transaction and no plan was never filed, so it is closed locally. A plan
+     * without a transaction id cannot be cancelled through this API and is refused rather than guessed at.
+     */
+    public DebitView cancel(Long loanId, Long debitId, String actorLabel) {
+        MandateDebit probe = debits.findById(debitId)
+                .filter(d -> d.getLoanId().equals(loanId))
+                .orElseThrow(() -> new BusinessException("DEBIT_NOT_FOUND", "Debit not found"));
+        if (!IN_FLIGHT.contains(probe.getStatus())) {
+            throw new BusinessException("DEBIT_NOT_IN_FLIGHT", "This debit has already finished; there is nothing to cancel");
+        }
+        try {
+            DebitView now = reconcile(debitId); // commits whatever the bank says, success credited
+            if (!IN_FLIGHT.contains(now.status())) {
+                return now;
+            }
+        } catch (BusinessException unreadable) {
+            // A status read that fails must not also block the cancel: a stuck read is often why it is stuck.
+            log.warn("Debit status read before cancel failed debitId={} code={}", debitId, unreadable.getCode());
+        }
+        return tx.execute(s -> {
+            debits.lockLoan(LOCK_NAMESPACE | probe.getLoanId());
+            MandateDebit row = debits.findById(debitId).orElse(probe);
+            if (!IN_FLIGHT.contains(row.getStatus())) {
+                return view(row);
+            }
+            if (row.getDigioTxnId() == null) {
+                if (row.getDigioPlanId() != null) {
+                    throw new BusinessException("DEBIT_CANCEL_UNAVAILABLE",
+                            "The bank has not issued a transaction for this debit yet. Check status again shortly.");
+                }
+                markCancelled(row, actorLabel, "never filed with the provider");
+                return view(row);
+            }
+            boolean accepted;
+            try {
+                accepted = port.cancelDebit(row.getDigioTxnId());
+            } catch (RuntimeException e) {
+                log.warn("Debit cancel failed debitId={} exception={}", debitId, e.getClass().getSimpleName());
+                throw new BusinessException("DEBIT_UNAVAILABLE", "The debit could not be cancelled just now. Try again.");
+            }
+            if (!accepted) {
+                throw new BusinessException("DEBIT_CANCEL_REFUSED",
+                        "The bank has already started processing this debit, so it can no longer be cancelled. "
+                                + "Use Check status for the outcome.");
+            }
+            markCancelled(row, actorLabel, "cancelled at the provider");
+            log.info("Debit cancelled debitId={} loanId={} by={}", debitId, row.getLoanId(), actorLabel);
+            return view(row);
+        });
+    }
+
+    /** Reconcile one debit of {@code loanId} on demand (staff "Check status"). */
+    public DebitView reconcileForLoan(Long loanId, Long debitId) {
+        debits.findById(debitId).filter(d -> d.getLoanId().equals(loanId))
+                .orElseThrow(() -> new BusinessException("DEBIT_NOT_FOUND", "Debit not found"));
+        return reconcile(debitId);
+    }
+
+    private void markCancelled(MandateDebit row, String actorLabel, String how) {
+        row.setStatus(Status.CANCELLED);
+        String reason = "Cancelled by " + (actorLabel == null ? "staff" : actorLabel) + " (" + how + ")";
+        row.setFailureReason(reason.substring(0, Math.min(reason.length(), 500)));
+        debits.save(row);
+    }
+
     // ---- reads -------------------------------------------------------------------------------------
 
     /** Every presentation on one loan, newest attempt first. (No @Transactional here — see the class note.) */

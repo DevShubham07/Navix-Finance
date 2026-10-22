@@ -110,6 +110,33 @@ export function MandateTab({
     },
   });
 
+  // A debit still SCHEDULED/IN_PROGRESS blocks cancelling the mandate. "Check status" asks the bank for its
+  // outcome; "Cancel debit" withdraws it (the server asks the bank first, and Digio only allows a cancel
+  // before the bank picks the debit up).
+  const [cancelDebitId, setCancelDebitId] = React.useState<number | null>(null);
+  const afterDebitChange = () => {
+    qc.invalidateQueries({ queryKey: ["staff-debit-history", loanId] });
+    qc.invalidateQueries({ queryKey: ["staff-debit-case", loanId] });
+    onChanged?.();
+  };
+  const reconcileDebit = useMutation({
+    mutationFn: (debitId: number) => collectionsApi.reconcileDebit(loanId as number, debitId),
+    onSuccess: (r) => {
+      toast.success(`Bank says: ${r.status}`);
+      afterDebitChange();
+    },
+    onError: (e) => toast.error(errMessage(e)),
+  });
+  const cancelDebit = useMutation({
+    mutationFn: (debitId: number) => collectionsApi.cancelDebit(loanId as number, debitId),
+    onSuccess: (r) => {
+      toast.success(r.status === "CANCELLED" ? "Debit cancelled" : `Not cancelled — the bank already reports ${r.status}`);
+      setCancelDebitId(null);
+      afterDebitChange();
+    },
+    onError: (e) => toast.error(errMessage(e)),
+  });
+
   // Invite: for a customer who never saw the mandate step because their loan was already live. Files
   // nothing — it returns the link and asks the notification engine to send it on every channel.
   const [inviteLink, setInviteLink] = React.useState<string>();
@@ -569,7 +596,8 @@ export function MandateTab({
                 <th className="py-1.5 pr-3 font-medium">Amount</th>
                 <th className="py-1.5 pr-3 font-medium">Settlement</th>
                 <th className="py-1.5 pr-3 font-medium">UTR</th>
-                <th className="py-1.5 font-medium">Trigger</th>
+                <th className="py-1.5 pr-3 font-medium">Trigger</th>
+                <th className="py-1.5 font-medium" />
               </tr>
             </thead>
             <tbody>
@@ -587,7 +615,51 @@ export function MandateTab({
                   <td className="py-1.5 pr-3 font-mono">{inr2(d.amountPaise)}</td>
                   <td className="py-1.5 pr-3">{d.settlementDate ?? "—"}</td>
                   <td className="py-1.5 pr-3 font-mono">{d.utr ?? "—"}</td>
-                  <td className="py-1.5">{d.trigger ?? "—"}</td>
+                  <td className="py-1.5 pr-3">{d.trigger ?? "—"}</td>
+                  <td className="py-1.5 text-right">
+                    {d.status === "SCHEDULED" || d.status === "IN_PROGRESS" ? (
+                      cancelDebitId === d.debitId ? (
+                        <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                          <span className="text-navy">Cancel this debit?</span>
+                          <button
+                            type="button"
+                            onClick={() => cancelDebit.mutate(d.debitId)}
+                            disabled={cancelDebit.isPending}
+                            className="btn btn-sm btn-navy disabled:opacity-50"
+                          >
+                            {cancelDebit.isPending && <Loader2 size={12} className="animate-spin" />} Yes, cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setCancelDebitId(null)}
+                            disabled={cancelDebit.isPending}
+                            className="btn btn-sm"
+                          >
+                            No
+                          </button>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-3 whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => reconcileDebit.mutate(d.debitId)}
+                            disabled={reconcileDebit.isPending}
+                            className="inline-flex items-center gap-1 text-navy hover:underline disabled:opacity-50"
+                          >
+                            {reconcileDebit.isPending ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                            Check status
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setCancelDebitId(d.debitId)}
+                            className="inline-flex items-center gap-1 text-error-700 hover:underline"
+                          >
+                            <XCircle size={12} /> Cancel debit
+                          </button>
+                        </span>
+                      )
+                    ) : null}
+                  </td>
                 </tr>
               ))}
             </tbody>

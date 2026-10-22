@@ -645,7 +645,7 @@ public class MandateService {
         if (debits.existsByMandateIdAndStatusIn(m.getId(),
                 EnumSet.of(MandateDebit.Status.SCHEDULED, MandateDebit.Status.IN_PROGRESS))) {
             throw new BusinessException("MANDATE_DEBIT_IN_FLIGHT",
-                    "A debit against this mandate is still being processed. Cancel once it has settled.");
+                    "A debit against this mandate is still being processed. Check its status or cancel it under Debit attempts, then try again.");
         }
 
         boolean accepted = port.cancelMandate(m.getDigioMandateId(), m.getUmrn(), m.getIfsc(), reason.code);

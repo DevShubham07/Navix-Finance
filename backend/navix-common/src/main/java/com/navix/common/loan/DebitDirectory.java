@@ -24,6 +24,12 @@ public interface DebitDirectory {
      */
     java.util.List<DebitRecord> overpayments();
 
+    /** Re-read one in-flight debit's outcome from the provider. Safe to repeat. */
+    DebitRecord reconcile(Long loanId, Long debitId);
+
+    /** Cancel one in-flight debit at the provider (only possible before the bank picks it up). */
+    DebitRecord cancel(Long loanId, Long debitId, String actorLabel);
+
     /** What a caller may see: no provider message, no failure code. */
     record Result(Long debitId, String status, long amountPaise, LocalDate settlementDate, int attemptNo) {
     }

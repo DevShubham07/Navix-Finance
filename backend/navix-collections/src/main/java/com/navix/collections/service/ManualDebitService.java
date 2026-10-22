@@ -80,6 +80,37 @@ public class ManualDebitService {
         return debits.overpayments();
     }
 
+    /**
+     * "Check status" on one debit: re-read its outcome from the provider. Same allowlist and case rule as
+     * {@link #history}; not flag-gated, because settling money already in flight is not optional.
+     */
+    public DebitDirectory.DebitRecord reconcile(Long loanId, Long debitId) {
+        requireCaseAccess(loanId);
+        return debits.reconcile(loanId, debitId);
+    }
+
+    /**
+     * Cancel one in-flight debit. Whoever may present a debit on this case may withdraw it; not flag-gated,
+     * since stopping money is exactly what must still work with the feature switched off.
+     */
+    public DebitDirectory.DebitRecord cancel(Long loanId, Long debitId) {
+        requireCaseAccess(loanId);
+        CurrentActor actor = ActorContext.get();
+        String label = actor == null ? "staff" : actor.name() + " (" + actor.role() + ", id " + actor.id() + ")";
+        log.info("Debit cancel requested loanId={} debitId={} by={}", loanId, debitId, label);
+        return debits.cancel(loanId, debitId, label);
+    }
+
+    private void requireCaseAccess(Long loanId) {
+        String role = requireCollectionsStaff();
+        Optional<CollectionCase> c = caseRepository.findByLoanId(loanId);
+        if (c.isPresent()) {
+            collectionsService.assertCaseAccessible(c.get().getId());
+        } else if (!REGISTER_ALLOWED.contains(role)) {
+            throw new BusinessException("CASE_NOT_FOUND", "Open a collection case for this loan first");
+        }
+    }
+
     /** The caller's real JWT role, once it is known to be allowed here. */
     private String requireCollectionsStaff() {
         CurrentActor actor = ActorContext.get();

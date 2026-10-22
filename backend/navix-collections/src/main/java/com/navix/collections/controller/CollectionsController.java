@@ -191,6 +191,18 @@ public class CollectionsController {
         return ApiResponse.ok(manualDebitService.history(loanId));
     }
 
+    /** Re-read one debit's outcome from the provider ("Check status"). */
+    @PostMapping("/loans/{loanId}/debits/{debitId}/reconcile")
+    public ApiResponse<DebitDirectory.DebitRecord> reconcileDebit(@PathVariable Long loanId, @PathVariable Long debitId) {
+        return ApiResponse.ok(manualDebitService.reconcile(loanId, debitId));
+    }
+
+    /** Cancel one in-flight debit at the provider; refused once the bank has picked it up. */
+    @PostMapping("/loans/{loanId}/debits/{debitId}/cancel")
+    public ApiResponse<DebitDirectory.DebitRecord> cancelDebit(@PathVariable Long loanId, @PathVariable Long debitId) {
+        return ApiResponse.ok(manualDebitService.cancel(loanId, debitId));
+    }
+
     /** The refund register: debits that collected money a borrower no longer owed. COLLECTION_HEAD/ADMIN. */
     @GetMapping("/debits/overpayments")
     public ApiResponse<java.util.List<DebitDirectory.DebitRecord>> overpayments() {

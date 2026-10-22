@@ -482,4 +482,67 @@ class DebitServiceTest {
         assertThat(found.get(0).utr()).isEqualTo("UTR999");
         assertThat(found.get(0).loanId()).isEqualTo(LOAN);
     }
+
+    // ---- cancel(): withdrawing a debit staff can see is stuck -------------------------------------------
+
+    private MandateDebit scheduled() {
+        MandateDebit d = row(Status.SCHEDULED, null);
+        d.setDigioTxnId("NPT1");
+        when(debits.findById(11L)).thenReturn(Optional.of(d));
+        return d;
+    }
+
+    @Test
+    void cancelWithdrawsADebitTheBankStillHoldsAsPending() {
+        MandateDebit d = scheduled();
+        when(port.debitStatus("NPT1")).thenReturn(new DebitOutcome("NPT1", "NEW", null, null, null, 500_000L));
+        when(port.cancelDebit("NPT1")).thenReturn(true);
+
+        var v = service.cancel(LOAN, 11L, "Asha (COLLECTION_HEAD, id 9)");
+
+        assertThat(v.status()).isEqualTo(Status.CANCELLED);
+        assertThat(d.getFailureReason()).contains("Asha");
+        verify(debits, org.mockito.Mockito.atLeastOnce()).lockLoan(anyLong());
+    }
+
+    /** It asks the bank first: a debit that actually succeeded is credited, never cancelled. */
+    @Test
+    void cancelOfADebitThatAlreadySucceededCreditsItInstead() {
+        scheduled();
+        when(port.debitStatus("NPT1")).thenReturn(new DebitOutcome("NPT1", "PAYMENT_SUCCESS", "UTR123", null, null, 500_000L));
+
+        var v = service.cancel(LOAN, 11L, "x");
+
+        assertThat(v.status()).isEqualTo(Status.SUCCEEDED);
+        verify(port, never()).cancelDebit(any());
+    }
+
+    @Test
+    void cancelRefusedOnceTheBankHasPickedItUp() {
+        MandateDebit d = scheduled();
+        when(port.debitStatus("NPT1")).thenReturn(new DebitOutcome("NPT1", "NEW", null, null, null, 500_000L));
+        when(port.cancelDebit("NPT1")).thenReturn(false);
+
+        assertCode(() -> service.cancel(LOAN, 11L, "x"), "DEBIT_CANCEL_REFUSED");
+        assertThat(d.getStatus()).isEqualTo(Status.SCHEDULED);
+    }
+
+    /** A status read that fails must not also block the cancel — a broken read is often why it is stuck. */
+    @Test
+    void cancelStillWorksWhenTheStatusReadFails() {
+        scheduled();
+        when(port.debitStatus("NPT1")).thenThrow(new RuntimeException("down"));
+        when(port.cancelDebit("NPT1")).thenReturn(true);
+
+        assertThat(service.cancel(LOAN, 11L, "x").status()).isEqualTo(Status.CANCELLED);
+    }
+
+    @Test
+    void cancelRefusesAFinishedDebitAndAnotherLoansDebit() {
+        MandateDebit done = row(Status.FAILED, "X");
+        when(debits.findById(11L)).thenReturn(Optional.of(done));
+        assertCode(() -> service.cancel(LOAN, 11L, "x"), "DEBIT_NOT_IN_FLIGHT");
+        assertCode(() -> service.cancel(99L, 11L, "x"), "DEBIT_NOT_FOUND");
+        verify(port, never()).cancelDebit(any());
+    }
 }
