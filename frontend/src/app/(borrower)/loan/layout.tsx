@@ -26,7 +26,11 @@ export default function LoanLayout({ children }: { children: React.ReactNode }) 
   const [appId, setAppId] = React.useState<number | null>(null);
   React.useEffect(() => setAppId(readStoredAppId()), []);
   // Resume is server-side (revamp.md C1): a borrower who left at the selfie comes back to the selfie.
-  useOfferGuard(isOfferStep ? appId : null);
+  // Not on the mandate screen: it is also reached by a staff invite on a loan that has long left the
+  // journey (ACTIVE, OVERDUE, CLOSED), where the journey's answer is /loan/status — so the guard bounced
+  // exactly the borrowers the invite is for. The page resolves its own application, and the server
+  // decides who may register (OfferService.MANDATE_SETUP_ALLOWED; init demands a confirmed account).
+  useOfferGuard(isOfferStep && seg !== "mandate" ? appId : null);
 
   if (!isOfferStep) return <>{children}</>;
 

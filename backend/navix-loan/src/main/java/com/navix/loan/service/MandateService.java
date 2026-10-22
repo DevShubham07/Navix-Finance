@@ -253,6 +253,14 @@ public class MandateService {
             return new StepResult(CHECK_TYPE, ApplicationVerificationService.PENDING,
                     "Mandate not started", new LinkedHashMap<>());
         }
+        if (m.getCancelledAt() != null) {
+            // Staff withdrew it (borrower's request, or to replace it with a higher ceiling). Not a failed
+            // setup: the borrower is starting fresh, so offer "Continue to your bank", not "Try again".
+            Map<String, Object> d = new LinkedHashMap<>();
+            d.put("status", "NOT_STARTED");
+            d.put("previousCancelled", true);
+            return new StepResult(CHECK_TYPE, ApplicationVerificationService.PENDING, "Mandate not started", d);
+        }
         if (m.getStatus() == Mandate.Status.ACTIVE) {
             // Reached only when reusable() said no: the mandate is live but does not cover THIS
             // application (its ceiling is below this advance's, or it debits another account). Reporting

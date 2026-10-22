@@ -824,6 +824,20 @@ class MandateServiceTest {
         assertThat(r.derived().get("status")).isEqualTo("NOT_STARTED");
     }
 
+    /** After staff cancel a mandate, the borrower's screen offers a fresh start, not "setup failed". */
+    @Test
+    void statusAfterACancelledMandateReadsAsNotStarted() {
+        Mandate cancelled = attempt(1, Mandate.Status.AUTHORIZATION_FAILED, "UMRN-OLD");
+        cancelled.setCancelledAt(java.time.Instant.now());
+        when(mandates.findFirstByCustomerIdOrderByAttemptNoDesc(4471L)).thenReturn(Optional.of(cancelled));
+
+        var r = service.status(1L);
+
+        assertThat(r.status()).isEqualTo("PENDING");
+        assertThat(r.derived().get("status")).isEqualTo("NOT_STARTED");
+        verify(port, never()).fetch(any());
+    }
+
     // ---- invite(): the only route for someone whose loan is already live -----------------------------
 
     /** The link is ours, never Digio's expiring authentication_url, and nothing is filed by inviting. */
