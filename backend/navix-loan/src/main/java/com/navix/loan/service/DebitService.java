@@ -58,6 +58,8 @@ public class DebitService {
     static final String NARRATION_TEXT = "DhanBoost repayment";
     /** Keeps the loan-keyed advisory lock out of the customer-keyed one MandateService takes. */
     static final long LOCK_NAMESPACE = 1L << 40;
+    /** A row with no provider ids is closed locally only once it is older than any in-flight create call. */
+    static final java.time.Duration LOCAL_CLOSE_MIN_AGE = java.time.Duration.ofMinutes(15);
     /**
      * Reject reasons that may NEVER be re-presented: the mandate or the account is gone, the payer is
      * gone, or the reference collided — another attempt cannot succeed, and each attempt is a real
@@ -498,12 +500,25 @@ public class DebitService {
                 return view(row);
             }
             if (row.getDigioTxnId() == null) {
-                if (row.getDigioPlanId() != null) {
-                    throw new BusinessException("DEBIT_CANCEL_UNAVAILABLE",
-                            "The bank has not issued a transaction for this debit yet. Check status again shortly.");
+                // Closing a row locally is only safe once the provider has confirmed it holds nothing under our
+                // key — and present() makes its provider call outside any lock, so a young row may be mid-create
+                // right now. Fail closed on both: a lookup error or a found plan refuses, and so does a row too
+                // new for its create call to have finished.
+                Optional<DebitPlan> found = lookup(row.getUniqueKey()); // throws DEBIT_UNAVAILABLE on error
+                if (found.isPresent()) {
+                    apply(row, found.get());
+                    debits.save(row);
                 }
-                markCancelled(row, actorLabel, "never filed with the provider");
-                return view(row);
+                if (row.getDigioTxnId() == null) {
+                    boolean young = row.getCreatedAt() == null
+                            || row.getCreatedAt().isAfter(java.time.Instant.now().minus(LOCAL_CLOSE_MIN_AGE));
+                    if (found.isPresent() || row.getDigioPlanId() != null || young) {
+                        throw new BusinessException("DEBIT_CANCEL_UNAVAILABLE",
+                                "The bank has not issued a transaction for this debit yet. Check status again shortly.");
+                    }
+                    markCancelled(row, actorLabel, "never filed with the provider");
+                    return view(row);
+                }
             }
             boolean accepted;
             try {

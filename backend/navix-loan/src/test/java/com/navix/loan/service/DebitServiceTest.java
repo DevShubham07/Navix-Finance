@@ -545,4 +545,41 @@ class DebitServiceTest {
         assertCode(() -> service.cancel(99L, 11L, "x"), "DEBIT_NOT_FOUND");
         verify(port, never()).cancelDebit(any());
     }
+
+    /** A young row with no provider ids may be mid-create: never closed locally, even if Digio has nothing yet. */
+    @Test
+    void cancelNeverClosesAYoungUnfiledRowLocally() {
+        MandateDebit d = row(Status.SCHEDULED, null);
+        org.springframework.test.util.ReflectionTestUtils.setField(d, "createdAt", java.time.Instant.now());
+        when(debits.findById(11L)).thenReturn(Optional.of(d));
+        when(port.findDebitByRef("DBM7-1")).thenReturn(Optional.empty());
+
+        assertCode(() -> service.cancel(LOAN, 11L, "x"), "DEBIT_CANCEL_UNAVAILABLE");
+        assertThat(d.getStatus()).isEqualTo(Status.SCHEDULED);
+    }
+
+    @Test
+    void cancelClosesAnOldRowTheProviderConfirmsItNeverHad() {
+        MandateDebit d = row(Status.SCHEDULED, null);
+        org.springframework.test.util.ReflectionTestUtils.setField(d, "createdAt",
+                java.time.Instant.now().minus(java.time.Duration.ofHours(2)));
+        when(debits.findById(11L)).thenReturn(Optional.of(d));
+        when(port.findDebitByRef("DBM7-1")).thenReturn(Optional.empty());
+
+        assertThat(service.cancel(LOAN, 11L, "x").status()).isEqualTo(Status.CANCELLED);
+        verify(port, never()).cancelDebit(any());
+    }
+
+    /** If the provider lookup itself fails, nothing is closed. */
+    @Test
+    void cancelFailsClosedWhenTheProviderLookupErrors() {
+        MandateDebit d = row(Status.SCHEDULED, null);
+        org.springframework.test.util.ReflectionTestUtils.setField(d, "createdAt",
+                java.time.Instant.now().minus(java.time.Duration.ofHours(2)));
+        when(debits.findById(11L)).thenReturn(Optional.of(d));
+        when(port.findDebitByRef("DBM7-1")).thenThrow(new RuntimeException("down"));
+
+        assertCode(() -> service.cancel(LOAN, 11L, "x"), "DEBIT_UNAVAILABLE");
+        assertThat(d.getStatus()).isEqualTo(Status.SCHEDULED);
+    }
 }
