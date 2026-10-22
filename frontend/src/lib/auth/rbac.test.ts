@@ -38,6 +38,12 @@ describe("effectivePermissions", () => {
     }
   });
 
+  it("ADMIN working as Admin still gets the Mandate tab's actions", () => {
+    const p = effectivePermissions("ADMIN", "ADMIN");
+    expect(p).toContain("mandate:override");
+    expect(p).toContain("mandate:debit");
+  });
+
   it("Credit Head assigns but does not decide", () => {
     const p = effectivePermissions("CREDIT_HEAD", "CREDIT_HEAD");
     expect(p).not.toContain("loan:review");

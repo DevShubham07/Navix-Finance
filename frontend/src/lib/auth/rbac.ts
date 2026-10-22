@@ -246,6 +246,11 @@ const ADMIN_ROLE_PERMISSIONS: Permission[] = [
   "collections:overview",
   "document:upload",
   "leads:import",
+  // The Mandate tab's actions (cancel a mandate or debit, invite, re-check, the BANK_UNSUPPORTED override,
+  // debit now). Used nowhere else, and the backend already allows ADMIN all of them; without these the
+  // Admin view showed the tab with every button missing, including on the Mandates & debits console.
+  "mandate:override",
+  "mandate:debit",
 ];
 
 /** Each working role carries only its own permissions; `real` is kept for call-site symmetry. */
