@@ -44,6 +44,7 @@ class MandateServiceTest {
     @Mock org.springframework.context.ApplicationEventPublisher eventPublisher;
     @Mock com.navix.loan.repository.MandateDebitRepository debits;
     @Mock com.navix.loan.repository.CustomerMandateCeilingOverrideRepository ceilingOverrides;
+    @Mock com.navix.loan.repository.ProfileChangeLogRepository changeLog;
 
     MandateService service;
     LoanApplication app;
@@ -52,7 +53,7 @@ class MandateServiceTest {
     @BeforeEach
     void setUp() {
         service = new MandateService(port, mandates, applications, profiles, new LoanMath(), featureFlags,
-                eventPublisher, debits, ceilingOverrides);
+                eventPublisher, debits, ceilingOverrides, changeLog);
         app = new LoanApplication();
         app.setId(1L);
         app.setCustomerId(4471L);
@@ -892,8 +893,42 @@ class MandateServiceTest {
         assertThat(service.hasUsableMandate(app)).isTrue();
     }
 
+    private void asAdmin() {
+        com.navix.common.security.ActorContext.set(new com.navix.common.security.CurrentActor("1", "Admin", "ADMIN"));
+    }
+
+    @org.junit.jupiter.api.AfterEach
+    void clearActor() {
+        com.navix.common.security.ActorContext.clear();
+    }
+
+    @Test
+    void setCeilingOverrideIsAdminOnly() {
+        com.navix.common.security.ActorContext.set(new com.navix.common.security.CurrentActor("2", "Head", "COLLECTION_HEAD"));
+        assertThatThrownBy(() -> service.setCeilingOverride(1L, 75_000_00L, null))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "FORBIDDEN_ROLE");
+        verify(ceilingOverrides, never()).save(any());
+    }
+
+    /** Both set and clear land in profile_change_log — clearing deletes the row, so the log is the record. */
+    @Test
+    void setAndClearAreBothAudited() {
+        asAdmin();
+        service.setCeilingOverride(1L, 75_000_00L, "for Kartik");
+        ceilingOverride(75_000_00L);
+        service.setCeilingOverride(1L, null, null);
+
+        var c = ArgumentCaptor.forClass(com.navix.loan.entity.ProfileChangeLog.class);
+        verify(changeLog, times(2)).save(c.capture());
+        assertThat(c.getAllValues().get(0).getNewValue()).isEqualTo("7500000");
+        assertThat(c.getAllValues().get(1).getOldValue()).isEqualTo("7500000");
+        assertThat(c.getAllValues().get(1).getNewValue()).isNull();
+    }
+
     @Test
     void setCeilingOverrideRejectsOutOfRangeAmounts() {
+        asAdmin();
         assertThatThrownBy(() -> service.setCeilingOverride(1L, 500_00L, null))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("code", "MANDATE_CEILING_OUT_OF_RANGE");

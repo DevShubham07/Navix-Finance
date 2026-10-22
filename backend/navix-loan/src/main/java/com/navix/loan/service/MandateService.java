@@ -17,11 +17,13 @@ import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.LoanApplication;
 import com.navix.loan.entity.Mandate;
 import com.navix.loan.entity.MandateDebit;
+import com.navix.loan.entity.ProfileChangeLog;
 import com.navix.loan.repository.CustomerMandateCeilingOverrideRepository;
 import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
 import com.navix.loan.repository.MandateDebitRepository;
 import com.navix.loan.repository.MandateRepository;
+import com.navix.loan.repository.ProfileChangeLogRepository;
 import com.navix.loan.service.ApplicationVerificationService.StepResult;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -83,6 +85,7 @@ public class MandateService {
     private final ApplicationEventPublisher eventPublisher;
     private final MandateDebitRepository debits;
     private final CustomerMandateCeilingOverrideRepository ceilingOverrides;
+    private final ProfileChangeLogRepository changeLog;
 
     /** Builds the invite link; same property the password-reset emails use. */
     @org.springframework.beans.factory.annotation.Value("${navix.app.frontend-base-url:http://localhost:3000}")
@@ -479,11 +482,19 @@ public class MandateService {
      */
     @Transactional
     public MandateCeilingView setCeilingOverride(Long appId, Long ceilingPaise, String note) {
+        CurrentActor actor = ActorContext.get();
+        if (actor == null || !"ADMIN".equals(actor.role())) { // the controller checks too; this is the authority
+            throw new BusinessException("FORBIDDEN_ROLE", "This action requires role ADMIN");
+        }
         LoanApplication app = applications.findById(appId)
                 .orElseThrow(() -> new BusinessException("APPLICATION_NOT_FOUND", "Application not found"));
         Long customerId = app.getCustomerId();
+        Long previous = ceilingOverrides.findById(customerId)
+                .map(CustomerMandateCeilingOverride::getCeilingPaise).orElse(null);
         if (ceilingPaise == null) {
             ceilingOverrides.deleteById(customerId);
+            // Clearing deletes the row, so the change log is the only record of who removed what.
+            logCeilingChange(customerId, appId, previous, null);
             log.info("Mandate ceiling override cleared customerId={}", customerId);
             return ceilingView(appId);
         }
@@ -491,7 +502,6 @@ public class MandateService {
             throw new BusinessException("MANDATE_CEILING_OUT_OF_RANGE",
                     "The mandate limit must be between Rs 1,000 and Rs 10,00,000");
         }
-        CurrentActor actor = ActorContext.get();
         CustomerMandateCeilingOverride o = ceilingOverrides.findById(customerId)
                 .orElseGet(CustomerMandateCeilingOverride::new);
         o.setCustomerId(customerId);
@@ -501,8 +511,23 @@ public class MandateService {
         o.setSetBy(actor == null ? "system" : actor.name() + " (" + actor.role() + ", id " + actor.id() + ")");
         o.setSetAt(Instant.now());
         ceilingOverrides.save(o);
+        logCeilingChange(customerId, appId, previous, ceilingPaise);
         log.info("Mandate ceiling override set customerId={} ceilingPaise={}", customerId, ceilingPaise);
         return ceilingView(appId);
+    }
+
+    /** Same profile_change_log trail the borrowing-limit override writes; created_by records the actor. */
+    private void logCeilingChange(Long customerId, Long appId, Long previous, Long next) {
+        if (Objects.equals(previous, next)) {
+            return;
+        }
+        ProfileChangeLog entry = new ProfileChangeLog();
+        entry.setCustomerId(customerId);
+        entry.setApplicationId(appId);
+        entry.setField("mandateCeilingPaise");
+        entry.setOldValue(previous == null ? null : String.valueOf(previous));
+        entry.setNewValue(next == null ? null : String.valueOf(next));
+        changeLog.save(entry);
     }
 
     private long ceiling(LoanApplication app, CustomerProfile profile) {
