@@ -137,7 +137,9 @@ public class MandateService {
         // actually doing. Both branches exist because of the 2026-10-20 incident (docs/digio/13 section 13),
         // where a borrower authorised attempt 1 successfully, we had already written it off as auth_failed,
         // and seven NPCI mandates went out for one account before the bank started refusing them.
-        Optional<Mandate> settled = settleEarlierAttempts(appId, account, ifsc, ceiling);
+        // What a NEW request would be filed for (an ADMIN override may raise it above the formula, V89).
+        long registered = registrationCeiling(customerId, ceiling);
+        Optional<Mandate> settled = settleEarlierAttempts(appId, account, ifsc, ceiling, registered);
         if (settled.isPresent()) {
             Mandate m0 = settled.get();
             // A live attempt still awaiting authorisation: send them back to ITS url. A completed one:
@@ -185,7 +187,6 @@ public class MandateService {
 
         // Filed at the registration ceiling (an ADMIN override may raise it, V89); `ceiling` above stays the
         // formula, because that is what "this mandate covers this application" is judged against.
-        long registered = registrationCeiling(customerId, ceiling);
         m.setMaximumAmountPaise(registered);
         m.setFirstCollectionDate(today);
         m.setFinalCollectionDate(today.plusYears(5));
@@ -313,7 +314,8 @@ public class MandateService {
      * mandate, which is bad, but throwing here would block a borrower who has no usable mandate at all,
      * which is worse. The attempt cap remains the backstop.
      */
-    private Optional<Mandate> settleEarlierAttempts(Long appId, String account, String ifsc, long ceiling) {
+    private Optional<Mandate> settleEarlierAttempts(Long appId, String account, String ifsc, long ceiling,
+                                                    long registered) {
         String last4 = account.substring(account.length() - 4);
         List<Mandate> attempts = mandates.findByLoanApplicationIdOrderByAttemptNoDesc(appId);
         int looked = 0;
@@ -350,10 +352,41 @@ public class MandateService {
                 return Optional.of(m);
             }
             if (m.getStatus() == Mandate.Status.PENDING_AUTHORIZATION && urlStillLive(m)) {
+                // An ADMIN raised the limit after this request was filed: handing back its url would register
+                // the OLD amount, and the override would silently do nothing. Withdraw it and file afresh —
+                // but only once the bank has accepted the cancel; otherwise reuse it, because two live
+                // requests on one account is the duplicate-mandate failure this method exists to prevent.
+                if (m.getMaximumAmountPaise() < registered && withdrawBelowLimit(m, registered)) {
+                    continue;
+                }
                 return Optional.of(m);
             }
         }
         return Optional.empty();
+    }
+
+    /** Cancels a live request filed below the current registration limit. True only when the bank accepted. */
+    private boolean withdrawBelowLimit(Mandate m, long registered) {
+        boolean accepted;
+        try {
+            accepted = port.cancelMandate(m.getDigioMandateId(), m.getUmrn(), m.getIfsc(), "C002");
+        } catch (RuntimeException e) {
+            log.warn("Withdrawing a below-limit mandate request failed crn={} exception={}", m.getCustomerRefNumber(),
+                    e.getClass().getSimpleName());
+            return false;
+        }
+        if (!accepted) {
+            log.info("Bank refused to withdraw below-limit mandate request crn={}; reusing it", m.getCustomerRefNumber());
+            return false;
+        }
+        m.setStatus(Mandate.Status.AUTHORIZATION_FAILED);
+        m.setDigioState("cancelled");
+        m.setCancelledAt(Instant.now());
+        m.setCancelledBy("system");
+        m.setCancelReason("C002: replaced by a request for the raised limit of " + registered + " paise");
+        mandates.save(m);
+        log.info("Withdrew below-limit mandate request crn={} to file at {} paise", m.getCustomerRefNumber(), registered);
+        return true;
     }
 
     /** A stored authorisation url is only good while Digio still honours it. */

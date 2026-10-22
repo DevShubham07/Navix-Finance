@@ -902,6 +902,59 @@ class MandateServiceTest {
         com.navix.common.security.ActorContext.clear();
     }
 
+    /** A live request filed for the OLD amount, as Kartik's was before the limit was raised. */
+    private Mandate livePendingAt(long maxPaise) {
+        Mandate old = attempt(1, Mandate.Status.PENDING_AUTHORIZATION, null);
+        old.setMaximumAmountPaise(maxPaise);
+        old.setAuthenticationUrl("https://digio.in/old");
+        when(mandates.findByLoanApplicationIdOrderByAttemptNoDesc(1L)).thenReturn(List.of(old));
+        when(port.fetch("ENA1")).thenReturn(new MandateResult("ENA1", "partial", null, null, null, null, null, null));
+        return old;
+    }
+
+    @Test
+    void raisedLimitWithdrawsTheOldLiveRequestAndFilesAtTheNewAmount() {
+        Mandate old = livePendingAt(20_000_00L);
+        ceilingOverride(75_000_00L);
+        when(port.cancelMandate("ENA1", null, "HDFC0001234", "C002")).thenReturn(true);
+        bankOk();
+        when(port.register(any())).thenReturn(new MandateSession("DID9", "partial", "https://digio.in/new"));
+
+        var r = service.init(1L);
+
+        assertThat(old.getCancelledAt()).isNotNull();
+        var req = ArgumentCaptor.forClass(MandateRequest.class);
+        verify(port).register(req.capture());
+        assertThat(req.getValue().maximumAmountPaise()).isEqualTo(75_000_00L);
+        assertThat(r.derived().get("url")).isEqualTo("https://digio.in/new");
+    }
+
+    /** If the bank will not withdraw it, reuse it: two live requests on one account is the worse outcome. */
+    @Test
+    void raisedLimitReusesTheOldRequestWhenTheBankRefusesTheCancel() {
+        Mandate old = livePendingAt(20_000_00L);
+        ceilingOverride(75_000_00L);
+        when(port.cancelMandate(any(), any(), any(), any())).thenReturn(false);
+
+        var r = service.init(1L);
+
+        assertThat(old.getCancelledAt()).isNull();
+        verify(port, never()).register(any());
+        assertThat(r.derived().get("url")).isEqualTo("https://digio.in/old");
+    }
+
+    /** No override, or a request already at the right amount: reused exactly as before. */
+    @Test
+    void aLiveRequestAtTheRightAmountIsStillReused() {
+        livePendingAt(20_000_00L);
+
+        var r = service.init(1L);
+
+        verify(port, never()).cancelMandate(any(), any(), any(), any());
+        verify(port, never()).register(any());
+        assertThat(r.derived().get("url")).isEqualTo("https://digio.in/old");
+    }
+
     @Test
     void setCeilingOverrideIsAdminOnly() {
         com.navix.common.security.ActorContext.set(new com.navix.common.security.CurrentActor("2", "Head", "COLLECTION_HEAD"));
