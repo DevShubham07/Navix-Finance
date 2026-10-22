@@ -73,7 +73,9 @@ public class SecurityConfig {
                     // /api/dashboard is company-wide aggregate counts, staff-only.
                     .requestMatchers("/api/staff", "/api/staff/**", "/api/admin/**", "/api/dsa/**",
                             "/api/collections", "/api/collections/**",
-                            "/api/dashboard", "/api/dashboard/**").hasRole("STAFF")
+                            "/api/dashboard", "/api/dashboard/**",
+                            // The Mandates & debits console; the service narrows it to COLLECTION_HEAD/ADMIN.
+                            "/api/mandates", "/api/mandates/**").hasRole("STAFF")
                     .anyRequest().authenticated())
             .exceptionHandling(ex -> ex.authenticationEntryPoint(
                     new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))

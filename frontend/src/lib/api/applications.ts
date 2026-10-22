@@ -4455,6 +4455,128 @@ export function rupeesToPaise(rupees: number): number {
 }
 
 /** Integer paise -> ₹ string, e.g. 500000 -> "₹5,000". */
+// ---------------------------------------------------------------------------
+// Mandates & debits console (COLLECTION_HEAD / ADMIN, read-only)
+// ---------------------------------------------------------------------------
+
+export interface MandateSummary {
+  totalMandates: number;
+  activeMandates: number;
+  activeCustomers: number;
+  activeLimitPaise: number;
+  pendingAuthorisation: number;
+  failed: number;
+  cancelled: number;
+  bankUnsupported: number;
+  totalDebits: number;
+  debitsSucceeded: number;
+  debitedPaise: number;
+  debitsFailed: number;
+  debitsInFlight: number;
+  inFlightPaise: number;
+  debitsCancelled: number;
+  refundsOwedPaise: number;
+  debitedByDay: { date: string; debitedPaise: number; count: number }[];
+}
+
+export interface MandateListRow {
+  id: number;
+  customerId: number;
+  customerName: string | null;
+  mobile: string | null;
+  /** The customer's newest application — what "Open mandate actions" opens. */
+  applicationId: number | null;
+  applicationStatus: string | null;
+  loanId: number | null;
+  attemptNo: number;
+  /** Stored status, or CANCELLED when staff cancelled it. */
+  status: string;
+  umrn: string | null;
+  bankName: string | null;
+  accountLast4: string | null;
+  maximumAmountPaise: number;
+  authSubMode: string | null;
+  rejectReason: string | null;
+  createdAt: string | null;
+  authenticatedAt: string | null;
+  cancelledAt: string | null;
+  cancelledBy: string | null;
+  cancelReason: string | null;
+  debitCount: number;
+  debitsSucceeded: number;
+  debitedPaise: number;
+  debitsInFlight: number;
+  lastDebitAt: string | null;
+}
+
+export interface MandateDebitRow {
+  id: number;
+  mandateId: number;
+  umrn: string | null;
+  loanId: number;
+  customerId: number | null;
+  customerName: string | null;
+  mobile: string | null;
+  applicationId: number | null;
+  attemptNo: number;
+  amountPaise: number;
+  status: string;
+  digioStatus: string | null;
+  failureCode: string | null;
+  failureReason: string | null;
+  utr: string | null;
+  settlementDate: string | null;
+  /** MANUAL (a staffer) or SCHEDULED (the automatic sweep). */
+  trigger: string;
+  actorId: number | null;
+  actorName: string | null;
+  actorRole: string | null;
+  dpdAtAttempt: number | null;
+  presentCount: number;
+  overpayment: boolean;
+  digioTxnId: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
+
+export interface MandateDebitFilters {
+  q?: string;
+  status?: string;
+  trigger?: string;
+  actorId?: number | null;
+  from?: string;
+  to?: string;
+  page?: number;
+}
+
+const MANDATES_BASE = "/api/staff/mandates";
+
+function qs(params: Record<string, string | number | null | undefined>): string {
+  const u = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v != null && v !== "") u.set(k, String(v));
+  });
+  const s = u.toString();
+  return s ? `?${s}` : "";
+}
+
+export const mandatesApi = {
+  summary: () => bff<MandateSummary>(`${MANDATES_BASE}/summary`, "GET"),
+  list: (q: string, status: string, page: number) =>
+    bff<{ rows: MandateListRow[]; total: number; page: number; size: number }>(
+      `${MANDATES_BASE}${qs({ q, status, page })}`,
+      "GET",
+    ),
+  debitsFor: (mandateId: number) => bff<MandateDebitRow[]>(`${MANDATES_BASE}/${mandateId}/debits`, "GET"),
+  debits: (f: MandateDebitFilters) =>
+    bff<{ rows: MandateDebitRow[]; total: number; page: number; size: number; succeededCount: number; succeededPaise: number }>(
+      `${MANDATES_BASE}/debits${qs({ q: f.q, status: f.status, trigger: f.trigger, actorId: f.actorId, from: f.from, to: f.to, page: f.page })}`,
+      "GET",
+    ),
+  actors: () => bff<{ id: number; name: string; role: string }[]>(`${MANDATES_BASE}/debits/actors`, "GET"),
+};
+
 export function paiseToINR(paise: number | null | undefined): string {
   if (paise == null) return "—";
   return new Intl.NumberFormat("en-IN", {

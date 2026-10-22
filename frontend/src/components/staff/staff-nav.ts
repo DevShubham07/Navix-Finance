@@ -20,6 +20,7 @@ import {
   Briefcase,
   Banknote,
   Landmark,
+  Repeat,
 } from "lucide-react";
 import { can, type Permission, type StaffRole } from "@/lib/auth/rbac";
 import type { FeatureFlags } from "@/lib/api/applications";
@@ -139,6 +140,10 @@ export const NAV: NavGroup[] = [
     heading: "Collections",
     items: [
       { label: "DPD buckets (all loans)", href: "/staff/collections", Icon: HandCoins, perm: ["collections:interact", "collections:manage", "collections:overview"], collectionBuckets: true, labelFor: { COLLECTION_EXECUTIVE: "My DPD cases" } },
+      // Every eMandate and NACH debit across the book. loan:register is exactly COLLECTION_HEAD + ADMIN — the
+      // same pair the backend allowlists (MandateDashboardService). Not flag-gated: debits already taken stay
+      // auditable with digio-debit off.
+      { label: "Mandates & debits", href: "/staff/collections/mandates", Icon: Repeat, perm: "loan:register" },
       // Collection Executive can see settlements they proposed; approve stays PermissionGate-gated.
       { label: "Settlements", href: "/staff/collections/settlements", Icon: HandCoins, perm: ["collections:interact", "collections:manage"], labelFor: { COLLECTION_HEAD: "Settlement approvals", COLLECTION_EXECUTIVE: "My settlements" } },
       // Refunds owed is a cross-book finance view, not case-scoped, so it follows the backend's own
@@ -199,6 +204,7 @@ export const ADMIN_NAV_ORDER: string[] = [
   "/staff/dashboard",
   "/staff/loans",
   "/staff/collections",
+  "/staff/collections/mandates",
   "/staff/performance",
   "/staff/admin/staff",
   "/staff/customers",
