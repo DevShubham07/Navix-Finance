@@ -582,4 +582,18 @@ class DebitServiceTest {
         assertCode(() -> service.cancel(LOAN, 11L, "x"), "DEBIT_UNAVAILABLE");
         assertThat(d.getStatus()).isEqualTo(Status.SCHEDULED);
     }
+
+    /** A re-presented FAILED_TECHNICAL row is old by creation but freshly written: still treated as mid-create. */
+    @Test
+    void cancelTreatsARecentlyRepresentedOldRowAsInFlight() {
+        MandateDebit d = row(Status.SCHEDULED, null);
+        org.springframework.test.util.ReflectionTestUtils.setField(d, "createdAt",
+                java.time.Instant.now().minus(java.time.Duration.ofDays(3)));
+        org.springframework.test.util.ReflectionTestUtils.setField(d, "updatedAt", java.time.Instant.now());
+        when(debits.findById(11L)).thenReturn(Optional.of(d));
+        when(port.findDebitByRef("DBM7-1")).thenReturn(Optional.empty());
+
+        assertCode(() -> service.cancel(LOAN, 11L, "x"), "DEBIT_CANCEL_UNAVAILABLE");
+        assertThat(d.getStatus()).isEqualTo(Status.SCHEDULED);
+    }
 }

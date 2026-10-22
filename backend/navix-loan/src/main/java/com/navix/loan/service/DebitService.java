@@ -58,7 +58,7 @@ public class DebitService {
     static final String NARRATION_TEXT = "DhanBoost repayment";
     /** Keeps the loan-keyed advisory lock out of the customer-keyed one MandateService takes. */
     static final long LOCK_NAMESPACE = 1L << 40;
-    /** A row with no provider ids is closed locally only once it is older than any in-flight create call. */
+    /** A row with no provider ids is closed locally only once its last write is older than any create call. */
     static final java.time.Duration LOCAL_CLOSE_MIN_AGE = java.time.Duration.ofMinutes(15);
     /**
      * Reject reasons that may NEVER be re-presented: the mandate or the account is gone, the payer is
@@ -510,8 +510,16 @@ public class DebitService {
                     debits.save(row);
                 }
                 if (row.getDigioTxnId() == null) {
-                    boolean young = row.getCreatedAt() == null
-                            || row.getCreatedAt().isAfter(java.time.Instant.now().minus(LOCAL_CLOSE_MIN_AGE));
+                    // Measured from the row's LAST write, not its creation: prepare() re-presents a reused
+                    // FAILED_TECHNICAL row under its old id (saveAndFlush bumps updated_at), so an old row can be
+                    // mid-create too. The reconcile sweep also touches updated_at, which only makes this stricter.
+                    // If a create does land after a local close, present()'s final save writes the provider ids
+                    // and SCHEDULED back over CANCELLED — the safe direction: the real debit stays tracked.
+                    java.time.Instant lastWrite = row.getUpdatedAt() != null
+                            && (row.getCreatedAt() == null || row.getUpdatedAt().isAfter(row.getCreatedAt()))
+                            ? row.getUpdatedAt() : row.getCreatedAt();
+                    boolean young = lastWrite == null
+                            || lastWrite.isAfter(java.time.Instant.now().minus(LOCAL_CLOSE_MIN_AGE));
                     if (found.isPresent() || row.getDigioPlanId() != null || young) {
                         throw new BusinessException("DEBIT_CANCEL_UNAVAILABLE",
                                 "The bank has not issued a transaction for this debit yet. Check status again shortly.");
