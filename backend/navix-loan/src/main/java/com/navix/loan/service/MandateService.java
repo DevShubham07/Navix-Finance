@@ -861,12 +861,18 @@ public class MandateService {
      * nothing in the borrower journey will notice unless they press the button again. Read-only at the
      * provider — it files nothing and cancels nothing.
      */
+    /** Digio's bank state once the destination bank has accepted the registration (09-state-mapping.md). */
+    static final String BANK_APPROVED = "register_success";
+
     @Transactional
     public List<MandateAttempt> refresh(Long appId) {
         LoanApplication app = applications.findById(appId)
                 .orElseThrow(() -> new BusinessException("APPLICATION_NOT_FOUND", "Application not found"));
         for (Mandate m : mandates.findByCustomerIdOrderByAttemptNoDesc(app.getCustomerId())) {
-            boolean settled = m.getStatus() == Mandate.Status.ACTIVE || m.getStatus() == Mandate.Status.BANK_UNSUPPORTED
+            // An ACTIVE row is only settled once the destination bank has approved it: the UMRN arrives
+            // with NPCI's ACK (`ack_received`), the bank's `register_success` a day or so later.
+            boolean settled = (m.getStatus() == Mandate.Status.ACTIVE && BANK_APPROVED.equals(m.getDigioBankState()))
+                    || m.getStatus() == Mandate.Status.BANK_UNSUPPORTED
                     || m.getCancelledAt() != null; // a cancelled row is never re-adopted, whatever Digio says
             if (settled) {
                 continue;

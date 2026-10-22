@@ -14,6 +14,9 @@ import {
 } from "@/lib/api/applications";
 import { formatDateTime } from "@/lib/utils";
 
+/** NPCI's ACK carries the UMRN; the destination bank's approval (`register_success`) follows a day or so later. */
+const bankApproved = (a: MandateAttempt) => a.digioBankState === "register_success";
+
 const STATUS_LABEL: Record<string, string> = {
   PENDING_AUTHORIZATION: "Awaiting borrower authorisation",
   ACTIVE: "Active",
@@ -169,8 +172,12 @@ export function MandateTab({
   // Re-read unsettled attempts from Digio. Files nothing. Exists because auth_failed is not terminal:
   // an attempt we recorded as failed may since have completed, and only a re-read reveals it.
   const refresh = useMutation({
-    mutationFn: () => staffApi.mandateRefresh(applicationId as number),
-    onSuccess: (rows) => {
+    mutationFn: (_silent?: boolean) => staffApi.mandateRefresh(applicationId as number),
+    onSuccess: (rows, silent) => {
+      if (silent) {
+        qc.invalidateQueries({ queryKey: ["staff-mandate-history", applicationId] });
+        return;
+      }
       const live = rows.find((r) => r.status === "ACTIVE");
       toast.success(live ? `Active mandate found — UMRN ${live.umrn}` : "Checked with the bank; nothing changed");
       qc.invalidateQueries({ queryKey: ["staff-mandate", applicationId] });
@@ -178,6 +185,17 @@ export function MandateTab({
       onChanged?.();
     },
   });
+
+  // Opening the tab re-checks, once, any active mandate the bank has not approved yet. Once approved the
+  // backend stops asking Digio, so this costs nothing on a settled customer.
+  const autoChecked = React.useRef(false);
+  React.useEffect(() => {
+    if (autoChecked.current || !mayInvite || !attemptsQ.data) return;
+    if (attemptsQ.data.some((a) => a.status === "ACTIVE" && !a.cancelledAt && !bankApproved(a))) {
+      autoChecked.current = true;
+      refresh.mutate(true);
+    }
+  }, [attemptsQ.data, mayInvite, refresh]);
 
   // Cancelling withdraws a real registration at NPCI, so it is heads-only and always confirmed first.
   const mayCancel = can("mandate:override") || can("collections:manage");
@@ -386,7 +404,7 @@ export function MandateTab({
   const refreshButton = mayInvite ? (
     <button
       type="button"
-      onClick={() => refresh.mutate()}
+      onClick={() => refresh.mutate(false)}
       disabled={refresh.isPending}
       className="btn btn-sm disabled:opacity-50"
     >
@@ -425,6 +443,11 @@ export function MandateTab({
                   <td className="px-3 py-2">
                     {a.cancelledAt ? "Cancelled" : STATUS_LABEL[a.status] ?? a.status}
                     {a.reusable && <span className="ml-1 font-semibold text-success-700">· in force</span>}
+                    {a.status === "ACTIVE" && !a.cancelledAt && (
+                      <div className={bankApproved(a) ? "text-success-700" : "text-warning-700"}>
+                        {bankApproved(a) ? "Bank approved" : "Acknowledged — awaiting bank approval"}
+                      </div>
+                    )}
                     {a.cancelledAt ? (
                       <div className="text-muted">
                         {formatDateTime(a.cancelledAt)}
@@ -574,6 +597,7 @@ export function MandateTab({
   ];
   if (m.rejectReason) rows.push(["Reject reason", m.rejectReason]);
 
+  const inForce = attemptsQ.data?.find((a) => a.reusable);
   const dc = caseQ.data;
   const outstanding = dc?.loan?.outstandingPaise ?? null;
   const showDebit = debitEnabled && mayDebit && m.status === "ACTIVE" && !!m.accountLast4 && dc != null && outstanding != null && outstanding > 0 && dc.dpd >= 1;
@@ -595,7 +619,14 @@ export function MandateTab({
           {m.cancelledAt ? (
             <Badge variant="error">Cancelled</Badge>
           ) : (
-            <Badge variant={STATUS_TONE[m.status] ?? "neutral"}>{STATUS_LABEL[m.status] ?? m.status}</Badge>
+            <span className="flex items-center gap-1.5">
+              <Badge variant={STATUS_TONE[m.status] ?? "neutral"}>{STATUS_LABEL[m.status] ?? m.status}</Badge>
+              {m.status === "ACTIVE" && inForce && (
+                <Badge variant={bankApproved(inForce) ? "success" : "warning"}>
+                  {bankApproved(inForce) ? "Bank approved" : "Awaiting bank approval"}
+                </Badge>
+              )}
+            </span>
           )}
         </div>
 

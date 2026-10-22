@@ -799,6 +799,23 @@ class MandateServiceTest {
                 .hasFieldOrPropertyWithValue("code", "MANDATE_NOT_FOUND");
     }
 
+    /** An ACTIVE mandate is re-read until the bank approves it, and never after. */
+    @Test
+    void refreshRereadsAnAcknowledgedMandateUntilTheBankApproves() {
+        Mandate acked = attempt(1, Mandate.Status.ACTIVE, "PUNB7032310261000162");
+        acked.setDigioBankState("ack_received");
+        when(mandates.findByCustomerIdOrderByAttemptNoDesc(4471L)).thenReturn(List.of(acked));
+        when(port.fetch("ENA1")).thenReturn(new MandateResult("ENA1", "auth_success", "register_success",
+                "PUNB7032310261000162", "aadhaar", null, null, java.time.Instant.now()));
+
+        service.refresh(1L);
+        assertThat(acked.getDigioBankState()).isEqualTo("register_success");
+        assertThat(acked.getStatus()).isEqualTo(Mandate.Status.ACTIVE);
+
+        service.refresh(1L);
+        verify(port, times(1)).fetch("ENA1"); // approved: the second refresh does not call Digio
+    }
+
     /** A cancelled row is never re-read and re-adopted, even if Digio still says it is live. */
     @Test
     void refreshNeverReadoptsACancelledMandate() {
