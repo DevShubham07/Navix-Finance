@@ -287,6 +287,102 @@ export function MandateTab({
     </div>
   ) : null;
 
+  // Mandate ceiling: everyone on this tab sees what a NEW mandate will be registered for; only ADMIN may
+  // raise it (V89). It never changes what the customer may borrow, and an existing mandate keeps its own.
+  const isAdmin = can("customer:manage");
+  const ceilingQ = useQuery({
+    queryKey: ["staff-mandate-ceiling", applicationId],
+    queryFn: () => staffApi.mandateCeiling(applicationId as number),
+    enabled: applicationId != null,
+  });
+  const [ceilingText, setCeilingText] = React.useState("");
+  const [ceilingNote, setCeilingNote] = React.useState("");
+  const setCeiling = useMutation({
+    mutationFn: (paise: number | null) =>
+      staffApi.setMandateCeiling(applicationId as number, paise, ceilingNote.trim() || undefined),
+    onSuccess: (v) => {
+      toast.success(
+        v.overridePaise != null
+          ? `New mandates will be registered for ${inr2(v.registrationPaise ?? v.overridePaise)}`
+          : "Mandate limit back to the standard formula",
+      );
+      setCeilingText("");
+      setCeilingNote("");
+      qc.invalidateQueries({ queryKey: ["staff-mandate-ceiling", applicationId] });
+    },
+    onError: (e) => toast.error(errMessage(e)),
+  });
+  const ceilingPaise = parseRupeesToPaise(ceilingText);
+  const cv = ceilingQ.data;
+  const ceilingPanel = cv ? (
+    <div className="max-w-2xl space-y-2 rounded-lg border border-line bg-grey-50 p-4 text-sm">
+      <div className="font-semibold text-navy">Mandate limit for new registrations</div>
+      <p className="text-xs text-muted">
+        A new mandate is registered for{" "}
+        <strong className="text-navy">{cv.registrationPaise != null ? inr2(cv.registrationPaise) : "—"}</strong>
+        {cv.overridePaise != null ? (
+          <>
+            {" "}— raised by an admin override of {inr2(cv.overridePaise)} (standard formula{" "}
+            {cv.formulaPaise != null ? inr2(cv.formulaPaise) : "—"})
+            {cv.overrideSetBy ? `, set by ${cv.overrideSetBy}` : ""}
+            {cv.overrideSetAt ? ` on ${formatDateTime(cv.overrideSetAt)}` : ""}
+            {cv.overrideNote ? ` — "${cv.overrideNote}"` : ""}.
+          </>
+        ) : (
+          " (standard formula: 2 × the larger of the eligible limit and the sanctioned amount)."
+        )}{" "}
+        It does not change what the customer can borrow, and an existing mandate keeps the limit it was
+        authorised for.
+      </p>
+      {isAdmin && (
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-end gap-2">
+            <div>
+              <label className="block text-xs text-muted" htmlFor="mandate-ceiling">New mandate limit (₹)</label>
+              <input
+                id="mandate-ceiling"
+                inputMode="decimal"
+                value={ceilingText}
+                onChange={(e) => setCeilingText(e.target.value)}
+                placeholder="75000"
+                className="w-40 rounded border border-line bg-white px-2 py-1.5 text-sm"
+              />
+            </div>
+            <input
+              aria-label="Reason (optional)"
+              value={ceilingNote}
+              onChange={(e) => setCeilingNote(e.target.value)}
+              maxLength={500}
+              placeholder="Reason (optional)"
+              className="min-w-[12rem] flex-1 rounded border border-line bg-white px-2 py-1.5 text-sm"
+            />
+            <button
+              type="button"
+              onClick={() => ceilingPaise != null && setCeiling.mutate(ceilingPaise)}
+              disabled={ceilingPaise == null || setCeiling.isPending}
+              className="btn btn-sm btn-navy disabled:opacity-50"
+            >
+              {setCeiling.isPending && <Loader2 size={14} className="animate-spin" />} Set limit
+            </button>
+            {cv.overridePaise != null && (
+              <button
+                type="button"
+                onClick={() => setCeiling.mutate(null)}
+                disabled={setCeiling.isPending}
+                className="btn btn-sm"
+              >
+                Remove override
+              </button>
+            )}
+          </div>
+          {ceilingText.trim() !== "" && ceilingPaise == null && (
+            <p className="text-xs text-error-700">Enter an amount in rupees, up to 2 decimals.</p>
+          )}
+        </div>
+      )}
+    </div>
+  ) : null;
+
   const refreshButton = mayInvite ? (
     <button
       type="button"
@@ -463,6 +559,7 @@ export function MandateTab({
           }
         />
         {invitePanel}
+        {ceilingPanel}
         {refreshButton && <div>{refreshButton}</div>}
         {historyPanel}
       </div>
@@ -529,6 +626,7 @@ export function MandateTab({
       {refreshButton && <div className="flex flex-wrap gap-2">{refreshButton}</div>}
 
       {m.status !== "ACTIVE" ? invitePanel : null}
+      {ceilingPanel}
 
       {showDebit && (
         <div className="max-w-md space-y-2 rounded border border-line bg-grey-50 p-3">

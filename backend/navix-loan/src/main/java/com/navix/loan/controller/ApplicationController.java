@@ -532,6 +532,31 @@ public class ApplicationController {
         return ApiResponse.ok(mandateService.cancelActive(id, mandateId, reason, req == null ? null : req.notes()));
     }
 
+    /** The mandate ceiling: the formula, any ADMIN override, and what a new registration would use. Staff. */
+    @GetMapping("/{id}/mandate/ceiling")
+    public ApiResponse<com.navix.loan.service.MandateService.MandateCeilingView> mandateCeiling(@PathVariable Long id) {
+        requireStaff();
+        return ApiResponse.ok(mandateService.ceilingView(id));
+    }
+
+    /**
+     * ADMIN: set ({@code ceilingPaise}) or clear (null) the customer's mandate-ceiling override. Raises only
+     * what a NEW mandate is registered for — never what the customer may borrow.
+     */
+    @PostMapping("/{id}/mandate/ceiling")
+    public ApiResponse<com.navix.loan.service.MandateService.MandateCeilingView> setMandateCeiling(
+            @PathVariable Long id, @RequestBody MandateCeilingRequest req) {
+        String role = ActorContext.get() == null ? null : ActorContext.get().role();
+        if (!"ADMIN".equals(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE", "This action requires role ADMIN");
+        }
+        return ApiResponse.ok(mandateService.setCeilingOverride(id,
+                req == null ? null : req.ceilingPaise(), req == null ? null : req.note()));
+    }
+
+    public record MandateCeilingRequest(Long ceilingPaise, String note) {
+    }
+
     /** {@code reason} is a {@link com.navix.loan.service.MandateService.CancelReason} name. */
     public record CancelActiveMandateRequest(String reason, String notes) {
     }

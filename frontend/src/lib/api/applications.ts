@@ -1977,6 +1977,16 @@ export interface MandateAttempt {
   cancelReason: string | null;
 }
 
+/** The mandate ceiling for an application: formula, ADMIN override (V89) and what a new mandate uses. */
+export interface MandateCeilingView {
+  formulaPaise: number | null;
+  overridePaise: number | null;
+  registrationPaise: number | null;
+  overrideNote: string | null;
+  overrideSetBy: string | null;
+  overrideSetAt: string | null;
+}
+
 /** Why staff are cancelling an ACTIVE mandate (maps to Digio C001 / C002). */
 export type MandateCancelReason = "CUSTOMER_REQUEST" | "CORPORATE_REQUEST";
 
@@ -2256,6 +2266,13 @@ export const staffApi = {
    */
   mandateCancelActive: (id: number, mandateId: number, reason: MandateCancelReason, notes: string) =>
     bff<MandateAttempt>(`${STAFF_BASE}/${id}/mandate/${mandateId}/cancel-active`, "POST", { reason, notes }),
+
+  /** The mandate ceiling: formula, any override, and what a NEW registration would be filed for. */
+  mandateCeiling: (id: number) => bff<MandateCeilingView>(`${STAFF_BASE}/${id}/mandate/ceiling`, "GET"),
+
+  /** ADMIN: set (paise) or clear (null) the customer's mandate-ceiling override. Never changes the borrowing limit. */
+  setMandateCeiling: (id: number, ceilingPaise: number | null, note?: string) =>
+    bff<MandateCeilingView>(`${STAFF_BASE}/${id}/mandate/ceiling`, "POST", { ceilingPaise, note }),
 
   mandateInvite: (id: number) =>
     bff<{ link: string }>(`${STAFF_BASE}/${id}/mandate/invite`, "POST", {}),

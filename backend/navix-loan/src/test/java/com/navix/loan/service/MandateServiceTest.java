@@ -43,6 +43,7 @@ class MandateServiceTest {
     @Mock com.navix.common.featureflag.FeatureFlagService featureFlags;
     @Mock org.springframework.context.ApplicationEventPublisher eventPublisher;
     @Mock com.navix.loan.repository.MandateDebitRepository debits;
+    @Mock com.navix.loan.repository.CustomerMandateCeilingOverrideRepository ceilingOverrides;
 
     MandateService service;
     LoanApplication app;
@@ -51,7 +52,7 @@ class MandateServiceTest {
     @BeforeEach
     void setUp() {
         service = new MandateService(port, mandates, applications, profiles, new LoanMath(), featureFlags,
-                eventPublisher, debits);
+                eventPublisher, debits, ceilingOverrides);
         app = new LoanApplication();
         app.setId(1L);
         app.setCustomerId(4471L);
@@ -836,6 +837,78 @@ class MandateServiceTest {
         assertThat(r.status()).isEqualTo("PENDING");
         assertThat(r.derived().get("status")).isEqualTo("NOT_STARTED");
         verify(port, never()).fetch(any());
+    }
+
+    // ---- mandate-ceiling override (V89) ------------------------------------------------------------------
+
+    private void ceilingOverride(long paise) {
+        var o = new com.navix.loan.entity.CustomerMandateCeilingOverride();
+        o.setCustomerId(4471L);
+        o.setCeilingPaise(paise);
+        when(ceilingOverrides.findById(4471L)).thenReturn(Optional.of(o));
+    }
+
+    /** An ADMIN override raises what a NEW mandate is filed for (formula here is 2 x 10,000 = 20,000). */
+    @Test
+    void initFilesAtTheOverrideCeilingWhenItIsHigher() {
+        ceilingOverride(75_000_00L);
+        bankOk();
+        when(port.register(any())).thenReturn(new MandateSession("DID9", "partial", "https://z"));
+
+        service.init(1L);
+
+        var req = ArgumentCaptor.forClass(MandateRequest.class);
+        verify(port).register(req.capture());
+        assertThat(req.getValue().maximumAmountPaise()).isEqualTo(75_000_00L);
+    }
+
+    /** It only ever raises: a lower override would file a mandate that does not cover the application. */
+    @Test
+    void anOverrideBelowTheFormulaIsIgnored() {
+        ceilingOverride(5_000_00L);
+        bankOk();
+        when(port.register(any())).thenReturn(new MandateSession("DID9", "partial", "https://z"));
+
+        service.init(1L);
+
+        var req = ArgumentCaptor.forClass(MandateRequest.class);
+        verify(port).register(req.capture());
+        assertThat(req.getValue().maximumAmountPaise()).isEqualTo(20_000_00L);
+    }
+
+    /** Setting an override must not make a working mandate "too small": coverage is judged on the formula. */
+    @Test
+    void anOverrideDoesNotInvalidateAnExistingMandate() {
+        Mandate active = attempt(1, Mandate.Status.ACTIVE, "UMRN1");
+        active.setMaximumAmountPaise(20_000_00L);
+        when(mandates.findFirstByCustomerIdAndStatusAndUmrnIsNotNullOrderByIdDesc(4471L, Mandate.Status.ACTIVE))
+                .thenReturn(Optional.of(active));
+        // Stubbed but deliberately never read: the coverage check must not consult the override at all.
+        var o = new com.navix.loan.entity.CustomerMandateCeilingOverride();
+        o.setCustomerId(4471L);
+        o.setCeilingPaise(75_000_00L);
+        lenient().when(ceilingOverrides.findById(4471L)).thenReturn(Optional.of(o));
+
+        assertThat(service.hasUsableMandate(app)).isTrue();
+    }
+
+    @Test
+    void setCeilingOverrideRejectsOutOfRangeAmounts() {
+        assertThatThrownBy(() -> service.setCeilingOverride(1L, 500_00L, null))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "MANDATE_CEILING_OUT_OF_RANGE");
+        assertThatThrownBy(() -> service.setCeilingOverride(1L, 20_00_000_00L, null))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "MANDATE_CEILING_OUT_OF_RANGE");
+    }
+
+    @Test
+    void ceilingViewShowsFormulaOverrideAndRegistration() {
+        ceilingOverride(75_000_00L);
+        var v = service.ceilingView(1L);
+        assertThat(v.formulaPaise()).isEqualTo(20_000_00L);
+        assertThat(v.overridePaise()).isEqualTo(75_000_00L);
+        assertThat(v.registrationPaise()).isEqualTo(75_000_00L);
     }
 
     // ---- invite(): the only route for someone whose loan is already live -----------------------------

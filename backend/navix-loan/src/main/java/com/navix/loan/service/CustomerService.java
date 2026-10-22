@@ -1655,6 +1655,7 @@ public class CustomerService {
         total += jdbc.update("DELETE FROM customer_call_log WHERE customer_id = ?", customerId);
         total += jdbc.update("DELETE FROM customer_owner WHERE customer_id = ?", customerId);
         total += jdbc.update("DELETE FROM customer_limit_override WHERE customer_id = ?", customerId);
+        total += jdbc.update("DELETE FROM customer_mandate_ceiling_override WHERE customer_id = ?", customerId);
         total += jdbc.update("DELETE FROM borrower_mobile WHERE customer_id = ?", customerId);
         total += jdbc.update("DELETE FROM borrower_preferences WHERE customer_id = ?", customerId);
         total += jdbc.update("DELETE FROM borrower_credential WHERE customer_id = ?", customerId);

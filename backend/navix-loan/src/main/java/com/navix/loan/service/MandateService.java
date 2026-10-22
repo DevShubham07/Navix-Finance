@@ -12,10 +12,12 @@ import com.navix.common.verification.MandatePort.BankCapability;
 import com.navix.common.verification.MandatePort.MandateRequest;
 import com.navix.common.verification.MandatePort.MandateResult;
 import com.navix.common.verification.MandatePort.MandateSession;
+import com.navix.loan.entity.CustomerMandateCeilingOverride;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.LoanApplication;
 import com.navix.loan.entity.Mandate;
 import com.navix.loan.entity.MandateDebit;
+import com.navix.loan.repository.CustomerMandateCeilingOverrideRepository;
 import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
 import com.navix.loan.repository.MandateDebitRepository;
@@ -80,6 +82,7 @@ public class MandateService {
     private final FeatureFlagService featureFlags;
     private final ApplicationEventPublisher eventPublisher;
     private final MandateDebitRepository debits;
+    private final CustomerMandateCeilingOverrideRepository ceilingOverrides;
 
     /** Builds the invite link; same property the password-reset emails use. */
     @org.springframework.beans.factory.annotation.Value("${navix.app.frontend-base-url:http://localhost:3000}")
@@ -177,13 +180,16 @@ public class MandateService {
                     "This bank does not support online mandate registration", d);
         }
 
-        m.setMaximumAmountPaise(ceiling);
+        // Filed at the registration ceiling (an ADMIN override may raise it, V89); `ceiling` above stays the
+        // formula, because that is what "this mandate covers this application" is judged against.
+        long registered = registrationCeiling(customerId, ceiling);
+        m.setMaximumAmountPaise(registered);
         m.setFirstCollectionDate(today);
         m.setFinalCollectionDate(today.plusYears(5));
         m.setStatus(Mandate.Status.PENDING_AUTHORIZATION);
 
         MandateRequest req = new MandateRequest(crn, sanitiseName(profile.getFullName()), profile.getMobile(),
-                account, ifsc, app.getDisbursalBank(), ceiling, today, today.plusYears(5));
+                account, ifsc, app.getDisbursalBank(), registered, today, today.plusYears(5));
 
         String authUrl = null;
         try {
@@ -427,6 +433,78 @@ public class MandateService {
     }
 
     /** 2 x max(formula limit, sanctioned principal); zero would satisfy any reuse check, so it is refused. */
+    /** Bounds for an ADMIN mandate-ceiling override: the minimum loan, and a sane cap well inside Digio's. */
+    static final long MIN_CEILING_OVERRIDE_PAISE = LoanMath.MIN_LOAN_PAISE;
+    static final long MAX_CEILING_OVERRIDE_PAISE = 10_00_000_00L; // Rs 10,00,000
+
+    /**
+     * What a NEW mandate is registered for: the formula, raised by an ADMIN override when one is set (V89).
+     * Only ever raises — a lower figure would file a mandate that does not cover the application it is for.
+     */
+    private long registrationCeiling(Long customerId, long formula) {
+        return ceilingOverrides.findById(customerId)
+                .map(o -> Math.max(formula, o.getCeilingPaise()))
+                .orElse(formula);
+    }
+
+    /** The mandate ceiling for one application: formula, override and what a new registration would use. */
+    public record MandateCeilingView(Long formulaPaise, Long overridePaise, Long registrationPaise,
+                                     String overrideNote, String overrideSetBy, Instant overrideSetAt) {}
+
+    @Transactional(readOnly = true)
+    public MandateCeilingView ceilingView(Long appId) {
+        LoanApplication app = applications.findById(appId)
+                .orElseThrow(() -> new BusinessException("APPLICATION_NOT_FOUND", "Application not found"));
+        CustomerProfile profile = profiles.findByApplicationId(appId).orElse(null);
+        Long formula = null;
+        if (profile != null) {
+            try {
+                formula = ceiling(app, profile);
+            } catch (BusinessException noCeiling) {
+                // no salary and no sanction yet: nothing to size from
+            }
+        }
+        CustomerMandateCeilingOverride o = ceilingOverrides.findById(app.getCustomerId()).orElse(null);
+        Long registration = o == null ? formula
+                : formula == null ? o.getCeilingPaise() : Math.max(formula, o.getCeilingPaise());
+        return new MandateCeilingView(formula, o == null ? null : o.getCeilingPaise(), registration,
+                o == null ? null : o.getNote(), o == null ? null : o.getSetBy(), o == null ? null : o.getSetAt());
+    }
+
+    /**
+     * Set ({@code ceilingPaise} non-null) or clear (null) the customer's mandate-ceiling override. ADMIN only
+     * (controller). Affects NEW registrations only: an existing mandate keeps the ceiling the borrower
+     * authorised, and whether it covers an application is still judged against the formula, so setting an
+     * override never makes a working mandate unusable.
+     */
+    @Transactional
+    public MandateCeilingView setCeilingOverride(Long appId, Long ceilingPaise, String note) {
+        LoanApplication app = applications.findById(appId)
+                .orElseThrow(() -> new BusinessException("APPLICATION_NOT_FOUND", "Application not found"));
+        Long customerId = app.getCustomerId();
+        if (ceilingPaise == null) {
+            ceilingOverrides.deleteById(customerId);
+            log.info("Mandate ceiling override cleared customerId={}", customerId);
+            return ceilingView(appId);
+        }
+        if (ceilingPaise < MIN_CEILING_OVERRIDE_PAISE || ceilingPaise > MAX_CEILING_OVERRIDE_PAISE) {
+            throw new BusinessException("MANDATE_CEILING_OUT_OF_RANGE",
+                    "The mandate limit must be between Rs 1,000 and Rs 10,00,000");
+        }
+        CurrentActor actor = ActorContext.get();
+        CustomerMandateCeilingOverride o = ceilingOverrides.findById(customerId)
+                .orElseGet(CustomerMandateCeilingOverride::new);
+        o.setCustomerId(customerId);
+        o.setCeilingPaise(ceilingPaise);
+        String n = note == null ? null : note.trim();
+        o.setNote(n == null || n.isEmpty() ? null : n.substring(0, Math.min(n.length(), 500)));
+        o.setSetBy(actor == null ? "system" : actor.name() + " (" + actor.role() + ", id " + actor.id() + ")");
+        o.setSetAt(Instant.now());
+        ceilingOverrides.save(o);
+        log.info("Mandate ceiling override set customerId={} ceilingPaise={}", customerId, ceilingPaise);
+        return ceilingView(appId);
+    }
+
     private long ceiling(LoanApplication app, CustomerProfile profile) {
         long salary = profile.getMonthlySalaryPaise() == null ? 0L : profile.getMonthlySalaryPaise();
         long sanctioned = app.getSanctionedAmountPaise() == null ? 0L : app.getSanctionedAmountPaise();
