@@ -57,7 +57,7 @@ public class DebitService {
     private static final Pattern UNIQUE_KEY = Pattern.compile("^[A-Za-z0-9_-]{1,30}$");
     static final String NARRATION_TEXT = "DhanBoost repayment";
     /** Keeps the loan-keyed advisory lock out of the customer-keyed one MandateService takes. */
-    private static final long LOCK_NAMESPACE = 1L << 40;
+    static final long LOCK_NAMESPACE = 1L << 40;
     /**
      * Reject reasons that may NEVER be re-presented: the mandate or the account is gone, the payer is
      * gone, or the reference collided — another attempt cannot succeed, and each attempt is a real

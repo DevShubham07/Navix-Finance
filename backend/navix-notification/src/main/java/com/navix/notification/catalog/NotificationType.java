@@ -172,6 +172,13 @@ public enum NotificationType {
      */
     MANDATE_SETUP_INVITE(SYSTEM, Set.of(IN_APP, SMS, EMAIL, WHATSAPP), Set.of(TO_BORROWER)),
 
+    /**
+     * Staff cancelled the borrower's ACTIVE eMandate (their request, or to replace it). In-app + email
+     * only: SMS and WhatsApp need a DLT / Meta template approved first, and this is not urgent enough to
+     * send unapproved wording that would just fail.
+     */
+    MANDATE_CANCELLED(SYSTEM, Set.of(IN_APP, EMAIL), Set.of(TO_BORROWER)),
+
     // ---- REFERRAL ----
     // A referral qualified (referred borrower's first loan disbursed) — alert the Disbursement Heads
     // who settle the two pending ₹-reward payouts.

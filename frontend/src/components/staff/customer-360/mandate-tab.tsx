@@ -2,10 +2,16 @@
 
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, Loader2, RefreshCw, Send, ShieldCheck, ShieldOff, XCircle } from "lucide-react";
+import { AlertTriangle, Check, Copy, Loader2, RefreshCw, Send, ShieldCheck, ShieldOff, XCircle } from "lucide-react";
 import { Badge, EmptyState, Skeleton, toast } from "@/components/ui";
 import { useCan, errMessage } from "@/components/staff/pipeline/hooks";
-import { collectionsApi, featureFlagsApi, staffApi, type MandateAttempt } from "@/lib/api/applications";
+import {
+  collectionsApi,
+  featureFlagsApi,
+  staffApi,
+  type MandateAttempt,
+  type MandateCancelReason,
+} from "@/lib/api/applications";
 import { formatDateTime } from "@/lib/utils";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -161,6 +167,99 @@ export function MandateTab({
     onError: (e) => toast.error(errMessage(e)),
   });
 
+  // Cancelling the LIVE mandate: a deliberate act with a reason and a note, never a one-click row action.
+  // Auto-debit stops for any loan it served (manual repayment from then on) and the borrower is notified.
+  const [activeCancel, setActiveCancel] = React.useState<MandateAttempt | null>(null);
+  const [cancelReason, setCancelReason] = React.useState<MandateCancelReason>("CUSTOMER_REQUEST");
+  const [cancelNotes, setCancelNotes] = React.useState("");
+  const cancelActive = useMutation({
+    mutationFn: (a: MandateAttempt) =>
+      staffApi.mandateCancelActive(applicationId as number, a.id, cancelReason, cancelNotes.trim()),
+    onSuccess: () => {
+      toast.success(
+        cancelReason === "CORPORATE_REQUEST"
+          ? "Mandate cancelled — send the customer an invite to set up the new one"
+          : "Mandate cancelled; the customer has been notified",
+      );
+      setActiveCancel(null);
+      setCancelNotes("");
+      qc.invalidateQueries({ queryKey: ["staff-mandate", applicationId] });
+      qc.invalidateQueries({ queryKey: ["staff-mandate-history", applicationId] });
+      onChanged?.();
+    },
+  });
+  const liveLoan = status === "ACTIVE" || status === "OVERDUE";
+
+  const activeCancelPanel = activeCancel ? (
+    <div className="max-w-2xl space-y-3 rounded-lg border border-error-100 bg-error-50 p-4">
+      <div className="flex items-center gap-2 text-sm font-semibold text-error-700">
+        <AlertTriangle size={15} /> Cancel the active mandate {activeCancel.umrn ? `(UMRN ${activeCancel.umrn})` : ""}
+      </div>
+      <p className="text-xs leading-relaxed text-navy">
+        This revokes the customer&apos;s auto-repayment authority at their bank and cannot be undone — a new
+        mandate needs them to authorise again.{" "}
+        {liveLoan ? (
+          <strong>This customer has a live loan: automatic debits stop now and it must be repaid manually.</strong>
+        ) : (
+          "Automatic debits stop for any loan this mandate served."
+        )}{" "}
+        The customer is notified by email and in the app.
+      </p>
+      <fieldset className="space-y-1 text-sm">
+        <legend className="mb-1 text-xs text-muted">Reason</legend>
+        <label className="flex items-center gap-2">
+          <input
+            type="radio"
+            name="mandate-cancel-reason"
+            checked={cancelReason === "CUSTOMER_REQUEST"}
+            onChange={() => setCancelReason("CUSTOMER_REQUEST")}
+          />
+          The customer asked us to cancel it
+        </label>
+        <label className="flex items-center gap-2">
+          <input
+            type="radio"
+            name="mandate-cancel-reason"
+            checked={cancelReason === "CORPORATE_REQUEST"}
+            onChange={() => setCancelReason("CORPORATE_REQUEST")}
+          />
+          Replacing it (e.g. a higher limit is needed)
+        </label>
+      </fieldset>
+      <div>
+        <label className="block text-xs text-muted" htmlFor="mandate-cancel-notes">Note (required)</label>
+        <textarea
+          id="mandate-cancel-notes"
+          value={cancelNotes}
+          onChange={(e) => setCancelNotes(e.target.value)}
+          maxLength={480}
+          rows={2}
+          placeholder="e.g. Customer requested on call 22 Oct; or: limit too low for new sanction of ₹15,000"
+          className="w-full rounded border border-line bg-white px-2 py-1.5 text-sm"
+        />
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => cancelActive.mutate(activeCancel)}
+          disabled={cancelActive.isPending || cancelNotes.trim() === ""}
+          className="btn btn-sm btn-navy disabled:opacity-50"
+        >
+          {cancelActive.isPending && <Loader2 size={14} className="animate-spin" />} Cancel mandate
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveCancel(null)}
+          disabled={cancelActive.isPending}
+          className="btn btn-sm"
+        >
+          Keep it
+        </button>
+      </div>
+      {cancelActive.isError && <p className="text-xs text-error-700">{errMessage(cancelActive.error)}</p>}
+    </div>
+  ) : null;
+
   const refreshButton = mayInvite ? (
     <button
       type="button"
@@ -201,9 +300,17 @@ export function MandateTab({
                 >
                   <td className="px-3 py-2">{a.attemptNo}</td>
                   <td className="px-3 py-2">
-                    {STATUS_LABEL[a.status] ?? a.status}
+                    {a.cancelledAt ? "Cancelled" : STATUS_LABEL[a.status] ?? a.status}
                     {a.reusable && <span className="ml-1 font-semibold text-success-700">· in force</span>}
-                    {a.rejectReason && <div className="text-muted">{a.rejectReason}</div>}
+                    {a.cancelledAt ? (
+                      <div className="text-muted">
+                        {formatDateTime(a.cancelledAt)}
+                        {a.cancelledBy ? ` by ${a.cancelledBy}` : ""}
+                        {a.cancelReason ? ` — ${a.cancelReason}` : ""}
+                      </div>
+                    ) : (
+                      a.rejectReason && <div className="text-muted">{a.rejectReason}</div>
+                    )}
                   </td>
                   <td className="px-3 py-2 font-mono">{a.umrn ?? "—"}</td>
                   <td className="px-3 py-2">{a.authSubMode ?? a.digioState ?? "—"}</td>
@@ -212,8 +319,20 @@ export function MandateTab({
                   <td className="px-3 py-2 font-mono">{a.applicationId ? `#${a.applicationId}` : "—"}</td>
                   {mayCancel && (
                     <td className="px-3 py-2 text-right">
-                      {/* Never offered for the mandate in force, nor for one that was never filed. */}
-                      {a.status === "ACTIVE" || a.status === "BANK_UNSUPPORTED" ? null : cancelId === a.id ? (
+                      {/* An ACTIVE mandate opens the deliberate cancel panel below; a never-filed one has nothing to cancel. */}
+                      {a.status === "ACTIVE" ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveCancel(a);
+                            setCancelNotes("");
+                            setCancelReason("CUSTOMER_REQUEST");
+                          }}
+                          className="inline-flex items-center gap-1 whitespace-nowrap text-error-700 hover:underline"
+                        >
+                          <XCircle size={13} /> Cancel mandate…
+                        </button>
+                      ) : a.status === "BANK_UNSUPPORTED" || a.cancelledAt ? null : cancelId === a.id ? (
                         <span className="inline-flex items-center gap-1 whitespace-nowrap">
                           <span className="text-navy">Cancel this mandate?</span>
                           <button
@@ -249,6 +368,7 @@ export function MandateTab({
             </tbody>
           </table>
         </div>
+        {activeCancelPanel}
         {(attemptsQ.data?.filter((a) => a.status === "PENDING_AUTHORIZATION").length ?? 0) > 1 && (
           <p className="text-xs text-warning-800">
             More than one attempt is still awaiting authorisation. Each is a live mandate request at the
@@ -348,7 +468,11 @@ export function MandateTab({
             <ShieldCheck size={16} className={m.status === "ACTIVE" ? "text-success-600" : "text-muted"} />
             <span className="text-sm font-semibold text-navy">Auto-repayment mandate</span>
           </div>
-          <Badge variant={STATUS_TONE[m.status] ?? "neutral"}>{STATUS_LABEL[m.status] ?? m.status}</Badge>
+          {m.cancelledAt ? (
+            <Badge variant="error">Cancelled</Badge>
+          ) : (
+            <Badge variant={STATUS_TONE[m.status] ?? "neutral"}>{STATUS_LABEL[m.status] ?? m.status}</Badge>
+          )}
         </div>
 
         {m.umrn ? (

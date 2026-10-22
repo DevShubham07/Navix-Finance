@@ -299,7 +299,9 @@ stopgap.** A successful debit is credited through `LoanDirectory.creditCollectio
 stronger evidence than the screenshot the manual flow accepts, and `outstandingAsOf` counts only `VERIFIED`
 payments. Note `mandate_debit.updated_at` on an open row means **"last attempted"**, not "last status
 change" — the reconcile sweep touches it to rotate the queue; do not read it as an audit timestamp. Not
-built: UPI AutoPay debit, mandate amendment/cancellation, consolidated settlement reconciliation.
+built: UPI AutoPay debit, mandate amendment, consolidated settlement reconciliation. Staff (Heads/ADMIN) **can cancel an
+ACTIVE mandate** from the Mandate tab with a reason + note (V88, `cancel-active`; refused while a debit is in flight;
+borrower notified) — the way to raise a limit is cancel ("Replacing it") then Send invite.
 
 **Reborrow (returning borrower):** `ApplicationFlowService.reborrow` mints a **new** application for an
 existing borrower, reusing their saved profile (no re-collection — **salary day carried over from the

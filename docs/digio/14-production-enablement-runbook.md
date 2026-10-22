@@ -170,8 +170,9 @@ be returned by hand — there is no automated refund.
 - **No webhook receiver.** Outcomes lag by up to a reconcile pass, and the pass is capped at 50
   rows — above ~50 open debits a day, the queue rotates rather than clears (`updated_at` on an
   open row means "last attempted", not "last status change").
-- **No mandate amendment or cancellation.** A borrower who wants their mandate cancelled does it
-  at their bank; we only observe it (`revoked` → `AUTHORIZATION_FAILED`).
+- **No mandate amendment.** Raising a ceiling means cancelling the active mandate from the Mandate tab
+  ("Replacing it") and inviting the borrower to authorise a new one. Cancellation is built (V88) but
+  **has never been run against a real ACTIVE mandate** — try it first on a staff member's own.
 - **Compliance has not signed the borrower-facing ceiling copy** on `/loan/mandate`. The mandate
   ceiling is 2 × max(eligible limit, sanctioned amount); the screen does not state a figure.
 - **`ApplicationFlowIntegrationTest` has not run on this machine.** Colima forwards explicitly

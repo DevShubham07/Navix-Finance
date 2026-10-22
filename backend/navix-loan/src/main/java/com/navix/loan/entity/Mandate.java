@@ -99,4 +99,14 @@ public class Mandate extends BaseAuditEntity {
 
     @Column(name = "registered_at")
     private Instant registeredAt;
+
+    /** Set when staff cancel the mandate at the provider (V88); a cancelled row is never re-adopted. */
+    @Column(name = "cancelled_at")
+    private Instant cancelledAt;
+
+    @Column(name = "cancelled_by", length = 200)
+    private String cancelledBy;
+
+    @Column(name = "cancel_reason", length = 500)
+    private String cancelReason;
 }

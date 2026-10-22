@@ -51,6 +51,8 @@ public interface MandateDebitRepository extends JpaRepository<MandateDebit, Long
      */
     List<MandateDebit> findByOverpaymentTrueOrderByIdDesc();
 
+    boolean existsByMandateIdAndStatusIn(Long mandateId, Collection<MandateDebit.Status> statuses);
+
     boolean existsByLoanIdAndStatusIn(Long loanId, Collection<MandateDebit.Status> statuses);
 
     /** Attempts that ended without collecting money; the retry cap counts only these. */

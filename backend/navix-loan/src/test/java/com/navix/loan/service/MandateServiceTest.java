@@ -3,6 +3,7 @@ package com.navix.loan.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -41,6 +42,7 @@ class MandateServiceTest {
     @Mock CustomerProfileRepository profiles;
     @Mock com.navix.common.featureflag.FeatureFlagService featureFlags;
     @Mock org.springframework.context.ApplicationEventPublisher eventPublisher;
+    @Mock com.navix.loan.repository.MandateDebitRepository debits;
 
     MandateService service;
     LoanApplication app;
@@ -49,7 +51,7 @@ class MandateServiceTest {
     @BeforeEach
     void setUp() {
         service = new MandateService(port, mandates, applications, profiles, new LoanMath(), featureFlags,
-                eventPublisher);
+                eventPublisher, debits);
         app = new LoanApplication();
         app.setId(1L);
         app.setCustomerId(4471L);
@@ -707,6 +709,119 @@ class MandateServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("code", "MANDATE_CANCEL_REFUSED");
         assertThat(pending.getStatus()).isEqualTo(Mandate.Status.PENDING_AUTHORIZATION); // unchanged
+    }
+
+    // ---- cancelActive(): revoking the live authority, deliberately ---------------------------------------
+
+    private Mandate activeForCancel() {
+        Mandate active = attempt(1, Mandate.Status.ACTIVE, "KKBK7022010261001406");
+        active.setBankName("HDFC Bank");
+        lenient().when(mandates.findById(1L)).thenReturn(Optional.of(active));
+        lenient().when(mandates.findByCustomerIdOrderByAttemptNoDesc(4471L)).thenReturn(List.of(active));
+        app.setLoanId(77L);
+        lenient().when(applications.findByCustomerId(4471L)).thenReturn(List.of(app));
+        return active;
+    }
+
+    @Test
+    void cancelActiveRevokesTheLiveMandateRecordsWhoAndNotifies() {
+        Mandate active = activeForCancel();
+        when(port.cancelMandate("ENA1", "KKBK7022010261001406", "HDFC0001234", "C001")).thenReturn(true);
+        when(port.fetch("ENA1")).thenReturn(new MandateResult("ENA1", "cancelled", null,
+                "KKBK7022010261001406", null, null, null, null));
+
+        var row = service.cancelActive(1L, 1L, MandateService.CancelReason.CUSTOMER_REQUEST, "Asked on call");
+
+        assertThat(active.getStatus()).isEqualTo(Mandate.Status.AUTHORIZATION_FAILED);
+        assertThat(active.getCancelledAt()).isNotNull();
+        assertThat(active.getCancelReason()).isEqualTo("C001: Asked on call");
+        assertThat(row.cancelledAt()).isNotNull();
+        // The loan's debit lock is taken so a presentation cannot race the cancel.
+        verify(debits).lockLoan(DebitService.LOCK_NAMESPACE | 77L);
+        var c = ArgumentCaptor.forClass(com.navix.common.notification.event.MandateCancelledEvent.class);
+        verify(eventPublisher).publishEvent(c.capture());
+        assertThat(c.getValue().customerRequested()).isTrue();
+        assertThat(c.getValue().accountLast4()).isEqualTo("9012");
+    }
+
+    /** Accepted by the provider but still read back as active: dead to us anyway, so no more debits. */
+    @Test
+    void cancelActiveTreatsAnAcceptedCancelAsFinalEvenIfTheBankLags() {
+        Mandate active = activeForCancel();
+        when(port.cancelMandate(any(), any(), any(), eq("C002"))).thenReturn(true);
+        when(port.fetch("ENA1")).thenReturn(new MandateResult("ENA1", "register_success", null,
+                "KKBK7022010261001406", null, null, null, null));
+
+        service.cancelActive(1L, 1L, MandateService.CancelReason.CORPORATE_REQUEST, "Replacing with higher ceiling");
+
+        assertThat(active.getStatus()).isNotEqualTo(Mandate.Status.ACTIVE);
+        assertThat(active.getDigioState()).isEqualTo("cancel_requested");
+        assertThat(service.hasUsableMandate(app)).isFalse();
+    }
+
+    @Test
+    void cancelActiveRefusesWhileADebitIsInFlight() {
+        activeForCancel();
+        when(debits.existsByMandateIdAndStatusIn(eq(1L), any())).thenReturn(true);
+        assertThatThrownBy(() -> service.cancelActive(1L, 1L, MandateService.CancelReason.CUSTOMER_REQUEST, "x"))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "MANDATE_DEBIT_IN_FLIGHT");
+        verify(port, never()).cancelMandate(any(), any(), any(), any());
+    }
+
+    @Test
+    void cancelActiveNeedsANote() {
+        activeForCancel();
+        assertThatThrownBy(() -> service.cancelActive(1L, 1L, MandateService.CancelReason.CUSTOMER_REQUEST, "  "))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "CANCEL_NOTES_REQUIRED");
+        verify(port, never()).cancelMandate(any(), any(), any(), any());
+    }
+
+    @Test
+    void cancelActiveRefusesAnAttemptThatIsNotActive() {
+        Mandate pending = attempt(2, Mandate.Status.PENDING_AUTHORIZATION, null);
+        when(mandates.findById(2L)).thenReturn(Optional.of(pending));
+        assertThatThrownBy(() -> service.cancelActive(1L, 2L, MandateService.CancelReason.CUSTOMER_REQUEST, "x"))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "MANDATE_NOT_ACTIVE");
+    }
+
+    @Test
+    void cancelActiveRefusesAnotherCustomersMandate() {
+        Mandate theirs = attempt(1, Mandate.Status.ACTIVE, "UMRN");
+        theirs.setCustomerId(9999L);
+        when(mandates.findById(1L)).thenReturn(Optional.of(theirs));
+        assertThatThrownBy(() -> service.cancelActive(1L, 1L, MandateService.CancelReason.CUSTOMER_REQUEST, "x"))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "MANDATE_NOT_FOUND");
+    }
+
+    /** A cancelled row is never re-read and re-adopted, even if Digio still says it is live. */
+    @Test
+    void refreshNeverReadoptsACancelledMandate() {
+        Mandate cancelled = attempt(1, Mandate.Status.AUTHORIZATION_FAILED, "KKBK7022010261001406");
+        cancelled.setCancelledAt(java.time.Instant.now());
+        when(mandates.findByCustomerIdOrderByAttemptNoDesc(4471L)).thenReturn(List.of(cancelled));
+        service.refresh(1L);
+        verify(port, never()).fetch(any());
+        assertThat(cancelled.getStatus()).isEqualTo(Mandate.Status.AUTHORIZATION_FAILED);
+    }
+
+    /**
+     * The bug behind "I can't raise my mandate": an ACTIVE mandate whose ceiling is below this advance's
+     * was reported PASS, so the borrower saw "set up" and never got the button to register a bigger one.
+     */
+    @Test
+    void statusDoesNotReportATooSmallActiveMandateAsDone() {
+        Mandate small = attempt(1, Mandate.Status.ACTIVE, "UMRN-SMALL");
+        small.setMaximumAmountPaise(1_000_00L); // below the 20,000 ceiling this application needs
+        when(mandates.findFirstByCustomerIdOrderByAttemptNoDesc(4471L)).thenReturn(Optional.of(small));
+
+        var r = service.status(1L);
+
+        assertThat(r.status()).isEqualTo("PENDING");
+        assertThat(r.derived().get("status")).isEqualTo("NOT_STARTED");
     }
 
     // ---- invite(): the only route for someone whose loan is already live -----------------------------

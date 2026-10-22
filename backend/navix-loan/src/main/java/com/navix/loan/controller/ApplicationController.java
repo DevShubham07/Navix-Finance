@@ -510,6 +510,32 @@ public class ApplicationController {
         return ApiResponse.ok(mandateService.cancel(id, mandateId));
     }
 
+    /**
+     * Cancel the customer's ACTIVE mandate — the live debit authority — on their request or to replace it.
+     * Same roles as the stale-attempt cancel; the service demands a reason and a note and records who did it.
+     */
+    @PostMapping("/{id}/mandate/{mandateId}/cancel-active")
+    public ApiResponse<com.navix.loan.service.MandateService.MandateAttempt> mandateCancelActive(
+            @PathVariable Long id, @PathVariable Long mandateId, @RequestBody CancelActiveMandateRequest req) {
+        String role = ActorContext.get() == null ? null : ActorContext.get().role();
+        if (role == null || !MANDATE_CANCEL_ROLES.contains(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE",
+                    "This action requires role COLLECTION_HEAD, DISBURSEMENT_HEAD or ADMIN");
+        }
+        com.navix.loan.service.MandateService.CancelReason reason;
+        try {
+            reason = req == null || req.reason() == null ? null
+                    : com.navix.loan.service.MandateService.CancelReason.valueOf(req.reason());
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException("CANCEL_REASON_INVALID", "Unknown cancellation reason");
+        }
+        return ApiResponse.ok(mandateService.cancelActive(id, mandateId, reason, req == null ? null : req.notes()));
+    }
+
+    /** {@code reason} is a {@link com.navix.loan.service.MandateService.CancelReason} name. */
+    public record CancelActiveMandateRequest(String reason, String notes) {
+    }
+
     private static final java.util.Set<String> MANDATE_CANCEL_ROLES = java.util.Set.of(
             "COLLECTION_HEAD", "DISBURSEMENT_HEAD", "ADMIN");
 

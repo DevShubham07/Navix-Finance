@@ -218,6 +218,16 @@ public class NotificationTemplates {
                         + "Set it up here: {link}\n\nYou authorise it with your bank, and you can cancel "
                         + "it with your bank at any time.\n\n— DhanBoost");
 
+        inApp(NotificationType.MANDATE_CANCELLED, "Auto-repayment cancelled",
+                "Your auto-repayment mandate on {bankName} account ending {accountLast4} has been cancelled. "
+                        + "{why} Any amount due must now be paid manually from the Repay page.");
+        email(NotificationType.MANDATE_CANCELLED, "Your DhanBoost auto-repayment has been cancelled",
+                "Hi {name},\n\nYour auto-repayment mandate (eMandate) on your {bankName} account ending "
+                        + "{accountLast4} has been cancelled. {why}\n\nNothing more will be collected "
+                        + "automatically under this mandate. If you have a loan with an amount due, please "
+                        + "repay it from the Repay page in the app before the due date.\n\nIf you did not "
+                        + "expect this, contact our support team.\n\n— DhanBoost");
+
         inApp(NotificationType.LOAN_DISBURSED, "Money on the way",
                 "Your loan is disbursed: {netDisbursed} credited. Repay {totalRepayable} by {dueDate}.");
         sms(NotificationType.LOAN_DISBURSED,

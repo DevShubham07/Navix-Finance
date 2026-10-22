@@ -11,6 +11,7 @@ import com.navix.common.notification.event.VerificationStepLinkEvent;
 import com.navix.common.notification.event.KycReminderEvent;
 import com.navix.common.notification.event.WaitlistSubmittedEvent;
 import com.navix.common.notification.event.MandateBankUnsupportedEvent;
+import com.navix.common.notification.event.MandateCancelledEvent;
 import com.navix.common.notification.event.MandateInviteEvent;
 import com.navix.common.notification.event.PaymentReminderEvent;
 import com.navix.common.notification.event.ProviderHealthEvent;
@@ -408,6 +409,22 @@ public class NotificationEventListener {
                 .applicationId(e.applicationId())
                 .put("name", e.name() == null || e.name().isBlank() ? "Customer" : e.name())
                 .put("link", e.link())
+                .build());
+    }
+
+    /** Staff cancelled the borrower's live mandate — tell them auto-repayment has stopped. */
+    @Async("notificationExecutor")
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onMandateCancelled(MandateCancelledEvent e) {
+        dispatcher.dispatch(NotificationType.MANDATE_CANCELLED, NotificationContext.builder()
+                .customerId(e.customerId())
+                .applicationId(e.applicationId())
+                .put("name", e.name() == null || e.name().isBlank() ? "Customer" : e.name())
+                .put("bankName", e.bankName() == null || e.bankName().isBlank() ? "your bank" : e.bankName())
+                .put("accountLast4", e.accountLast4() == null ? "----" : e.accountLast4())
+                .put("why", e.customerRequested()
+                        ? "This was done at your request."
+                        : "Our team may contact you to set up a new mandate.")
                 .build());
     }
 

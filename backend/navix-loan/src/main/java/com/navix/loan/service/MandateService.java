@@ -3,7 +3,10 @@ package com.navix.loan.service;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.featureflag.FeatureFlagService;
 import com.navix.common.notification.event.MandateBankUnsupportedEvent;
+import com.navix.common.notification.event.MandateCancelledEvent;
 import com.navix.common.notification.event.MandateInviteEvent;
+import com.navix.common.security.ActorContext;
+import com.navix.common.security.CurrentActor;
 import com.navix.common.verification.MandatePort;
 import com.navix.common.verification.MandatePort.BankCapability;
 import com.navix.common.verification.MandatePort.MandateRequest;
@@ -12,17 +15,21 @@ import com.navix.common.verification.MandatePort.MandateSession;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.LoanApplication;
 import com.navix.loan.entity.Mandate;
+import com.navix.loan.entity.MandateDebit;
 import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
+import com.navix.loan.repository.MandateDebitRepository;
 import com.navix.loan.repository.MandateRepository;
 import com.navix.loan.service.ApplicationVerificationService.StepResult;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
@@ -72,6 +79,7 @@ public class MandateService {
     private final LoanMath loanMath;
     private final FeatureFlagService featureFlags;
     private final ApplicationEventPublisher eventPublisher;
+    private final MandateDebitRepository debits;
 
     /** Builds the invite link; same property the password-reset emails use. */
     @org.springframework.beans.factory.annotation.Value("${navix.app.frontend-base-url:http://localhost:3000}")
@@ -245,6 +253,17 @@ public class MandateService {
             return new StepResult(CHECK_TYPE, ApplicationVerificationService.PENDING,
                     "Mandate not started", new LinkedHashMap<>());
         }
+        if (m.getStatus() == Mandate.Status.ACTIVE) {
+            // Reached only when reusable() said no: the mandate is live but does not cover THIS
+            // application (its ceiling is below this advance's, or it debits another account). Reporting
+            // it as PASS told the borrower "auto-repayment set up" and hid the button that registers the
+            // mandate they actually need, so no higher-ceiling replacement could ever be filed.
+            Map<String, Object> d = new LinkedHashMap<>();
+            d.put("status", "NOT_STARTED");
+            d.put("existingDoesNotCover", true);
+            return new StepResult(CHECK_TYPE, ApplicationVerificationService.PENDING,
+                    "The existing mandate does not cover this advance", d);
+        }
         if (m.getStatus() != Mandate.Status.PENDING_AUTHORIZATION) {
             return view(m, null);
         }
@@ -292,6 +311,9 @@ public class MandateService {
             }
             if (m.getStatus() == Mandate.Status.BANK_UNSUPPORTED) {
                 continue; // nothing was ever filed; the override path owns this one
+            }
+            if (m.getCancelledAt() != null) {
+                continue; // we withdrew it; a lagging provider read must not bring it back
             }
             if (m.getUmrn() != null && !m.getUmrn().isBlank() && m.getStatus() == Mandate.Status.ACTIVE) {
                 return Optional.of(m); // already settled locally
@@ -471,7 +493,7 @@ public class MandateService {
     /** What staff see: no authentication url, no full account number (only the stored last four). */
     public record MandateView(String status, String umrn, String bankName, String accountLast4,
                               Instant authenticatedAt, String rejectReason, int attemptNo, boolean overridable,
-                              boolean carriedOver) {}
+                              boolean carriedOver, Instant cancelledAt) {}
 
     /**
      * Newest attempt made on THIS application (same row the override gate checks). With none, a reborrower's
@@ -545,16 +567,128 @@ public class MandateService {
             m.setStatus(Mandate.Status.AUTHORIZATION_FAILED);
             m.setDigioState("cancelled");
         }
+        markCancelled(m, "C002: stale attempt withdrawn");
         mandates.save(m);
         log.info("Mandate cancelled crn={} applicationId={}", m.getCustomerRefNumber(), appId);
         return history(appId).stream().filter(a -> a.id().equals(mandateId)).findFirst().orElseThrow();
+    }
+
+    /** Why staff are revoking a live mandate; maps onto Digio's registration_cancel reason codes. */
+    public enum CancelReason {
+        /** The borrower asked us to stop auto-debit. */
+        CUSTOMER_REQUEST("C001"),
+        /** Our decision — typically replacing it with a mandate that carries a higher ceiling. */
+        CORPORATE_REQUEST("C002");
+
+        final String code;
+
+        CancelReason(String code) {
+            this.code = code;
+        }
+    }
+
+    /**
+     * Cancel an ACTIVE mandate — the live debit authority — at the provider.
+     *
+     * <p>The deliberate counterpart to {@link #cancel}, which refuses ACTIVE rows: revoking a live authority
+     * is a decision with a borrower conversation behind it, so it takes a reason code and a written note,
+     * and the row records who did it ({@code cancelled_by}, V88). Heads and ADMIN only (controller).
+     *
+     * <p>Allowed while a loan is live. Auto-debit simply stops for every loan this mandate served — they fall
+     * back to manual repayment — and the borrower is told. What it will not do is race a debit already at
+     * the bank: the loan locks DebitService takes are acquired first, then any SCHEDULED/IN_PROGRESS debit
+     * against this mandate refuses the cancel until it settles, because a cancel that lands after NPCI has
+     * the debit file leaves money moving on an authority we believe is dead.
+     *
+     * <p>Once the provider accepts, the row is dead for us even if a read-back still says active (a bank
+     * cancellation is not instant): usableMandate needs ACTIVE, so no further debit is presented, and
+     * {@code cancelled_at} stops refresh/settle from re-adopting it.
+     */
+    @Transactional
+    public MandateAttempt cancelActive(Long appId, Long mandateId, CancelReason reason, String notes) {
+        if (reason == null) {
+            throw new BusinessException("CANCEL_REASON_REQUIRED", "Choose why the mandate is being cancelled");
+        }
+        String note = notes == null ? "" : notes.trim();
+        if (note.isEmpty()) {
+            throw new BusinessException("CANCEL_NOTES_REQUIRED", "Add a note explaining the cancellation");
+        }
+        if (note.length() > 480) {
+            note = note.substring(0, 480);
+        }
+        LoanApplication app = applications.findById(appId)
+                .orElseThrow(() -> new BusinessException("APPLICATION_NOT_FOUND", "Application not found"));
+        Long customerId = app.getCustomerId();
+
+        // Locks BEFORE the mandate is loaded, so the read below is this transaction's first and sees whatever
+        // a concurrent cancel committed (a re-read after loading would just hit the persistence context).
+        // Same customer lock init takes, then every loan lock DebitService.prepare takes, in id order so two
+        // cancels cannot deadlock. A presentation that already holds a loan lock finishes first; one that
+        // starts after us re-checks the mandate under its lock and finds it dead.
+        mandates.lockCustomer(customerId);
+        applications.findByCustomerId(customerId).stream()
+                .map(LoanApplication::getLoanId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .sorted()
+                .forEach(loanId -> debits.lockLoan(DebitService.LOCK_NAMESPACE | loanId));
+
+        Mandate m = mandates.findById(mandateId)
+                .orElseThrow(() -> new BusinessException("MANDATE_NOT_FOUND", "Mandate not found"));
+        if (!m.getCustomerId().equals(customerId)) {
+            throw new BusinessException("MANDATE_NOT_FOUND", "Mandate not found");
+        }
+        if (m.getStatus() != Mandate.Status.ACTIVE) {
+            throw new BusinessException("MANDATE_NOT_ACTIVE",
+                    "This mandate is not active. Use the row's Cancel action for an unfinished attempt.");
+        }
+        if (debits.existsByMandateIdAndStatusIn(m.getId(),
+                EnumSet.of(MandateDebit.Status.SCHEDULED, MandateDebit.Status.IN_PROGRESS))) {
+            throw new BusinessException("MANDATE_DEBIT_IN_FLIGHT",
+                    "A debit against this mandate is still being processed. Cancel once it has settled.");
+        }
+
+        boolean accepted = port.cancelMandate(m.getDigioMandateId(), m.getUmrn(), m.getIfsc(), reason.code);
+        if (!accepted) {
+            throw new BusinessException("MANDATE_CANCEL_REFUSED",
+                    "The bank would not cancel this mandate. It may already be closed or past the point of cancellation.");
+        }
+        try {
+            apply(m, port.fetch(m.getDigioMandateId()));
+        } catch (RuntimeException e) {
+            log.warn("Mandate re-read after cancel failed crn={} exception={}", m.getCustomerRefNumber(),
+                    e.getClass().getSimpleName());
+        }
+        if (m.getStatus() == Mandate.Status.ACTIVE) {
+            // Accepted but the bank has not processed it yet. It is dead to us from now.
+            m.setStatus(Mandate.Status.AUTHORIZATION_FAILED);
+            m.setDigioState("cancel_requested");
+        }
+        markCancelled(m, reason.code + ": " + note);
+        mandates.save(m);
+
+        CustomerProfile profile = profiles.findByApplicationId(appId).orElse(null);
+        eventPublisher.publishEvent(new MandateCancelledEvent(customerId, appId,
+                profile == null ? null : profile.getFullName(), m.getBankName(), m.getAccountLast4(),
+                reason == CancelReason.CUSTOMER_REQUEST, Instant.now()));
+        log.info("Active mandate cancelled crn={} applicationId={} reason={}", m.getCustomerRefNumber(), appId,
+                reason.code);
+        return history(appId).stream().filter(a -> a.id().equals(mandateId)).findFirst().orElseThrow();
+    }
+
+    private static void markCancelled(Mandate m, String reason) {
+        CurrentActor actor = ActorContext.get();
+        m.setCancelledAt(Instant.now());
+        m.setCancelledBy(actor == null ? "system" : actor.name() + " (" + actor.role() + ", id " + actor.id() + ")");
+        m.setCancelReason(reason);
     }
 
     /** One row of the attempt history. No authorisation url — it is a bearer link to a binding mandate. */
     public record MandateAttempt(Long id, Long applicationId, int attemptNo, String status, String umrn,
                                  String bankName, String accountLast4, String digioState, String digioBankState,
                                  String authSubMode, String rejectReason, long maximumAmountPaise,
-                                 Instant createdAt, Instant authenticatedAt, boolean reusable) {}
+                                 Instant createdAt, Instant authenticatedAt, boolean reusable,
+                                 Instant cancelledAt, String cancelledBy, String cancelReason) {}
 
     /**
      * Every mandate this CUSTOMER has ever attempted, newest first — across applications, because a
@@ -570,7 +704,7 @@ public class MandateService {
                         m.getStatus().name(), m.getUmrn(), m.getBankName(), m.getAccountLast4(),
                         m.getDigioState(), m.getDigioBankState(), m.getAuthSubMode(), m.getRejectReason(),
                         m.getMaximumAmountPaise(), m.getCreatedAt(), m.getAuthenticatedAt(),
-                        m.getId().equals(effective)))
+                        m.getId().equals(effective), m.getCancelledAt(), m.getCancelledBy(), m.getCancelReason()))
                 .toList();
     }
 
@@ -587,7 +721,8 @@ public class MandateService {
         LoanApplication app = applications.findById(appId)
                 .orElseThrow(() -> new BusinessException("APPLICATION_NOT_FOUND", "Application not found"));
         for (Mandate m : mandates.findByCustomerIdOrderByAttemptNoDesc(app.getCustomerId())) {
-            boolean settled = m.getStatus() == Mandate.Status.ACTIVE || m.getStatus() == Mandate.Status.BANK_UNSUPPORTED;
+            boolean settled = m.getStatus() == Mandate.Status.ACTIVE || m.getStatus() == Mandate.Status.BANK_UNSUPPORTED
+                    || m.getCancelledAt() != null; // a cancelled row is never re-adopted, whatever Digio says
             if (settled) {
                 continue;
             }
@@ -604,7 +739,8 @@ public class MandateService {
 
     private static MandateView toView(Mandate m, boolean overridable, boolean carriedOver) {
         return new MandateView(m.getStatus().name(), m.getUmrn(), m.getBankName(), m.getAccountLast4(),
-                m.getAuthenticatedAt(), m.getRejectReason(), m.getAttemptNo(), overridable, carriedOver);
+                m.getAuthenticatedAt(), m.getRejectReason(), m.getAttemptNo(), overridable, carriedOver,
+                m.getCancelledAt());
     }
 
     /**

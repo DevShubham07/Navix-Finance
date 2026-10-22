@@ -1971,7 +1971,14 @@ export interface MandateAttempt {
   authenticatedAt: string | null;
   /** True for the attempt that actually governs this application right now. */
   reusable: boolean;
+  /** Set when staff cancelled it at the provider; with who did it and why (staff-only). */
+  cancelledAt: string | null;
+  cancelledBy: string | null;
+  cancelReason: string | null;
 }
+
+/** Why staff are cancelling an ACTIVE mandate (maps to Digio C001 / C002). */
+export type MandateCancelReason = "CUSTOMER_REQUEST" | "CORPORATE_REQUEST";
 
 export interface MandateView {
   status: "PENDING_AUTHORIZATION" | "ACTIVE" | "AUTHORIZATION_FAILED" | "EXPIRED" | "BANK_UNSUPPORTED";
@@ -1984,6 +1991,8 @@ export interface MandateView {
   overridable: boolean;
   /** Registered on an earlier advance and reused; nothing was filed on this application. */
   carriedOver: boolean;
+  /** Set when staff cancelled this mandate. */
+  cancelledAt: string | null;
 }
 
 const STAFF_BASE = "/api/staff/applications";
@@ -2240,6 +2249,13 @@ export const staffApi = {
   /** Cancel one stale mandate attempt at NPCI. Never the one in force. COLLECTION_HEAD/DISB_HEAD/ADMIN. */
   mandateCancel: (id: number, mandateId: number) =>
     bff<MandateAttempt>(`${STAFF_BASE}/${id}/mandate/${mandateId}/cancel`, "POST", {}),
+
+  /**
+   * Cancel the customer's ACTIVE mandate (the live debit authority) — on their request or to replace it.
+   * COLLECTION_HEAD/DISB_HEAD/ADMIN; a note is required and the borrower is notified.
+   */
+  mandateCancelActive: (id: number, mandateId: number, reason: MandateCancelReason, notes: string) =>
+    bff<MandateAttempt>(`${STAFF_BASE}/${id}/mandate/${mandateId}/cancel-active`, "POST", { reason, notes }),
 
   mandateInvite: (id: number) =>
     bff<{ link: string }>(`${STAFF_BASE}/${id}/mandate/invite`, "POST", {}),
