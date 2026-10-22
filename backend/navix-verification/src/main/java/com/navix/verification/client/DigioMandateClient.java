@@ -207,7 +207,10 @@ public class DigioMandateClient implements MandatePort {
         } catch (BusinessException e) {
             // Which states permit cancellation is undocumented (11- Q9), so a business refusal is an
             // outcome to report, not an error. Auth/transport failures carry other codes and propagate.
-            if ("SYSTEM_ERROR".equals(e.getCode()) || "DIGIO_HTTP_400".equals(e.getCode())) {
+            // BAD_REQUEST is the spec's own example ("Cancellation not allowed, Umrn not yet available"),
+            // and what live returns for every never-authorised attempt (2026-10-22).
+            if ("SYSTEM_ERROR".equals(e.getCode()) || "BAD_REQUEST".equals(e.getCode())
+                    || "DIGIO_HTTP_400".equals(e.getCode())) {
                 log.warn("Mandate cancel refused mandateId={} code={}", digioMandateId, e.getCode());
                 return false;
             }
@@ -294,6 +297,7 @@ public class DigioMandateClient implements MandatePort {
         log.warn("Digio {} failed: http={} code={} details={}", op, e.getStatusCode().value(), code, details);
         return new BusinessException(code != null ? code : "DIGIO_HTTP_" + e.getStatusCode().value(),
                 op.startsWith("debit_") ? "We could not complete the debit request. Please check the case and try again."
+                        : op.endsWith("_cancel") ? "We could not cancel the mandate. Please try again."
                         : "We could not complete the mandate setup. Please try again.");
     }
 

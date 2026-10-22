@@ -698,8 +698,9 @@ public class MandateService {
         }
         boolean cancelled = port.cancelMandate(m.getDigioMandateId(), m.getUmrn(), m.getIfsc(), "C002");
         if (!cancelled) {
-            throw new BusinessException("MANDATE_CANCEL_REFUSED",
-                    "The bank would not cancel this mandate. It may already be closed or past the point of cancellation.");
+            throw new BusinessException("MANDATE_CANCEL_REFUSED", m.getUmrn() == null || m.getUmrn().isBlank()
+                    ? "This attempt was never authorised, so there is no registered mandate (UMRN) to cancel yet."
+                    : "The bank would not cancel this mandate. It may already be closed or past the point of cancellation.");
         }
         // Read back rather than assume: `cancelled`/`revoked` folds onto AUTHORIZATION_FAILED in apply(),
         // so the row records what the provider says rather than what we asked for.

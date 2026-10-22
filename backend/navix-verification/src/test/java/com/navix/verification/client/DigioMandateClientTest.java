@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withBadRequest;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
@@ -282,7 +283,18 @@ class DigioMandateClientTest {
         assertThat(c.cancelDebit("NPT1")).isFalse();
     }
 
-    private static final String BY_REF = BASE + "/v3/client/nach_debit/scheduled/by_reference_id/L42-R1";
+    @Test
+    void cancelMandateReturnsFalseWhenNoUmrnYet() {
+        DigioMandateClient c = client();
+        server.expect(requestTo(BASE + "/v3/client/mandate/registration_cancel"))
+                .andRespond(withBadRequest().contentType(MediaType.APPLICATION_JSON).body("""
+                        {"code":"BAD_REQUEST","message":"Cancellation not allowed, Umrn not yet available","details":"EX4"}"""));
+
+        assertThat(c.cancelMandate("ENA1", null, "HDFC0001234", "C002")).isFalse();
+        server.verify();
+    }
+
+    private static final String BY_REF =BASE + "/v3/client/nach_debit/scheduled/by_reference_id/L42-R1";
 
     @Test
     void findDebitByRefReturnsEmptyOnNotFound() {
