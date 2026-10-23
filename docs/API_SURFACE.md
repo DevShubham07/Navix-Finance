@@ -93,6 +93,7 @@ All actions resolve the actor from the **JWT bearer** (`JwtAuthFilter` → `Acto
 | `GET /api/staff/decisions` (+ `/summary`, `/inspectable`) | staff | decision history · per-employee performance totals · who the caller may inspect |
 | `GET /api/loans` | ADMIN / COLLECTION_HEAD | the Loans register (`loan:register`) |
 | `GET /api/dashboard/trends?days=` | staff | dashboard trend series |
+| `GET /api/reports` · `GET /api/reports/{key}?from=&to=` | ADMIN (real role) | reports centre: the catalog, and one report as a typed table (columns + raw rows + headline figures) for an inclusive IST period (both omitted = all time). The frontend writes the CSV and the PDF from the same table. PAN is masked; no Aadhaar or bank account is included |
 | `GET /api/admin/bureau-backfill/preview` · `POST /execute?cohort=` · `POST /reject-sub-floor?limit=` | ADMIN | bureau rescore backfill (V62): preview a cohort · run it · sweep the sub-floor backlog |
 
 ### Customers (`/api/customers`) — borrower-centric roll-up

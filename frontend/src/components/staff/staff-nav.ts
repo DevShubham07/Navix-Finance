@@ -21,6 +21,7 @@ import {
   Banknote,
   Landmark,
   Repeat,
+  FileBarChart,
 } from "lucide-react";
 import { can, type Permission, type StaffRole } from "@/lib/auth/rbac";
 import type { FeatureFlags } from "@/lib/api/applications";
@@ -32,6 +33,7 @@ import {
   type LoanSegment,
 } from "@/lib/loans/segments";
 import type { BadgeVariant } from "@/components/ui/badge";
+import { REPORT_CATEGORIES, type ReportCategorySeg } from "@/lib/reports/categories";
 
 /**
  * The staff console's navigation, as data.
@@ -53,7 +55,7 @@ export type NavItem = {
   /** Optional segment children (Customers, Loans). href for a child = `${parent.href}?seg=${seg}`.
    *  `tone` drives an optional coloured status dot (e.g. loan segments) — omitted for segments
    *  (like the customer ones) that don't carry a status colour. */
-  sub?: { label: string; seg: CustomerSegment | LoanSegment; tone?: BadgeVariant }[];
+  sub?: { label: string; seg: CustomerSegment | LoanSegment | ReportCategorySeg; tone?: BadgeVariant }[];
   collectionBuckets?: boolean;
   /** Roles that never see this item even if it has no `perm` (e.g. perm-less items that would
    *  otherwise leak to a firewalled role like DSA). */
@@ -144,6 +146,15 @@ export const NAV: NavGroup[] = [
       // same pair the backend allowlists (MandateDashboardService). Not flag-gated: debits already taken stay
       // auditable with digio-debit off.
       { label: "Mandates & debits", href: "/staff/collections/mandates", Icon: Repeat, perm: "loan:register" },
+      // Downloadable CSV / PDF reports across the whole platform, one child per report group. staff:manage
+      // keeps it to the Admin working role; the backend allows the real ADMIN role only.
+      {
+        label: "Reports",
+        href: "/staff/admin/reports",
+        Icon: FileBarChart,
+        perm: "staff:manage",
+        sub: REPORT_CATEGORIES.map(({ seg, label }) => ({ label, seg })),
+      },
       // Collection Executive can see settlements they proposed; approve stays PermissionGate-gated.
       { label: "Settlements", href: "/staff/collections/settlements", Icon: HandCoins, perm: ["collections:interact", "collections:manage"], labelFor: { COLLECTION_HEAD: "Settlement approvals", COLLECTION_EXECUTIVE: "My settlements" } },
       // Refunds owed is a cross-book finance view, not case-scoped, so it follows the backend's own
@@ -205,6 +216,7 @@ export const ADMIN_NAV_ORDER: string[] = [
   "/staff/loans",
   "/staff/collections",
   "/staff/collections/mandates",
+  "/staff/admin/reports",
   "/staff/performance",
   "/staff/admin/staff",
   "/staff/customers",
