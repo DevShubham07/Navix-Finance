@@ -1,87 +1,62 @@
 import { describe, expect, it } from "vitest";
-import { ApplicationApiError, type StaffPerformanceRow } from "@/lib/api/applications";
+import { ApplicationApiError } from "@/lib/api/applications";
+import { entityFor } from "./performance-entities";
 import {
   isPerformanceAccessDenied,
   isPerformanceSortKey,
   parsePerformanceSort,
   performanceEmptyKind,
-  performanceTotals,
+  withPerformanceEntity,
   withPerformanceSort,
 } from "./performance-view";
 
-function row(overrides: Partial<StaffPerformanceRow> = {}): StaffPerformanceRow {
-  return {
-    staffId: 1,
-    staffName: "A",
-    role: "CREDIT_EXECUTIVE",
-    active: true,
-    accepted: 0,
-    rejected: 0,
-    totalActions: 0,
-    activeDays: 0,
-    avgTurnaroundMinutes: null,
-    pendingNow: 0,
-    moneyPaise: 0,
-    firstActionAt: null,
-    lastActionAt: null,
-    verifiedCount: null,
-    verifiedPaise: null,
-    rejectedPaymentCount: null,
-    callsMade: 0,
-    ...overrides,
-  };
-}
+const CREDIT = entityFor("CREDIT_EXECUTIVE")!;
+const COLLECTIONS = entityFor("COLLECTION_EXECUTIVE")!;
 
 describe("parsePerformanceSort", () => {
-  it("falls back to the default for a missing or unknown key", () => {
-    expect(parsePerformanceSort(null, null)).toEqual({ key: "totalActions", dir: "desc" });
-    expect(parsePerformanceSort("password", "asc")).toEqual({ key: "totalActions", dir: "asc" });
+  it("falls back to the entity's headline metric for a missing or unknown key", () => {
+    expect(parsePerformanceSort(null, null, CREDIT)).toEqual({ key: "sanctioned", dir: "desc" });
+    expect(parsePerformanceSort("password", "asc", CREDIT)).toEqual({ key: "sanctioned", dir: "asc" });
+    expect(parsePerformanceSort(null, null, COLLECTIONS)).toEqual({ key: "interactions", dir: "desc" });
   });
 
-  it("accepts every register column and both directions", () => {
-    expect(parsePerformanceSort("staffName", "asc")).toEqual({ key: "staffName", dir: "asc" });
-    expect(parsePerformanceSort("moneyPaise", "desc")).toEqual({ key: "moneyPaise", dir: "desc" });
-    expect(parsePerformanceSort("callsMade", "sideways")).toEqual({ key: "callsMade", dir: "desc" });
+  it("accepts the entity's own columns and both directions", () => {
+    expect(parsePerformanceSort("staffName", "asc", CREDIT)).toEqual({ key: "staffName", dir: "asc" });
+    expect(parsePerformanceSort("recoveredPaise", "desc", COLLECTIONS)).toEqual({ key: "recoveredPaise", dir: "desc" });
+    expect(parsePerformanceSort("contactRate", "sideways", COLLECTIONS)).toEqual({ key: "contactRate", dir: "desc" });
   });
 
-  it("validates keys strictly", () => {
-    expect(isPerformanceSortKey("avgTurnaroundMinutes")).toBe(true);
-    expect(isPerformanceSortKey("")).toBe(false);
-    expect(isPerformanceSortKey(undefined)).toBe(false);
+  it("rejects another entity's column", () => {
+    expect(isPerformanceSortKey("recoveredPaise", CREDIT)).toBe(false);
+    expect(isPerformanceSortKey("avgTurnaroundMinutes", CREDIT)).toBe(true);
+    expect(isPerformanceSortKey("", CREDIT)).toBe(false);
+    expect(isPerformanceSortKey(undefined, CREDIT)).toBe(false);
   });
 });
 
 describe("withPerformanceSort", () => {
-  it("omits the default sort and keeps unrelated params", () => {
-    expect(withPerformanceSort("foo=1&sort=staffName&dir=asc", "totalActions", "desc")).toBe("foo=1");
+  it("omits the entity's default sort and keeps unrelated params", () => {
+    expect(withPerformanceSort("entity=CREDIT_EXECUTIVE&sort=staffName&dir=asc", "sanctioned", "desc", CREDIT)).toBe(
+      "entity=CREDIT_EXECUTIVE",
+    );
   });
 
   it("writes a non-default sort", () => {
-    expect(withPerformanceSort("", "staffName", "asc")).toBe("sort=staffName&dir=asc");
-    expect(withPerformanceSort("", "accepted", "desc")).toBe("sort=accepted");
+    expect(withPerformanceSort("", "staffName", "asc", CREDIT)).toBe("sort=staffName&dir=asc");
+    expect(withPerformanceSort("", "parked", "desc", CREDIT)).toBe("sort=parked");
   });
 
   it("round-trips through parsePerformanceSort", () => {
-    const qs = new URLSearchParams(withPerformanceSort("", "role", "asc"));
-    expect(parsePerformanceSort(qs.get("sort"), qs.get("dir"))).toEqual({ key: "role", dir: "asc" });
+    const qs = new URLSearchParams(withPerformanceSort("", "promisesToPay", "asc", COLLECTIONS));
+    expect(parsePerformanceSort(qs.get("sort"), qs.get("dir"), COLLECTIONS)).toEqual({ key: "promisesToPay", dir: "asc" });
   });
 });
 
-describe("performanceTotals", () => {
-  it("is null — never zeros — when nothing has loaded", () => {
-    expect(performanceTotals(undefined)).toBeNull();
-  });
-
-  it("is real zeros for a loaded, empty roster", () => {
-    expect(performanceTotals([])).toEqual({ accepted: 0, rejected: 0, actions: 0, pending: 0, calls: 0 });
-  });
-
-  it("sums the rows it is given", () => {
-    const totals = performanceTotals([
-      row({ accepted: 2, rejected: 1, totalActions: 5, pendingNow: 3, callsMade: 4 }),
-      row({ staffId: 2, accepted: 1, rejected: 0, totalActions: 2, pendingNow: 1, callsMade: 0 }),
-    ]);
-    expect(totals).toEqual({ accepted: 3, rejected: 1, actions: 7, pending: 4, calls: 4 });
+describe("withPerformanceEntity", () => {
+  it("switches the entity and drops a sort that belonged to the old one", () => {
+    expect(withPerformanceEntity("entity=CREDIT_EXECUTIVE&sort=parked&dir=asc&x=1", "COLLECTION_HEAD")).toBe(
+      "entity=COLLECTION_HEAD&x=1",
+    );
   });
 });
 

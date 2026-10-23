@@ -39,4 +39,43 @@ public interface InteractionLogRepository extends JpaRepository<InteractionLog, 
 
         Long getCount();
     }
+
+    /**
+     * Interactions per staff member per outcome in {@code [from, to)} — the outcome breakdown on the
+     * staff-performance dashboard. Rides the same {@code idx_interaction_log_staff_at} index.
+     */
+    @Query("""
+            select i.loggedByStaffId as staffId, i.outcome as outcome, count(i) as count
+            from InteractionLog i
+            where i.loggedByStaffId in :staffIds and i.loggedAt >= :from and i.loggedAt < :to
+            group by i.loggedByStaffId, i.outcome
+            """)
+    List<StaffOutcomeCount> countByStaffAndOutcomeInWindow(@Param("staffIds") Collection<Long> staffIds,
+                                                           @Param("from") Instant from,
+                                                           @Param("to") Instant to);
+
+    /** When each of {@code staffIds} logged an interaction in {@code [from, to)} — for active days. */
+    @Query("""
+            select i.loggedByStaffId as staffId, i.loggedAt as loggedAt from InteractionLog i
+            where i.loggedByStaffId in :staffIds and i.loggedAt >= :from and i.loggedAt < :to
+            """)
+    List<StaffInstant> activityByStaffInWindow(@Param("staffIds") Collection<Long> staffIds,
+                                               @Param("from") Instant from,
+                                               @Param("to") Instant to);
+
+    /** Projection for {@link #countByStaffAndOutcomeInWindow}. */
+    interface StaffOutcomeCount {
+        Long getStaffId();
+
+        String getOutcome();
+
+        Long getCount();
+    }
+
+    /** Projection for {@link #activityByStaffInWindow}. */
+    interface StaffInstant {
+        Long getStaffId();
+
+        Instant getLoggedAt();
+    }
 }

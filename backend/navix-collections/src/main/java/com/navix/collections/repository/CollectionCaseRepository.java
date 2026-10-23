@@ -36,4 +36,7 @@ public interface CollectionCaseRepository extends JpaRepository<CollectionCase, 
 
     /** Cases on an officer's worklist (bigint staff id). */
     List<CollectionCase> findByAssignedOfficerId(Long assignedOfficerId);
+
+    /** Cases on any of {@code officerIds}' worklists. Callers MUST short-circuit on an empty collection. */
+    List<CollectionCase> findByAssignedOfficerIdIn(Collection<Long> officerIds);
 }

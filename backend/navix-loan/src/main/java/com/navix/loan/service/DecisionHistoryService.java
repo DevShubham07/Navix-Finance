@@ -1,6 +1,8 @@
 package com.navix.loan.service;
 
 import com.navix.common.collections.CollectionActivityDirectory;
+import com.navix.common.collections.CollectionActivityDirectory.StaffActivity;
+import com.navix.common.collections.CollectionStaffStats;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.security.ActorContext;
 import com.navix.common.staff.StaffDirectory;
@@ -20,6 +22,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -180,13 +183,26 @@ public class DecisionHistoryService {
      * @param verifiedPaise        total paise across {@code verifiedCount}; null under the same rule
      * @param rejectedPaymentCount repayments they rejected (Accountant) in the window; null under
      *                             the same rule
+     * @param actionCounts         their human application-event actions in the window, by action
+     *                             ({@code ASSIGN}, {@code SANCTION}, {@code REJECT_LEAD}, …) — what
+     *                             lets each role's view show its own parameters (a Credit Head's
+     *                             assignments, a Disbursement Head's releases) without a column per
+     *                             action on the wire
+     * @param collections          their collections work in the window (calls by outcome, money
+     *                             recovered, settlements, validations) plus open cases now
+     * @param sanctionedPaise      value of the sanctions they issued in the window
+     * @param releasedPaise        value of the disbursements they released in the window
+     * @param daily                their own activity per IST day (application events + collections
+     *                             actions), for the per-person trend
      */
     public record StaffPerformanceRow(Long staffId, String staffName, String role, boolean active,
                                       long accepted, long rejected, long totalActions,
                                       long activeDays, Long avgTurnaroundMinutes, long pendingNow,
                                       long moneyPaise, Instant firstActionAt, Instant lastActionAt,
                                       long callsMade, Long verifiedCount, Long verifiedPaise,
-                                      Long rejectedPaymentCount) {
+                                      Long rejectedPaymentCount, Map<String, Long> actionCounts,
+                                      CollectionStaffStats collections, long sanctionedPaise,
+                                      long releasedPaise, List<ActivityPoint> daily) {
     }
 
     /** One day's total action count across the whole roster — the trend line. */
@@ -256,19 +272,23 @@ public class DecisionHistoryService {
         Map<Long, PaymentTally> paymentsByStaff = paymentTallies(
                 roster.stream().map(StaffSummary::id).toList(), fromInst, toInst);
 
+        Map<Long, StaffActivity> collectionsByStaff = collectionActivity.statsByStaff(
+                roster.stream().map(StaffSummary::id).toList(), fromInst, toInst);
+
         Map<String, List<ApplicationEvent>> byActor =
                 events.stream().collect(Collectors.groupingBy(ApplicationEvent::getActorId));
         Map<Long, Instant> assignedAt = assignmentClock(events);
 
         List<StaffPerformanceRow> rows = roster.stream()
                 .map(s -> row(s, byActor.getOrDefault(String.valueOf(s.id()), List.of()),
-                        assignedAt, pendingByStaff, callsByStaff, paymentsByStaff))
+                        assignedAt, pendingByStaff, callsByStaff, paymentsByStaff,
+                        collectionsByStaff.get(s.id())))
                 .toList();
 
-        Map<LocalDate, Long> perDay = events.stream()
-                .filter(e -> e.getAction() == null || !e.getAction().startsWith(AUTO_REJECT_PREFIX))
-                .collect(Collectors.groupingBy(
-                        e -> LocalDate.ofInstant(e.getAt(), IST), TreeMap::new, Collectors.counting()));
+        // The roster-wide trend is the sum of the per-person series, so it counts exactly what the
+        // rows count — collections work included, system auto-rejects excluded.
+        Map<LocalDate, Long> perDay = new TreeMap<>();
+        rows.forEach(r -> r.daily().forEach(p -> perDay.merge(p.date(), p.actions(), Long::sum)));
         List<ActivityPoint> daily = perDay.entrySet().stream()
                 .map(e -> new ActivityPoint(e.getKey(), e.getValue()))
                 .toList();
@@ -298,7 +318,8 @@ public class DecisionHistoryService {
     }
 
     /** One staffer's accountant-verification tally over the window: counts and paise, never 0-by-default. */
-    private record PaymentTally(long verifiedCount, long verifiedPaise, long rejectedCount) {
+    private record PaymentTally(long verifiedCount, long verifiedPaise, long rejectedCount,
+                                List<Instant> decidedAt) {
     }
 
     /**
@@ -311,8 +332,12 @@ public class DecisionHistoryService {
             return Map.of();
         }
         Map<Long, long[]> counts = new HashMap<>(); // [verifiedCount, verifiedPaise, rejectedCount]
+        Map<Long, List<Instant>> decidedAt = new HashMap<>();
         for (Payment p : paymentRepository.findDecidedByInWindow(staffIds, from, to)) {
             long[] bucket = counts.computeIfAbsent(p.getDecidedBy(), id -> new long[3]);
+            if (p.getDecidedAt() != null) {
+                decidedAt.computeIfAbsent(p.getDecidedBy(), id -> new ArrayList<>()).add(p.getDecidedAt());
+            }
             if (p.getStatus() == PaymentStatus.VERIFIED) {
                 bucket[0]++;
                 bucket[1] += p.getAmount();
@@ -321,7 +346,8 @@ public class DecisionHistoryService {
             }
         }
         Map<Long, PaymentTally> tallies = new HashMap<>();
-        counts.forEach((staffId, bucket) -> tallies.put(staffId, new PaymentTally(bucket[0], bucket[1], bucket[2])));
+        counts.forEach((staffId, bucket) -> tallies.put(staffId, new PaymentTally(bucket[0], bucket[1], bucket[2],
+                decidedAt.getOrDefault(staffId, List.of()))));
         return tallies;
     }
 
@@ -345,8 +371,13 @@ public class DecisionHistoryService {
 
     private StaffPerformanceRow row(StaffSummary staff, List<ApplicationEvent> mine,
                                     Map<Long, Instant> assignedAt, Map<Long, Long> pendingByStaff,
-                                    Map<Long, Long> callsByStaff, Map<Long, PaymentTally> paymentsByStaff) {
+                                    Map<Long, Long> callsByStaff, Map<Long, PaymentTally> paymentsByStaff,
+                                    StaffActivity collections) {
         long accepted = 0;
+        long sanctionedPaise = 0;
+        long releasedPaise = 0;
+        Map<String, Long> actionCounts = new TreeMap<>();
+        Map<LocalDate, Long> perDay = new TreeMap<>();
         long rejected = 0;
         long moneyPaise = 0;
         long turnaroundTotalMinutes = 0;
@@ -362,13 +393,18 @@ public class DecisionHistoryService {
                 continue; // the system's, not theirs — see AUTO_REJECT_PREFIX
             }
             humanActions++;
+            if (action != null) {
+                actionCounts.merge(action, 1L, Long::sum);
+            }
             boolean isAccept = ACCEPT_ACTIONS.contains(action);
             if (isAccept) {
                 accepted++;
             } else if (REJECT_ACTIONS.contains(action)) {
                 rejected++;
             }
-            days.add(LocalDate.ofInstant(e.getAt(), IST));
+            LocalDate day = LocalDate.ofInstant(e.getAt(), IST);
+            days.add(day);
+            perDay.merge(day, 1L, Long::sum);
             if (first == null || e.getAt().isBefore(first)) {
                 first = e.getAt();
             }
@@ -380,6 +416,11 @@ public class DecisionHistoryService {
             DecisionNotes.Parsed parsed = DecisionNotes.parse(e.getNotes());
             if (isAccept && parsed.amountPaise() != null) {
                 moneyPaise += parsed.amountPaise();
+                if ("SANCTION".equals(action)) {
+                    sanctionedPaise += parsed.amountPaise();
+                } else if ("VALIDATE_SUCCESS".equals(action) || "ADMIN_FORCE_DISBURSE".equals(action)) {
+                    releasedPaise += parsed.amountPaise();
+                }
             }
             Instant handedOver = assignedAt.get(e.getApplicationId());
             if (handedOver != null && (isAccept || REJECT_ACTIONS.contains(action))
@@ -389,15 +430,42 @@ public class DecisionHistoryService {
             }
         }
 
-        Long avgTurnaround = turnaroundSamples == 0 ? null : turnaroundTotalMinutes / turnaroundSamples;
+        // Collections work and repayment verifications are not on the application-event trail, but
+        // they are still work done that day: a Collection Executive who logged forty calls, or an
+        // Accountant who verified twenty repayments, was active and must not read "0 active days".
         PaymentTally payments = paymentsByStaff.get(staff.id());
+        List<Instant> offTrail = new ArrayList<>();
+        if (collections != null) {
+            offTrail.addAll(collections.activityAt());
+        }
+        if (payments != null) {
+            offTrail.addAll(payments.decidedAt());
+        }
+        for (Instant at : offTrail) {
+            LocalDate day = LocalDate.ofInstant(at, IST);
+            days.add(day);
+            perDay.merge(day, 1L, Long::sum);
+            if (first == null || at.isBefore(first)) {
+                first = at;
+            }
+            if (last == null || at.isAfter(last)) {
+                last = at;
+            }
+        }
+        List<ActivityPoint> daily = perDay.entrySet().stream()
+                .map(d -> new ActivityPoint(d.getKey(), d.getValue()))
+                .toList();
+
+        Long avgTurnaround = turnaroundSamples == 0 ? null : turnaroundTotalMinutes / turnaroundSamples;
         return new StaffPerformanceRow(staff.id(), staff.name(), staff.role(), staff.active(),
                 accepted, rejected, humanActions, days.size(), avgTurnaround,
                 pendingByStaff.getOrDefault(staff.id(), 0L), moneyPaise, first, last,
                 callsByStaff.getOrDefault(staff.id(), 0L),
                 payments == null ? null : payments.verifiedCount(),
                 payments == null ? null : payments.verifiedPaise(),
-                payments == null ? null : payments.rejectedCount());
+                payments == null ? null : payments.rejectedCount(),
+                actionCounts, collections == null ? CollectionStaffStats.NONE : collections.stats(),
+                sanctionedPaise, releasedPaise, daily);
     }
 
     /**

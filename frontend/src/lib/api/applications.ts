@@ -211,6 +211,46 @@ export interface StaffPerformanceRow {
   rejectedPaymentCount: number | null;
   /** Telecaller + collections calls logged in the window. See `callTrackingSince` before reading a 0. */
   callsMade: number;
+  /** Their human application-event actions in the window, by action (`ASSIGN`, `SANCTION`, …). */
+  actionCounts: Record<string, number>;
+  /** Their collections work in the window, plus open cases on their desk now. */
+  collections: CollectionStaffStats;
+  /** Value of the sanctions they issued in the window, paise. */
+  sanctionedPaise: number;
+  /** Value of the disbursements they released in the window, paise. */
+  releasedPaise: number;
+  /** Their own activity per IST day — application events plus collections actions. */
+  daily: StaffActivityPoint[];
+}
+
+/** One staffer's collections work over the window (backend `CollectionStaffStats`). */
+export interface CollectionStaffStats {
+  /** Borrower interactions they logged, and the outcome breakdown under it. */
+  interactions: number;
+  connected: number;
+  promisesToPay: number;
+  paidOutcomes: number;
+  noAnswer: number;
+  disputed: number;
+  /** Open cases assigned to them right now — live, NOT windowed. */
+  casesNow: number;
+  /** Collections payments they recorded; of those, validated (money credited), pending, rejected. */
+  paymentsRaised: number;
+  paymentsRaisedPaise: number;
+  paymentsRecovered: number;
+  paymentsRecoveredPaise: number;
+  paymentsPending: number;
+  paymentsRejected: number;
+  settlementsProposed: number;
+  settlementsProposedPaise: number;
+  /** Settlements they decided — a Collection Head's approvals and rejections. */
+  settlementsApproved: number;
+  settlementsApprovedPaise: number;
+  settlementsRejected: number;
+  /** Collections payments they validated / rejected at the Accountant step. */
+  paymentsValidated: number;
+  paymentsValidatedPaise: number;
+  paymentsValidationRejected: number;
 }
 
 /** One day's action count across the whole visible roster — the trend line. */
