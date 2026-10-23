@@ -485,7 +485,11 @@ every stage queue (credit, disbursement, accounting) — there is no separate `c
 `customers` (+ `[customerId]`), `loans`, `verifications`, `performance`, `my-decisions`,
 `telecalling`, `leads`, `accounting/transactions`, `disbursement/referrals`, `collections`
 (`settlements`, `[loanId]`), `dsa/{leads,earnings}`, and `admin/*` (`staff`, `invites`, `blocklist`,
-`expenses`, `all-applications`, `rejections`, `leads`, `dsa`, `api-dashboard`, `payment-settings`).
+`expenses`, `all-applications`, `rejections`, `leads`, `dsa`, `api-dashboard`, `payment-settings`, `reports`).
+**Reports** (`/staff/admin/reports`, ADMIN) is the downloads centre: ~28 reports (customers incl. overpaid /
+not overpaid / dues, transactions, loan book, disbursals, repayments, collections, staff, finance, partners,
+plus a "How DhanBoost works" explainer) for any period preset, each as CSV or branded PDF built from one
+server table (`ReportService`, `GET /api/reports/{key}`), so both files carry the same information.
 Settlement approval enforces **SoD** (proposer ≠ approver) server-side. Staff screens carry small **ⓘ info-tooltips**
 (`components/ui/tooltip.tsx`) on dashboard cards / queue / DPD-bucket headers so a newly-added staffer
 knows what each section does.

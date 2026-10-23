@@ -3654,6 +3654,66 @@ export const dashboardApi = {
 };
 
 // ---------------------------------------------------------------------------
+// Admin reports — routes under /api/staff/reports (ADMIN only, enforced server-side)
+// ---------------------------------------------------------------------------
+
+/** How a report column's raw cell is formatted (MONEY = integer paise, DATE = yyyy-mm-dd, DATETIME = ISO instant). */
+export type ReportColumnType = "TEXT" | "NUMBER" | "MONEY" | "DATE" | "DATETIME" | "BOOL";
+
+export interface ReportColumn {
+  key: string;
+  label: string;
+  type: ReportColumnType;
+}
+
+export type ReportCell = string | number | boolean | null;
+
+/** A headline figure shown above a report's table and written at the top of both downloads. */
+export interface ReportFact {
+  label: string;
+  value: ReportCell;
+  type: ReportColumnType;
+}
+
+/** One entry of the reports catalog. `dateBasis` names the date the period applies to; null = a live snapshot. */
+export interface ReportDef {
+  key: string;
+  category: string;
+  title: string;
+  description: string;
+  dateBasis: string | null;
+}
+
+/** A generated report: the same typed table feeds the on-screen preview, the CSV and the PDF. */
+export interface ReportData extends ReportDef {
+  /** yyyy-mm-dd, inclusive; both null for an all-time or snapshot report. */
+  from: string | null;
+  to: string | null;
+  generatedAt: string;
+  columns: ReportColumn[];
+  rows: ReportCell[][];
+  summary: ReportFact[];
+  notes: string[];
+  truncated: boolean;
+  /** False when summing the money columns would add up unlike things (e.g. the platform summary). */
+  totals: boolean;
+}
+
+const REPORTS_BASE = "/api/staff/reports";
+
+export const reportsApi = {
+  catalog: () => bff<ReportDef[]>(REPORTS_BASE, "GET"),
+  run: (key: string, range?: { from?: string; to?: string }) => {
+    const qs = new URLSearchParams();
+    if (range?.from) qs.set("from", range.from);
+    if (range?.to) qs.set("to", range.to);
+    const s = qs.toString();
+    return bff<ReportData>(`${REPORTS_BASE}/${encodeURIComponent(key)}${s ? `?${s}` : ""}`, "GET");
+  },
+};
+
+
+// ---------------------------------------------------------------------------
 // Admin (IAM) — staff users, invites, fraud blocklist
 // ---------------------------------------------------------------------------
 

@@ -21,6 +21,7 @@ import {
   Banknote,
   Landmark,
   Repeat,
+  FileBarChart,
 } from "lucide-react";
 import { can, type Permission, type StaffRole } from "@/lib/auth/rbac";
 import type { FeatureFlags } from "@/lib/api/applications";
@@ -183,6 +184,8 @@ export const NAV: NavGroup[] = [
       { label: "Rejections", href: "/staff/admin/rejections", Icon: Ban, perm: "staff:manage" },
       { label: "Provider API dashboard", href: "/staff/admin/api-dashboard", Icon: ListChecks, perm: "verification:retry" },
       { label: "Transactions", href: "/staff/accounting/transactions", Icon: Receipt, perm: ["loan:activate", "staff:manage"] },
+      // Downloadable CSV / PDF reports across the whole platform; the backend allows ADMIN only.
+      { label: "Reports", href: "/staff/admin/reports", Icon: FileBarChart, perm: "staff:manage" },
       { label: "Settings", href: "/staff/admin/settings", Icon: Settings, perm: "staff:manage" },
     ],
   },
@@ -219,6 +222,7 @@ export const ADMIN_NAV_ORDER: string[] = [
   "/staff/admin/blocklist",
   "/staff/accounting/transactions",
   "/staff/admin/expenses",
+  "/staff/admin/reports",
   "/staff/admin/api-dashboard",
   "/staff/admin/settings",
 ];
