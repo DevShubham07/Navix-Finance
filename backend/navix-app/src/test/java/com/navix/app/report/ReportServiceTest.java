@@ -56,6 +56,20 @@ class ReportServiceTest {
     }
 
     @Test
+    void everyReportHasAOneLineExplanationAndASidebarCategory() {
+        // Mirrors frontend/src/lib/reports/categories.ts — the sidebar filters on these exact labels.
+        List<String> sidebar = List.of("Business overview", "Customers", "Disbursement", "Repayments & collections",
+                "Risk & portfolio quality", "Applications & credit", "Staff & productivity", "Finance & tax",
+                "Compliance & audit", "Growth & partners");
+        for (ReportDef d : ReportService.CATALOG) {
+            assertThat(sidebar).as(d.key()).contains(d.category());
+            assertThat(d.description()).as(d.key()).isNotBlank().doesNotContain("\n");
+            assertThat(d.description().length()).as(d.key()).isLessThanOrEqualTo(140);
+        }
+        assertThat(ReportService.CATALOG.stream().map(ReportDef::category).distinct()).hasSameSizeAs(sidebar);
+    }
+
+    @Test
     void periodIsAllTimeWhenBothEndsAreMissingAndOpenEndsAreFilled() {
         assertThat(ReportService.Period.of(null, null).all()).isTrue();
         assertThat(ReportService.Period.ALL.on("x")).isEqualTo("true");

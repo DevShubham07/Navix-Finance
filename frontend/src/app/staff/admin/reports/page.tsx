@@ -2,6 +2,8 @@
 
 import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { CalendarClock, Eye, FileSpreadsheet, FileText, Loader2, Search, X } from "lucide-react";
 import { EmptyState, ErrorState, Skeleton } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
@@ -11,6 +13,7 @@ import { reportsApi, type ReportData, type ReportDef } from "@/lib/api/applicati
 import type { Range } from "@/lib/period";
 import { formatDate } from "@/lib/utils";
 import { REPORT_PRESETS, reportRange } from "@/lib/reports/periods";
+import { REPORT_CATEGORIES, reportCategoryLabel } from "@/lib/reports/categories";
 import { downloadReport, formatReportCell, periodLine, reportTotals } from "@/lib/export/report-export";
 
 /** Rows the on-screen preview renders; the downloads always carry every row. */
@@ -25,7 +28,17 @@ type Format = "csv" | "pdf";
  * they carry identical information.
  */
 export default function AdminReportsPage() {
+  return (
+    <React.Suspense fallback={<div className="h-40 animate-pulse rounded bg-grey-100" />}>
+      <ReportsCentre />
+    </React.Suspense>
+  );
+}
+
+function ReportsCentre() {
   const me = useStaffMe().data;
+  // `?seg=` is the sidebar's report group (Reports → Risk & portfolio quality, …); absent = every group.
+  const category = reportCategoryLabel(useSearchParams().get("seg"));
   const can = useCan();
   const qc = useQueryClient();
 
@@ -70,11 +83,12 @@ export default function AdminReportsPage() {
     const needle = search.trim().toLowerCase();
     const out = new Map<string, ReportDef[]>();
     for (const d of catalog.data ?? []) {
+      if (category && d.category !== category) continue;
       if (needle && !`${d.title} ${d.description} ${d.category}`.toLowerCase().includes(needle)) continue;
       out.set(d.category, [...(out.get(d.category) ?? []), d]);
     }
     return [...out.entries()];
-  }, [catalog.data, search]);
+  }, [catalog.data, search, category]);
 
   if (me && !can("staff:manage")) return <NoAccessNotice message="Admin access only." />;
 
@@ -84,9 +98,27 @@ export default function AdminReportsPage() {
   return (
     <div>
       <PageHeader
-        title="Reports"
-        subtitle="Download any report about the platform — customers, loans, repayments, collections, staff and finance — as a CSV for spreadsheets or a formatted PDF to share."
+        title={category ? `Reports · ${category}` : "Reports"}
+        subtitle="Pick a period, then download any report as a CSV for spreadsheets or a formatted PDF to share. Every report says in one line what it contains."
       />
+
+      <nav aria-label="Report groups" className="mb-4 flex flex-wrap gap-1.5">
+        <Link
+          href="/staff/admin/reports"
+          className={`rounded-full border px-3 py-1 text-xs font-semibold ${!category ? "border-navy bg-navy text-white" : "border-line text-muted hover:text-ink"}`}
+        >
+          All reports
+        </Link>
+        {REPORT_CATEGORIES.map((c) => (
+          <Link
+            key={c.seg}
+            href={`/staff/admin/reports?seg=${c.seg}`}
+            className={`rounded-full border px-3 py-1 text-xs font-semibold ${category === c.label ? "border-navy bg-navy text-white" : "border-line text-muted hover:text-ink"}`}
+          >
+            {c.label}
+          </Link>
+        ))}
+      </nav>
 
       <div className="z-10 -mx-1 mb-6 rounded border lg:sticky lg:top-0 border-line bg-white/95 p-3 shadow-sm backdrop-blur">
         <div className="flex flex-wrap items-center gap-2">
