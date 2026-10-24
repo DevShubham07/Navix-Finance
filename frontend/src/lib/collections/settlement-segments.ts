@@ -20,6 +20,8 @@ export const SETTLEMENT_SEGMENT_LABEL: Record<SettlementSegment, string> = {
 
 type HasStatus = { status: string };
 
+type Amounts = { outstandingPaise: number | null; settlementAmountPaise: number | null };
+
 /** Rows per chip. "ALL" counts every row, including any status this client does not know yet. */
 export function settlementSegmentCounts(rows: ReadonlyArray<HasStatus>): Record<SettlementSegment, number> {
   const counts: Record<SettlementSegment, number> = { ALL: rows.length, PROPOSED: 0, APPROVED: 0, REJECTED: 0 };
@@ -53,4 +55,16 @@ export function isOwnSettlementProposal(
   if (settlement.proposedBy == null || staffId == null) return false;
   const me = String(staffId).trim();
   return me !== "" && String(settlement.proposedBy) === me;
+}
+
+/** What the borrower is let off: today's dues minus the agreed amount (never negative). */
+export function settlementWaiverPaise(s: Amounts): number | null {
+  if (s.outstandingPaise == null || s.settlementAmountPaise == null) return null;
+  return Math.max(0, s.outstandingPaise - s.settlementAmountPaise);
+}
+
+/** The agreed amount as a whole-number share of today's dues, or null when dues are unknown/zero. */
+export function settlementRecoveryPct(s: Amounts): number | null {
+  if (!s.outstandingPaise || s.settlementAmountPaise == null) return null;
+  return Math.round((s.settlementAmountPaise / s.outstandingPaise) * 100);
 }

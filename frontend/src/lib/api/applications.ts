@@ -4264,6 +4264,17 @@ export interface SettlementView {
   createdAt: string;
   approvedAt: string | null;
   rejectedAt: string | null;
+  /** The borrower and loan behind the case — null (dpd 0) when the loan cannot be resolved. */
+  loanId: number | null;
+  customerId: number | null;
+  borrowerName: string | null;
+  mobile: string | null;
+  loanStatus: string | null;
+  principalPaise: number | null;
+  outstandingPaise: number | null;
+  dueDate: string | null;
+  dpd: number;
+  bucket: DpdBucket;
 }
 
 /**

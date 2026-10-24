@@ -37,19 +37,30 @@ function settlement(overrides: Partial<SettlementView>): SettlementView {
     createdAt: "2026-10-01T10:00:00Z",
     approvedAt: null,
     rejectedAt: null,
+    loanId: 42,
+    customerId: 7001,
+    borrowerName: "Ravi Kumar",
+    mobile: "9876543210",
+    loanStatus: "OVERDUE",
+    principalPaise: 1_000_000,
+    outstandingPaise: 1_300_000,
+    dueDate: "2026-09-30",
+    dpd: 12,
+    bucket: "T8_T30",
     ...overrides,
   };
 }
 
 const APPROVED = settlement({
   id: "aaaaaaaa-0000-0000-0000-000000000001",
+  borrowerName: "Anil Approved",
   status: "APPROVED",
   approvedBy: 3,
   approvedByName: "Head Three",
   approvedAt: "2026-10-02T10:00:00Z",
 });
-const MINE = settlement({ id: "bbbbbbbb-0000-0000-0000-000000000002", proposedBy: 7, proposedByName: "Head Seven" });
-const THEIRS = settlement({ id: "cccccccc-0000-0000-0000-000000000003", proposedBy: 9 });
+const MINE = settlement({ id: "bbbbbbbb-0000-0000-0000-000000000002", borrowerName: "Meena Mine", proposedBy: 7, proposedByName: "Head Seven" });
+const THEIRS = settlement({ id: "cccccccc-0000-0000-0000-000000000003", borrowerName: "Ravi Kumar", proposedBy: 9 });
 
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -85,16 +96,16 @@ describe("CollectionsSettlementsPage", () => {
     const rows = bodyRows();
     expect(rows).toHaveLength(3);
     // All three carry the same `createdAt`, so the sort is a no-op tie and server order stands.
-    expect(rows[0]).toHaveTextContent("aaaaaaaa");
-    expect(rows[1]).toHaveTextContent("bbbbbbbb");
-    expect(rows[2]).toHaveTextContent("cccccccc");
+    expect(rows[0]).toHaveTextContent("Anil Approved");
+    expect(rows[1]).toHaveTextContent("Meena Mine");
+    expect(rows[2]).toHaveTextContent("Ravi Kumar");
   });
 
   it("narrows to one status, and says so when that status is empty", async () => {
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "Approved (1)" }));
     expect(bodyRows()).toHaveLength(1);
-    expect(bodyRows()[0]).toHaveTextContent("aaaaaaaa");
+    expect(bodyRows()[0]).toHaveTextContent("Anil Approved");
 
     fireEvent.click(screen.getByRole("button", { name: "Rejected (0)" }));
     expect(screen.getByText("No rejected settlements.")).toBeInTheDocument();
@@ -118,10 +129,52 @@ describe("CollectionsSettlementsPage", () => {
     renderPage();
 
     fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Approve settlement" }));
     expect(await screen.findByText(/must differ from the proposer/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Reject settlement" }));
     await waitFor(() => expect(screen.queryByText(/must differ from the proposer/)).toBeNull());
+  });
+
+  it("shows the customer and loan behind each settlement, linked", async () => {
+    renderPage();
+    await screen.findByRole("button", { name: "All (3)" });
+    const ravi = bodyRows()[2];
+    expect(within(ravi).getByRole("link", { name: "Ravi Kumar" })).toHaveAttribute("href", "/staff/customers/7001");
+    expect(within(ravi).getByRole("link", { name: "Loan #42" })).toHaveAttribute("href", "/staff/collections/42");
+    expect(ravi).toHaveTextContent("9876543210");
+    expect(ravi).toHaveTextContent("12 DPD");
+    // ₹5,000 against ₹13,000 of dues: 38% recovered, ₹8,000 waived.
+    expect(ravi).toHaveTextContent("38% of dues");
+  });
+
+  it("asks for confirmation, restating the waiver, before approving", async () => {
+    const approve = vi.spyOn(collectionsApi, "approveSettlement").mockResolvedValue({ ...THEIRS, status: "APPROVED" });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("Ravi Kumar");
+    expect(dialog).toHaveTextContent("Waived");
+    expect(approve).not.toHaveBeenCalled();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(approve).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Approve settlement" }));
+    await waitFor(() => expect(approve).toHaveBeenCalledWith(THEIRS.id));
+  });
+
+  it("searches by customer name or mobile", async () => {
+    vi.spyOn(collectionsApi, "listSettlements").mockResolvedValue([
+      APPROVED,
+      settlement({ id: "dddddddd-0000-0000-0000-000000000004", borrowerName: "Asha Rao", mobile: "9000000001" }),
+    ]);
+    renderPage();
+    fireEvent.change(await screen.findByRole("searchbox", { name: "Search settlements" }), { target: { value: "asha" } });
+    expect(bodyRows()).toHaveLength(1);
+    expect(bodyRows()[0]).toHaveTextContent("Asha Rao");
   });
 
   it("offers the full ids behind the truncated ones", async () => {
