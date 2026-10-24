@@ -3,6 +3,7 @@ import {
   Receipt,
   Workflow,
   HandCoins,
+  Handshake,
   Users,
   Contact,
   UserX,
@@ -92,11 +93,26 @@ export function navHref(href: string, realRole: StaffRole, role: StaffRole): str
   return href + (href.includes("?") ? "&" : "?") + "mine=1";
 }
 
+/**
+ * Grouped by use case — what a staffer is trying to get done — rather than by department, so the
+ * same headings read sensibly for every working role. Empty groups (every item gated off) are not
+ * rendered, so a Telecaller sees only Overview, Customers & credit and Leads & sales.
+ */
 export const NAV: NavGroup[] = [
   {
-    heading: "Operations",
+    heading: "Overview",
     items: [
       { label: "Dashboard", href: "/staff/dashboard", Icon: LayoutDashboard, hideFor: ["DSA"] },
+      // No `perm`: the server scopes the roster (ADMIN → company, Head → team, else self), so
+      // gating the route would only hide a page that already shows the caller their own numbers.
+      { label: "Staff performance", href: "/staff/performance", Icon: Gauge, hideFor: ["DSA"] },
+      // No `perm`: every staffer may read their own decision history (the server scopes it).
+      { label: "My decisions", href: "/staff/my-decisions", Icon: History, hideFor: ["DSA"] },
+    ],
+  },
+  {
+    heading: "Customers & credit",
+    items: [
       {
         label: "Live applications",
         href: "/staff/applications",
@@ -125,43 +141,27 @@ export const NAV: NavGroup[] = [
         perm: "customer:assign",
         hideFor: ["ADMIN"],
       },
-      // No `perm`: every staffer may read their own decision history (the server scopes it).
-      { label: "My decisions", href: "/staff/my-decisions", Icon: History, hideFor: ["DSA"] },
-      // No `perm`: the server scopes the roster (ADMIN → company, Head → team, else self), so
-      // gating the route would only hide a page that already shows the caller their own numbers.
-      { label: "Staff performance", href: "/staff/performance", Icon: Gauge, hideFor: ["DSA"] },
+      { label: "All applications", href: "/staff/admin/all-applications", Icon: Files, perm: "staff:manage" },
+      { label: "Rejections", href: "/staff/admin/rejections", Icon: Ban, perm: "staff:manage" },
+      { label: "Onboarding waitlist", href: "/staff/admin/waitlist", Icon: Users, perm: "waitlist:view" },
+      { label: "Blocklist", href: "/staff/admin/blocklist", Icon: Ban, perm: "staff:manage" },
+    ],
+  },
+  {
+    heading: "Leads & sales",
+    items: [
       { label: "Leads", href: "/staff/leads", Icon: Phone, perm: "leads:manage" },
+      { label: "Telecalling", href: "/staff/telecalling", Icon: Phone, perm: "leads:manage" },
+      { label: "Leads dashboard", href: "/staff/admin/leads", Icon: Phone, perm: "staff:manage" },
       // Every staff role holds leads:import, so this is the one nav entry that shows for all of
       // them — including DSA, whose sidebar is otherwise limited to the DSA portal.
       { label: "Import leads", href: "/staff/leads/import", Icon: Upload, perm: "leads:import" },
-      { label: "Telecalling", href: "/staff/telecalling", Icon: Phone, perm: "leads:manage" },
       { label: "Referral payouts", href: "/staff/disbursement/referrals", Icon: Gift, perm: "referral:payout", flag: "referral" },
     ],
   },
   {
     heading: "Collections",
     items: [
-      { label: "DPD buckets (all loans)", href: "/staff/collections", Icon: HandCoins, perm: ["collections:interact", "collections:manage", "collections:overview"], collectionBuckets: true, labelFor: { COLLECTION_EXECUTIVE: "My DPD cases" } },
-      // Every eMandate and NACH debit across the book. loan:register is exactly COLLECTION_HEAD + ADMIN — the
-      // same pair the backend allowlists (MandateDashboardService). Not flag-gated: debits already taken stay
-      // auditable with digio-debit off.
-      { label: "Mandates & debits", href: "/staff/collections/mandates", Icon: Repeat, perm: "loan:register" },
-      // Downloadable CSV / PDF reports across the whole platform, one child per report group. staff:manage
-      // keeps it to the Admin working role; the backend allows the real ADMIN role only.
-      {
-        label: "Reports",
-        href: "/staff/admin/reports",
-        Icon: FileBarChart,
-        perm: "staff:manage",
-        sub: REPORT_CATEGORIES.map(({ seg, label }) => ({ label, seg })),
-      },
-      // Collection Executive can see settlements they proposed; approve stays PermissionGate-gated.
-      { label: "Settlements", href: "/staff/collections/settlements", Icon: HandCoins, perm: ["collections:interact", "collections:manage"], labelFor: { COLLECTION_HEAD: "Settlement approvals", COLLECTION_EXECUTIVE: "My settlements" } },
-      // Refunds owed is a cross-book finance view, not case-scoped, so it follows the backend's own
-      // COLLECTION_HEAD/ADMIN rule rather than collections:interact.
-      // Deliberately NOT flag-gated: if digio-debit is switched off during an incident, the money already
-      // taken is still owed back, and this register is the only record of it.
-      { label: "Refunds owed", href: "/staff/collections/refunds", Icon: HandCoins, perm: "collections:manage" },
       {
         label: "Loans",
         href: "/staff/loans",
@@ -170,6 +170,36 @@ export const NAV: NavGroup[] = [
         // No explicit "All" child — same convention as Customers: the parent label itself
         // (no `seg`) is the "all" view, so only the real segments get a chip.
         sub: LOAN_SEGMENTS.map((seg) => ({ label: LOAN_SEGMENT_LABEL[seg], seg, tone: LOAN_SEGMENT_TONE[seg] })),
+      },
+      { label: "DPD buckets (all loans)", href: "/staff/collections", Icon: HandCoins, perm: ["collections:interact", "collections:manage", "collections:overview"], collectionBuckets: true, labelFor: { COLLECTION_EXECUTIVE: "My DPD cases" } },
+      // Every eMandate and NACH debit across the book. loan:register is exactly COLLECTION_HEAD + ADMIN — the
+      // same pair the backend allowlists (MandateDashboardService). Not flag-gated: debits already taken stay
+      // auditable with digio-debit off.
+      { label: "Mandates & debits", href: "/staff/collections/mandates", Icon: Repeat, perm: "loan:register" },
+      // Collection Executive can see settlements they proposed; approve stays PermissionGate-gated.
+      // collections:overview lets the Admin working role read every settlement across the book
+      // ("Total settlements") — read-only there; deciding still needs the Collection Head role.
+      { label: "Settlements", href: "/staff/collections/settlements", Icon: Handshake, perm: ["collections:interact", "collections:manage", "collections:overview"], labelFor: { ADMIN: "Total settlements", COLLECTION_HEAD: "Settlement approvals", COLLECTION_EXECUTIVE: "My settlements" } },
+      // Refunds owed is a cross-book finance view, not case-scoped, so it follows the backend's own
+      // COLLECTION_HEAD/ADMIN rule rather than collections:interact.
+      // Deliberately NOT flag-gated: if digio-debit is switched off during an incident, the money already
+      // taken is still owed back, and this register is the only record of it.
+      { label: "Refunds owed", href: "/staff/collections/refunds", Icon: HandCoins, perm: "collections:manage" },
+    ],
+  },
+  {
+    heading: "Finance & reports",
+    items: [
+      { label: "Transactions", href: "/staff/accounting/transactions", Icon: Receipt, perm: ["loan:activate", "staff:manage"] },
+      { label: "Company expenses", href: "/staff/admin/expenses", Icon: Wallet, perm: "staff:manage" },
+      // Downloadable CSV / PDF reports across the whole platform, one child per report group. staff:manage
+      // keeps it to the Admin working role; the backend allows the real ADMIN role only.
+      {
+        label: "Reports",
+        href: "/staff/admin/reports",
+        Icon: FileBarChart,
+        perm: "staff:manage",
+        sub: REPORT_CATEGORIES.map(({ seg, label }) => ({ label, seg })),
       },
     ],
   },
@@ -181,19 +211,12 @@ export const NAV: NavGroup[] = [
     ],
   },
   {
-    heading: "Administration",
+    heading: "Team & settings",
     items: [
       { label: "Staff", href: "/staff/admin/staff", Icon: Users, perm: "staff:manage" },
       { label: "DSA", href: "/staff/admin/dsa", Icon: Briefcase, perm: "staff:manage" },
       { label: "Invites", href: "/staff/admin/invites", Icon: Mail, perm: "staff:manage" },
-      { label: "Blocklist", href: "/staff/admin/blocklist", Icon: Ban, perm: "staff:manage" },
-      { label: "Onboarding waitlist", href: "/staff/admin/waitlist", Icon: Users, perm: "waitlist:view" },
-      { label: "Company expenses", href: "/staff/admin/expenses", Icon: Wallet, perm: "staff:manage" },
-      { label: "Leads dashboard", href: "/staff/admin/leads", Icon: Phone, perm: "staff:manage" },
-      { label: "All applications", href: "/staff/admin/all-applications", Icon: Files, perm: "staff:manage" },
-      { label: "Rejections", href: "/staff/admin/rejections", Icon: Ban, perm: "staff:manage" },
       { label: "Provider API dashboard", href: "/staff/admin/api-dashboard", Icon: ListChecks, perm: "verification:retry" },
-      { label: "Transactions", href: "/staff/accounting/transactions", Icon: Receipt, perm: ["loan:activate", "staff:manage"] },
       { label: "Settings", href: "/staff/admin/settings", Icon: Settings, perm: "staff:manage" },
     ],
   },
@@ -207,41 +230,8 @@ export const SEGMENTED_PARENT_PATHS = new Set(
   NAV.flatMap((g) => g.items).filter((it) => it.sub?.length).map((it) => it.href.split("?")[0]),
 );
 
-/**
- * The ADMIN working role's sidebar order (hrefs). Reloan is a Customers child (`?seg=reloan`), so it
- * sits right under Customers rather than being a separate entry. Items not listed fall to the end.
- */
-export const ADMIN_NAV_ORDER: string[] = [
-  "/staff/dashboard",
-  "/staff/loans",
-  "/staff/collections",
-  "/staff/collections/mandates",
-  "/staff/admin/reports",
-  "/staff/performance",
-  "/staff/admin/staff",
-  "/staff/customers",
-  "/staff/admin/all-applications",
-  "/staff/admin/rejections",
-  "/staff/my-decisions",
-  "/staff/admin/waitlist",
-  "/staff/admin/leads",
-  "/staff/leads/import",
-  "/staff/admin/dsa",
-  "/staff/admin/invites",
-  "/staff/admin/blocklist",
-  "/staff/accounting/transactions",
-  "/staff/admin/expenses",
-  "/staff/admin/api-dashboard",
-  "/staff/admin/settings",
-];
-
-/** The groups the sidebar renders: ADMIN gets one flat, hand-ordered list; others keep {@link NAV}. */
-export function navGroupsFor(role: StaffRole): NavGroup[] {
-  if (role !== "ADMIN") return NAV;
-  const rank = (it: NavItem) => {
-    const i = ADMIN_NAV_ORDER.indexOf(it.href.split("?")[0]);
-    return i < 0 ? ADMIN_NAV_ORDER.length : i;
-  };
-  const items = NAV.flatMap((g) => g.items).sort((a, b) => rank(a) - rank(b));
-  return [{ heading: "Admin", items }];
+/** The groups the sidebar renders. Every working role — ADMIN included — gets the same use-case
+ *  groups; RBAC and flags decide which items (and so which groups) are visible. */
+export function navGroupsFor(_role: StaffRole): NavGroup[] {
+  return NAV;
 }

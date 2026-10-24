@@ -9,6 +9,7 @@ import com.navix.collections.repository.SettlementRepository;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.exception.ResourceNotFoundException;
 import com.navix.common.loan.LoanDirectory;
+import com.navix.common.loan.LoanDues;
 import com.navix.common.loan.LoanSummary;
 import com.navix.common.notification.event.SettlementApprovedEvent;
 import com.navix.common.notification.event.SettlementProposedEvent;
@@ -23,6 +24,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -48,6 +52,11 @@ public class SettlementService {
 
     /** Role that approves a settlement (collections management). */
     private static final String MANAGER_ROLE = "COLLECTION_HEAD";
+
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
+
+    /** Stateless; DPD on the settlements register is computed on read like everywhere else. */
+    private static final DpdCalculator DPD = new DpdCalculator();
 
     private final SettlementRepository settlementRepository;
     private final CollectionCaseRepository caseRepository;
@@ -219,10 +228,16 @@ public class SettlementService {
      *
      * <p>Guarded by {@link #requireNonDsaStaff()}: this read carried no authorization at all, so
      * any staff bearer — a DSA included — could list every settlement ever proposed.
+     *
+     * <p>Then narrowed to the collections roles (and ADMIN): each row now carries the borrower's
+     * full PAN, bank account, email and bureau score, and a Telecaller, Accountant or credit role
+     * calling the endpoint directly would otherwise read them for every settled borrower — wider
+     * than their own customer scope. Those roles have no settlements screen to lose.
      */
     @Transactional(readOnly = true)
     public List<SettlementView> listAll() {
         requireNonDsaStaff();
+        requireOneOf(OFFICER_ROLE, MANAGER_ROLE);
         Set<UUID> scoped = collectionsService.scopedCaseIdsOrNull();
         List<Settlement> settlements = settlementRepository.findAll(org.springframework.data.domain.Sort.by(
                 org.springframework.data.domain.Sort.Direction.DESC, "createdAt")).stream()
@@ -234,32 +249,92 @@ public class SettlementService {
             staffIds.add(s.getRejectedBy());
         }
         staffIds.removeIf(Objects::isNull);
+        // Borrower + loan + dues behind each case, batched: one case read, one loan read and one
+        // dues read for the whole page.
+        Set<UUID> caseIds = new HashSet<>();
+        settlements.forEach(s -> caseIds.add(s.getCollectionCaseId()));
+        Map<UUID, CollectionCase> cases = new HashMap<>();
+        Set<Long> loanIds = new HashSet<>();
+        for (CollectionCase c : caseRepository.findAllById(caseIds)) {
+            cases.put(c.getId(), c);
+            if (c.getLoanId() != null) {
+                loanIds.add(c.getLoanId());
+            }
+            if (c.getAssignedOfficerId() != null) {
+                staffIds.add(c.getAssignedOfficerId());
+            }
+        }
         Map<Long, String> names = staffDirectory.namesFor(staffIds);
-        return settlements.stream().map(s -> toView(s, names)).toList();
+        Map<Long, LoanSummary> loans = loanIds.isEmpty() ? Map.of() : loanDirectory.findLoans(loanIds);
+        Map<Long, LoanDues> dues = loanIds.isEmpty() ? Map.of() : loanDirectory.findDues(loanIds);
+        return settlements.stream().map(s -> toView(s, names, cases, loans, dues)).toList();
     }
 
     private SettlementView toView(Settlement s) {
-        SettlementStatus status = s.getStatus() != null ? s.getStatus() : SettlementStatus.PROPOSED;
-        return new SettlementView(
-                s.getId(), s.getCollectionCaseId(), s.getSettlementAmount(),
-                s.getProposedBy(), staffName(s.getProposedBy()),
-                s.getApprovedBy(), staffName(s.getApprovedBy()),
-                s.getRejectedBy(), staffName(s.getRejectedBy()),
-                status.name(),
-                s.getCreatedAt(), s.getApprovedAt(), s.getRejectedAt());
+        CollectionCase c = caseRepository.findById(s.getCollectionCaseId()).orElse(null);
+        Long loanId = c == null ? null : c.getLoanId();
+        LoanSummary loan = loanId == null ? null : loanDirectory.findLoan(loanId).orElse(null);
+        LoanDues dues = loanId == null ? null : loanDirectory.findDues(List.of(loanId)).get(loanId);
+        return view(s, staffName(s.getProposedBy()), staffName(s.getApprovedBy()),
+                staffName(s.getRejectedBy()), c == null ? null : staffName(c.getAssignedOfficerId()),
+                loanId, loan, dues);
     }
 
     /** Batched variant of {@link #toView(Settlement)} for {@link #listAll()} — reads pre-resolved
-     *  names instead of hitting {@link StaffDirectory#findStaff} up to three times per row. */
-    private SettlementView toView(Settlement s, Map<Long, String> names) {
+     *  names, cases, loans and dues instead of resolving them per row. */
+    private SettlementView toView(Settlement s, Map<Long, String> names, Map<UUID, CollectionCase> cases,
+                                  Map<Long, LoanSummary> loans, Map<Long, LoanDues> dues) {
+        CollectionCase c = cases.get(s.getCollectionCaseId());
+        Long loanId = c == null ? null : c.getLoanId();
+        Long officer = c == null ? null : c.getAssignedOfficerId();
+        return view(s,
+                s.getProposedBy() == null ? null : names.get(s.getProposedBy()),
+                s.getApprovedBy() == null ? null : names.get(s.getApprovedBy()),
+                s.getRejectedBy() == null ? null : names.get(s.getRejectedBy()),
+                officer == null ? null : names.get(officer),
+                loanId, loanId == null ? null : loans.get(loanId), loanId == null ? null : dues.get(loanId));
+    }
+
+    private static SettlementView view(Settlement s, String proposedByName, String approvedByName,
+                                       String rejectedByName, String officerName, Long loanId,
+                                       LoanSummary loan, LoanDues d) {
         SettlementStatus status = s.getStatus() != null ? s.getStatus() : SettlementStatus.PROPOSED;
+        int dpd = loan == null || loan.dueDate() == null ? 0
+                : DPD.daysPastDue(loan.dueDate(), LocalDate.now(IST));
         return new SettlementView(
                 s.getId(), s.getCollectionCaseId(), s.getSettlementAmount(),
-                s.getProposedBy(), s.getProposedBy() == null ? null : names.get(s.getProposedBy()),
-                s.getApprovedBy(), s.getApprovedBy() == null ? null : names.get(s.getApprovedBy()),
-                s.getRejectedBy(), s.getRejectedBy() == null ? null : names.get(s.getRejectedBy()),
+                s.getProposedBy(), proposedByName,
+                s.getApprovedBy(), approvedByName,
+                s.getRejectedBy(), rejectedByName,
                 status.name(),
-                s.getCreatedAt(), s.getApprovedAt(), s.getRejectedAt());
+                s.getCreatedAt(), s.getApprovedAt(), s.getRejectedAt(),
+                loanId,
+                loan == null ? null : loan.customerId(),
+                loan == null ? null : loan.borrowerName(),
+                loan == null ? null : loan.mobile(),
+                loan == null ? null : loan.status(),
+                loan == null ? null : loan.principalPaise(),
+                loan == null ? null : loan.outstandingPaise(),
+                loan == null ? null : loan.dueDate(),
+                dpd, DPD.bucket(dpd),
+                loan == null ? null : loan.pan(),
+                d == null ? null : d.email(),
+                loan == null ? null : loan.employer(),
+                loan == null ? null : loan.employmentStatus(),
+                loan == null ? null : loan.monthlySalaryPaise(),
+                loan == null ? null : loan.salaryBank(),
+                d == null ? null : d.accountNumber(),
+                d == null ? null : d.ifsc(),
+                d == null ? null : d.bureauScore(),
+                officerName,
+                loan == null ? null : loan.disbursedOn(),
+                loan == null ? null : loan.netDisbursedPaise(),
+                d == null ? null : d.interestPaise(),
+                d == null ? null : d.interestDays(),
+                d == null ? null : d.penaltyPaise(),
+                d == null ? null : d.penaltyDays(),
+                d == null ? null : d.paidPaise(),
+                d == null ? null : d.grossDuePaise());
     }
 
     private String staffName(Long staffId) {

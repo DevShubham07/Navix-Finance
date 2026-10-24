@@ -159,8 +159,12 @@ export default function AdminRejectionsPage() {
         <EmptyState title="No rejections yet." className="rounded border border-line bg-white shadow-sm" />
       ) : (
         <div className="overflow-hidden rounded border border-line bg-white shadow-sm">
-          <div className="staff-table-scroll">
+          {/* Same register frame as the other admin tabs: `staff-register-scroll` bounds the table to
+              the viewport and pins its header, so the pagination bar below stays on screen instead of
+              sitting under every row of a long register. */}
+          <div className="staff-table-scroll staff-register-scroll" style={{ "--register-offset": "20rem" } as React.CSSProperties}>
             <table className="staff-data-table">
+              <caption className="sr-only">Rejections</caption>
               <thead>
                 <tr>
                   <th>S.No.</th>

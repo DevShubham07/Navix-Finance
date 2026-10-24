@@ -2064,11 +2064,19 @@ export const staffApi = {
    * (name/mobile/PAN/application/loan #) — it must never bypass the date filter, so it's just
    * another query param alongside `from`/`to`, not a separate search endpoint.
    */
-  listByStatus: (status: ApplicationStatus, range?: { from?: string; to?: string }, q?: string) => {
+  listByStatus: (
+    status: ApplicationStatus,
+    range?: { from?: string; to?: string },
+    q?: string,
+    /** `mine` narrows a Disbursement Head's queue to the files THEY released (past-disbursed
+     *  history). A Credit or Collection Executive is always scoped server-side to their own files. */
+    opts?: { mine?: boolean },
+  ) => {
     const qs = new URLSearchParams({ status });
     if (range?.from) qs.set("from", range.from);
     if (range?.to) qs.set("to", range.to);
     if (q) qs.set("q", q);
+    if (opts?.mine) qs.set("mine", "true");
     return bff<ApplicationView[]>(`${STAFF_BASE}?${qs.toString()}`, "GET");
   },
 
@@ -4256,6 +4264,37 @@ export interface SettlementView {
   createdAt: string;
   approvedAt: string | null;
   rejectedAt: string | null;
+  /** The borrower and loan behind the case — null (dpd 0) when the loan cannot be resolved. */
+  loanId: number | null;
+  customerId: number | null;
+  borrowerName: string | null;
+  mobile: string | null;
+  loanStatus: string | null;
+  principalPaise: number | null;
+  outstandingPaise: number | null;
+  dueDate: string | null;
+  dpd: number;
+  bucket: DpdBucket;
+  /** Customer-tab details. */
+  pan: string | null;
+  email: string | null;
+  employer: string | null;
+  employmentStatus: string | null;
+  monthlySalaryPaise: number | null;
+  salaryBank: string | null;
+  accountNumber: string | null;
+  ifsc: string | null;
+  bureauScore: number | null;
+  assignedOfficerName: string | null;
+  /** Loan + itemised dues: grossDue = principal + interest + penalty, before payments or a settlement cap. */
+  disbursedOn: string | null;
+  netDisbursedPaise: number | null;
+  interestPaise: number | null;
+  interestDays: number | null;
+  penaltyPaise: number | null;
+  penaltyDays: number | null;
+  paidPaise: number | null;
+  grossDuePaise: number | null;
 }
 
 /**
