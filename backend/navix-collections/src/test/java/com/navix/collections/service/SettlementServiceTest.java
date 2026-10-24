@@ -18,11 +18,13 @@ import com.navix.collections.repository.CollectionCaseRepository;
 import com.navix.collections.repository.SettlementRepository;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.loan.LoanDirectory;
+import com.navix.common.loan.LoanSummary;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
 import com.navix.common.staff.StaffDirectory;
 import com.navix.common.staff.StaffSummary;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -221,6 +223,32 @@ class SettlementServiceTest {
         assertThat(views.get(1).approvedByName()).isEqualTo("Arjun Patel");
         verify(staffDirectory, times(1)).namesFor(any());
         verify(staffDirectory, never()).findStaff(anyLong());
+    }
+
+    @Test
+    void listAllCarriesTheBorrowerAndLoanBehindEachCase() {
+        when(settlementRepository.findAll(any(org.springframework.data.domain.Sort.class)))
+                .thenReturn(java.util.List.of(proposedByOfficer()));
+        when(staffDirectory.namesFor(any())).thenReturn(java.util.Map.of(9L, "Sana Khan"));
+        CollectionCase c = new CollectionCase();
+        c.setId(caseId);
+        c.setLoanId(42L);
+        when(caseRepository.findAllById(any())).thenReturn(java.util.List.of(c));
+        when(loanDirectory.findLoans(any())).thenReturn(java.util.Map.of(42L, new LoanSummary(
+                42L, 7L, 1L, "OVERDUE", 1_000_000L, 882_000L, 1_270_000L, 1_300_000L,
+                LocalDate.now().minusDays(40), LocalDate.now().minusDays(10), "Ravi Kumar",
+                "ABXXXXX34F", "9876543210", "Acme Corp", "SALARIED", 4_000_000L, "HDFC", false)));
+
+        SettlementView v = service.listAll().get(0);
+
+        assertThat(v.loanId()).isEqualTo(42L);
+        assertThat(v.customerId()).isEqualTo(7L);
+        assertThat(v.borrowerName()).isEqualTo("Ravi Kumar");
+        assertThat(v.mobile()).isEqualTo("9876543210");
+        assertThat(v.outstandingPaise()).isEqualTo(1_300_000L);
+        assertThat(v.dpd()).isGreaterThan(0);
+        verify(loanDirectory, times(1)).findLoans(any());
+        verify(loanDirectory, never()).findLoan(anyLong());
     }
 
     /**

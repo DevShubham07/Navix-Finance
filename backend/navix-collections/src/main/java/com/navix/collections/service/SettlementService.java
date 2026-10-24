@@ -23,6 +23,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -48,6 +51,11 @@ public class SettlementService {
 
     /** Role that approves a settlement (collections management). */
     private static final String MANAGER_ROLE = "COLLECTION_HEAD";
+
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
+
+    /** Stateless; DPD on the settlements register is computed on read like everywhere else. */
+    private static final DpdCalculator DPD = new DpdCalculator();
 
     private final SettlementRepository settlementRepository;
     private final CollectionCaseRepository caseRepository;
@@ -235,31 +243,61 @@ public class SettlementService {
         }
         staffIds.removeIf(Objects::isNull);
         Map<Long, String> names = staffDirectory.namesFor(staffIds);
-        return settlements.stream().map(s -> toView(s, names)).toList();
+        // Borrower + loan behind each case, batched: one case read and one loan read for the page.
+        Set<UUID> caseIds = new HashSet<>();
+        settlements.forEach(s -> caseIds.add(s.getCollectionCaseId()));
+        Map<UUID, Long> loanByCase = new HashMap<>();
+        for (CollectionCase c : caseRepository.findAllById(caseIds)) {
+            if (c.getLoanId() != null) {
+                loanByCase.put(c.getId(), c.getLoanId());
+            }
+        }
+        Map<Long, LoanSummary> loans = loanByCase.isEmpty() ? Map.of()
+                : loanDirectory.findLoans(new HashSet<>(loanByCase.values()));
+        return settlements.stream().map(s -> toView(s, names, loanByCase, loans)).toList();
     }
 
     private SettlementView toView(Settlement s) {
-        SettlementStatus status = s.getStatus() != null ? s.getStatus() : SettlementStatus.PROPOSED;
-        return new SettlementView(
-                s.getId(), s.getCollectionCaseId(), s.getSettlementAmount(),
-                s.getProposedBy(), staffName(s.getProposedBy()),
-                s.getApprovedBy(), staffName(s.getApprovedBy()),
-                s.getRejectedBy(), staffName(s.getRejectedBy()),
-                status.name(),
-                s.getCreatedAt(), s.getApprovedAt(), s.getRejectedAt());
+        Long loanId = caseRepository.findById(s.getCollectionCaseId())
+                .map(CollectionCase::getLoanId).orElse(null);
+        LoanSummary loan = loanId == null ? null : loanDirectory.findLoan(loanId).orElse(null);
+        return view(s, staffName(s.getProposedBy()), staffName(s.getApprovedBy()),
+                staffName(s.getRejectedBy()), loanId, loan);
     }
 
     /** Batched variant of {@link #toView(Settlement)} for {@link #listAll()} — reads pre-resolved
      *  names instead of hitting {@link StaffDirectory#findStaff} up to three times per row. */
-    private SettlementView toView(Settlement s, Map<Long, String> names) {
+    private SettlementView toView(Settlement s, Map<Long, String> names, Map<UUID, Long> loanByCase,
+                                  Map<Long, LoanSummary> loans) {
+        Long loanId = loanByCase.get(s.getCollectionCaseId());
+        return view(s,
+                s.getProposedBy() == null ? null : names.get(s.getProposedBy()),
+                s.getApprovedBy() == null ? null : names.get(s.getApprovedBy()),
+                s.getRejectedBy() == null ? null : names.get(s.getRejectedBy()),
+                loanId, loanId == null ? null : loans.get(loanId));
+    }
+
+    private static SettlementView view(Settlement s, String proposedByName, String approvedByName,
+                                       String rejectedByName, Long loanId, LoanSummary loan) {
         SettlementStatus status = s.getStatus() != null ? s.getStatus() : SettlementStatus.PROPOSED;
+        int dpd = loan == null || loan.dueDate() == null ? 0
+                : DPD.daysPastDue(loan.dueDate(), LocalDate.now(IST));
         return new SettlementView(
                 s.getId(), s.getCollectionCaseId(), s.getSettlementAmount(),
-                s.getProposedBy(), s.getProposedBy() == null ? null : names.get(s.getProposedBy()),
-                s.getApprovedBy(), s.getApprovedBy() == null ? null : names.get(s.getApprovedBy()),
-                s.getRejectedBy(), s.getRejectedBy() == null ? null : names.get(s.getRejectedBy()),
+                s.getProposedBy(), proposedByName,
+                s.getApprovedBy(), approvedByName,
+                s.getRejectedBy(), rejectedByName,
                 status.name(),
-                s.getCreatedAt(), s.getApprovedAt(), s.getRejectedAt());
+                s.getCreatedAt(), s.getApprovedAt(), s.getRejectedAt(),
+                loanId,
+                loan == null ? null : loan.customerId(),
+                loan == null ? null : loan.borrowerName(),
+                loan == null ? null : loan.mobile(),
+                loan == null ? null : loan.status(),
+                loan == null ? null : loan.principalPaise(),
+                loan == null ? null : loan.outstandingPaise(),
+                loan == null ? null : loan.dueDate(),
+                dpd, DPD.bucket(dpd));
     }
 
     private String staffName(Long staffId) {

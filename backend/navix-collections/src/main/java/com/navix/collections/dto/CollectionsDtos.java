@@ -148,6 +148,10 @@ public final class CollectionsDtos {
     /**
      * A settlement with proposer/approver/rejecter resolved to real staff names (the bigint
      * ids are kept too) plus its maker-checker {@code status}. Built by {@code SettlementService}.
+     *
+     * <p>The trailing fields describe the borrower and loan behind the case, so the approver sees
+     * who is being settled and against what balance without opening the case. They are null (and
+     * {@code dpd} zero) when the loan cannot be resolved.
      */
     public record SettlementView(
             UUID id,
@@ -162,7 +166,17 @@ public final class CollectionsDtos {
             String status,
             Instant createdAt,
             Instant approvedAt,
-            Instant rejectedAt) {
+            Instant rejectedAt,
+            Long loanId,
+            Long customerId,
+            String borrowerName,
+            String mobile,
+            String loanStatus,
+            Long principalPaise,
+            Long outstandingPaise,
+            LocalDate dueDate,
+            int dpd,
+            DpdBucket bucket) {
     }
 
     /** Live DPD helper result: days-past-due plus the derived bucket. */
