@@ -116,9 +116,45 @@ public class ApplicationController {
             @RequestParam(required = false)
             @org.springframework.format.annotation.DateTimeFormat(
                     iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate to,
-            @RequestParam(required = false) String q) {
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) Boolean mine) {
         requireStaff();
-        return ApiResponse.ok(enrich(flow.byStatus(status, from, to, q)));
+        return ApiResponse.ok(enrich(scopeToActor(flow.byStatus(status, from, to, q), Boolean.TRUE.equals(mine))));
+    }
+
+    /**
+     * Narrow a stage queue to the caller's own files, by working role. The flow service already
+     * scopes a Credit Executive to their assigned files; this adds the two roles whose "own" files are
+     * recorded outside {@code loan_application}:
+     * <ul>
+     *   <li>a <b>Collection Executive</b> always sees only the loans whose collections case is
+     *       assigned to them (their repayment book, open and closed) — never the whole book;</li>
+     *   <li>a <b>Disbursement Head</b> asking for {@code mine=true} (their past-disbursed history)
+     *       sees only the files they released, read off the event trail.</li>
+     * </ul>
+     * Other roles, and a Disbursement Head reading their live desk, get the queue unchanged.
+     */
+    private List<LoanApplication> scopeToActor(List<LoanApplication> apps, boolean mine) {
+        var actor = ActorContext.get();
+        String role = actor.effectiveRole();
+        if (apps.isEmpty() || !("COLLECTION_EXECUTIVE".equals(role) || (mine && "DISBURSEMENT_HEAD".equals(role)))) {
+            return apps;
+        }
+        Long me;
+        try {
+            me = Long.valueOf(actor.id());
+        } catch (RuntimeException e) {
+            return List.of();
+        }
+        if ("COLLECTION_EXECUTIVE".equals(role)) {
+            java.util.Set<Long> myLoans = collectionCaseDirectory.loanIdsAssignedTo(me);
+            return apps.stream().filter(a -> a.getLoanId() != null && myLoans.contains(a.getLoanId())).toList();
+        }
+        Map<Long, ApplicationActorDirectory.HandledBy> handled =
+                applicationActorDirectory.byApplicationId(apps.stream().map(LoanApplication::getId).toList());
+        return apps.stream()
+                .filter(a -> me.equals(handled.getOrDefault(a.getId(), ApplicationActorDirectory.HandledBy.NONE).disbursedById()))
+                .toList();
     }
 
     /** Credit Head queue: KYC-approved applications the borrower has applied on (credit-enriched).
