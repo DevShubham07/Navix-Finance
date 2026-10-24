@@ -60,11 +60,12 @@ public class LoanMath {
     public static final int TERM_DAYS = 30;
 
     /**
-     * Grace after the due date before any penalty accrues, for loans disbursed <b>from now on</b>.
-     * Stamped onto {@code loan.grace_days} at disbursal; the pricing reads the row, never this
-     * constant, so changing it never touches a loan that already exists.
+     * Grace after the due date before any penalty accrues, for loans disbursed <b>from now on</b>:
+     * none — the penalty starts the day after the salary day. Stamped onto {@code loan.grace_days} at
+     * disbursal; the pricing reads the row, never this constant, so loans disbursed before V91 keep
+     * the 1 day they were given.
      */
-    public static final int SALARY_GRACE_DAYS = 1;
+    public static final int SALARY_GRACE_DAYS = 0;
 
     /** Floor on a sanctioned advance: ₹1,000 = 100,000 paise. */
     public static final long MIN_LOAN_PAISE = 100_000L;
@@ -129,8 +130,8 @@ public class LoanMath {
      *
      * <p>{@code outstanding = principal + interest(daysHeld) + penalty(daysLate) − payments}.
      * Prepayment falls out naturally: pass the actual days held so interest is charged only to
-     * the day paid. {@code daysLate} is 0 until the due date (the 1-day grace is applied by the
-     * caller, e.g. paying the day after salary passes {@code daysLate = 0}).
+     * the day paid. {@code daysLate} is 0 until the due date (the loan's own {@code grace_days} is
+     * applied by the caller, {@code RepaymentService.breakdown}).
      *
      * @param principalPaise principal in paise
      * @param daysHeld       whole days from disbursement to the as-of date (interest accrues)

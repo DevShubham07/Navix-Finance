@@ -132,7 +132,7 @@ navix_final/
 │   ├── navix-storage/            # S3 abstraction (presign)
 │   ├── navix-notification/       # ★ notification engine: events→dispatcher→in-app/SMS/email
 │   ├── navix-app/                # ★ the only bootable module; JwtAuthFilter, SecurityConfig, Flyway
-│   │   └── src/main/resources/db/migration/   # V1..V90 (the REAL schema lives here — see §10)
+│   │   └── src/main/resources/db/migration/   # V1..V91 (the REAL schema lives here — see §10)
 │   └── pom.xml                   # parent BOM
 ├── frontend/
 │   └── src/
@@ -327,10 +327,12 @@ via reject-lead, admin-only).
   records the previous and new assignee and keeps the application in `CREDIT_EXEC_PENDING`.
 - **The salary grace is per loan** (`loan.grace_days`, V90), stamped at disbursal from
   `LoanMath.SALARY_GRACE_DAYS` and read from the row by the one pricing formula
-  (`RepaymentService.breakdown`) — so changing the constant never touches an existing loan. A loan
-  with grace 1 (every loan disbursed before V90) accrues interest through the salary day and one more
-  day with no penalty; 2%/day penalty starts the day after that. A loan with grace 0 accrues interest
-  through the salary day and the penalty starts the very next day. Penalty is capped at 30 days.
+  (`RepaymentService.breakdown`) — so changing the constant never touches an existing loan. The
+  constant is **0** since V91 (2026-10-24): every loan disbursed from then on, and every loan that had
+  not reached its due date on that day, has grace 0 — interest through the salary day, 2%/day penalty
+  from the very next day. Loans that were already due or closed on that day keep grace 1 — interest
+  through the salary day and one more day with no penalty, penalty from the day after that — so no
+  accrued figure ever moved. Penalty is capped at 30 days.
 - The DPD bucket is computed-on-read, never stored.
 
 ---
@@ -585,7 +587,7 @@ A staffer picks a **working role** from a pill in the header (initials avatar on
 Canonical **integer-paise** engine (`long` paise, `BigDecimal` rates, `HALF_UP`). Constants:
 `PROCESSING_FEE_RATE=0.10`, `GST_RATE=0.18`, `DAILY_INTEREST_RATE=0.01`, `LATE_PENALTY_RATE=0.02`,
 `LATE_PENALTY_CAP_DAYS=30`, `LIMIT_PCT_OF_SALARY=0.25`, `LIMIT_ROUNDING_PAISE=10_000` (₹100),
-`MIN_LOAN_PAISE=100_000` (₹1,000), `MAX_TERM_DAYS=40`, `SALARY_GRACE_DAYS=1`.
+`MIN_LOAN_PAISE=100_000` (₹1,000), `MAX_TERM_DAYS=40`, `SALARY_GRACE_DAYS=0`.
 
 - `processingFeePaise` = round(principal × 0.10); `gstPaise` = round(fee × 0.18).
 - `netDisbursedPaise` = principal − fee − GST  *(what the borrower receives)*.
@@ -619,7 +621,7 @@ Flyway migrations live in **`backend/navix-app/src/main/resources/db/migration/`
 navix-common). Applied on every boot:
 
 Flyway migrations live in **`backend/navix-app/src/main/resources/db/migration/`** (not
-navix-common) and are applied on every boot — **V1..V90** today. Each file carries a header comment
+navix-common) and are applied on every boot — **V1..V91** today. Each file carries a header comment
 explaining *why* it exists; that is the source of truth. The index is
 [`docs/MIGRATIONS.md`](docs/MIGRATIONS.md).
 
@@ -811,7 +813,7 @@ The rules that survive outside that file:
 - **[`docs/API_SURFACE.md`](docs/API_SURFACE.md)** — the full endpoint map (controllers still win).
 - **[`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md)** — Signzy / Digitap / Fintrix / SES / UltronSMS:
   capability routing, auth, hosts, live-test status, per-API gotchas.
-- **[`docs/MIGRATIONS.md`](docs/MIGRATIONS.md)** — the V1..V90 Flyway catalog.
+- **[`docs/MIGRATIONS.md`](docs/MIGRATIONS.md)** — the V1..V91 Flyway catalog.
 - **[`docs/whatsapp/WHATSAPP_GUIDE.md`](docs/whatsapp/WHATSAPP_GUIDE.md)** — borrower messaging: WhatsApp
   (SmartChat — API quirks, template catalogue, backlog), SMS (UltronSMS) and DLT in one place.
 

@@ -65,7 +65,7 @@ public class Loan extends BaseAuditEntity {
 
     /**
      * Penalty-free days after the due date (interest still accrues over them). Frozen per loan at
-     * disbursal from {@code LoanMath.SALARY_GRACE_DAYS}; legacy loans carry 1 (V90). The Java default
+     * disbursal from {@code LoanMath.SALARY_GRACE_DAYS}; loans disbursed before V91 carry 1 (V90/V91). The Java default
      * is 1 too, so a {@code new Loan()} in a test prices like a legacy loan — only
      * {@code LoanService.disburse} stamps the current policy.
      */
