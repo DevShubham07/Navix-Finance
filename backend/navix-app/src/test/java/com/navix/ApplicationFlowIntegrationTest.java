@@ -221,6 +221,10 @@ class ApplicationFlowIntegrationTest {
                 .containsExactly(submitted);
         // The submitted file's own customer never matches itself.
         assertThat(profileRepository.findSubmittedApplicationIdsByAadhaarForOtherCustomers(aadhaar, 41L)).isEmpty();
+        // An earlier file rejected for identity fraud is not evidence of who owns the number.
+        jdbc.update("insert into application_rejection (application_id, customer_id, reason_code, auto, created_at, created_by)"
+                + " values (?, 41, 'FRAUD_REJECTED', true, now(), 'test')", submitted);
+        assertThat(profileRepository.findSubmittedApplicationIdsByAadhaarForOtherCustomers(aadhaar, 43L)).isEmpty();
     }
 
     private long createApplication(long customerId) throws Exception {

@@ -355,9 +355,10 @@ How a real applicant moves through the product — this is now the **designed, b
    from the borrower's `verify/summary`), that **blocks `sanction`** (`AADHAAR_DUPLICATE_UNRESOLVED`) until the
    credit team clears it with the ordinary override, so the write is never a "do you hold this number" oracle.
    At **`submit-kyc`**, though, a number already on another customer's **submitted** application (one that ever
-   reached `KYC_PENDING`; abandoned drafts don't count) **auto-rejects** the file as **`AADHAAR_DUPLICATE`**
-   with a **permanent** block (`INDEFINITE`); the register detail names the earlier customer + application,
-   the borrower sees only `/application-rejected`. Full 12-digit number only — a masked Aadhaar (4 digits)
+   reached `KYC_PENDING` and was not itself `FRAUD_REJECTED`; abandoned drafts don't count) **auto-rejects** a
+   `DRAFT` file as **`AADHAAR_DUPLICATE`** with a **permanent** block (`INDEFINITE`); the register detail names
+   the earlier customer + application, while the borrower-readable event is the generic `AUTO_REJECT_IDENTITY`
+   and the borrower sees only `/application-rejected`. Full 12-digit number only — a masked Aadhaar (4 digits)
    is never matched against past cases;
    **locked** — `AADHAAR_LOCKED` — once the PAN check or DigiLocker has read it or the file leaves `DRAFT`, so
    a number cannot be swapped behind a recorded verdict)

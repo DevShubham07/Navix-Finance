@@ -489,7 +489,9 @@ public class ApplicationVerificationService {
         LoanApplication app = applicationRepo.findById(appId).orElse(null);
         CustomerProfile profile = profileRepo.findByApplicationId(appId).orElse(null);
         String aadhaar = profile == null ? null : com.navix.common.util.Aadhaar.normalize(profile.getAadhaar());
-        if (app == null || isBlank(aadhaar) || !app.getStatus().canTransitionTo(ApplicationStatus.REJECTED)) {
+        // Only a DRAFT being submitted: submit-kyc is also staff-callable, and must never reject a file
+        // already past intake.
+        if (app == null || isBlank(aadhaar) || app.getStatus() != ApplicationStatus.DRAFT) {
             return null;
         }
         List<Long> earlier = profileRepo.findSubmittedApplicationIdsByAadhaarForOtherCustomers(aadhaar, app.getCustomerId());
@@ -502,7 +504,7 @@ public class ApplicationVerificationService {
                 + " already used by customer #" + earlierCustomerId + " (application #" + earlierAppId + ")"
                 + (earlier.size() > 1 ? " and " + (earlier.size() - 1) + " more application(s)" : "");
         LoanApplication rejected = flow.autoRejectSystem(appId, ApplicationRejection.AADHAAR_DUPLICATE, detail,
-                ApplicationRejection.INDEFINITE, "Identity check failed");
+                ApplicationRejection.INDEFINITE, "AUTO_REJECT_IDENTITY", "Identity check failed");
         log.info("application={} auto-rejected AADHAAR_DUPLICATE (earlier application={})", appId, earlierAppId);
         return rejected;
     }

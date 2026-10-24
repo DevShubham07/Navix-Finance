@@ -478,15 +478,16 @@ public class ApplicationFlowService {
 
     /**
      * {@link #autoRejectSystem(Long, String, String, int)} with an explicit block end (e.g.
-     * {@link ApplicationRejection#INDEFINITE}) and separate event notes: the register {@code detail} is
-     * staff-only, while the {@code application_event} notes are readable by the borrower.
+     * {@link ApplicationRejection#INDEFINITE}) and a separate event action + notes: the register
+     * {@code reasonCode}/{@code detail} are staff-only, while the {@code application_event} action and notes
+     * are readable by the borrower, so a rule that must not name itself passes a generic {@code AUTO_REJECT_*}.
      */
     @Transactional
     public LoanApplication autoRejectSystem(Long appId, String reasonCode, String detail, Instant blockedUntil,
-                                            String eventNotes) {
+                                            String eventAction, String eventNotes) {
         LoanApplication app = require(appId);
         recordRejection(app, reasonCode, detail, true, blockedUntil);
-        transition(app, ApplicationStatus.REJECTED, "AUTO_REJECT_" + reasonCode, eventNotes, blockedUntil);
+        transition(app, ApplicationStatus.REJECTED, eventAction, eventNotes, blockedUntil);
         return applicationRepository.save(app);
     }
 

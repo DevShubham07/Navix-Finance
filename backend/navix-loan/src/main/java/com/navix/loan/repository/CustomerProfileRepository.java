@@ -63,12 +63,15 @@ public interface CustomerProfileRepository extends JpaRepository<CustomerProfile
      * The OTHER customers' applications holding this Aadhaar number that were actually submitted (ever
      * reached {@code KYC_PENDING}), newest first — what the submit-kyc duplicate rule rejects on. An
      * abandoned draft does not count: anyone can type a number into one, and that must not get the
-     * number's real owner rejected later (those still raise the silent {@code AADHAAR_DUPLICATE} flag).
+     * number's real owner rejected later (those still raise the silent {@code AADHAAR_DUPLICATE} flag) —
+     * and neither does a file itself rejected as {@code FRAUD_REJECTED}, whose identity documents disagreed.
      */
     @Query("select a.id from CustomerProfile p, LoanApplication a "
             + "where p.applicationId = a.id and p.aadhaar = :aadhaar and a.customerId <> :customerId "
             + "and exists (select e.id from ApplicationEvent e where e.applicationId = a.id "
             + "and e.toStatus = com.navix.loan.domain.ApplicationStatus.KYC_PENDING) "
+            + "and not exists (select r.id from ApplicationRejection r where r.applicationId = a.id "
+            + "and r.reasonCode = 'FRAUD_REJECTED') "
             + "order by a.id desc")
     java.util.List<Long> findSubmittedApplicationIdsByAadhaarForOtherCustomers(
             @Param("aadhaar") String aadhaar, @Param("customerId") Long customerId);

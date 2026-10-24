@@ -3036,7 +3036,7 @@ class ApplicationVerificationServiceTest {
         earlier.setCustomerId(812L);
         when(applicationRepo.findById(1934L)).thenReturn(Optional.of(earlier));
         LoanApplication rejected = appWithStatus(APP, ApplicationStatus.REJECTED);
-        when(flow.autoRejectSystem(eq(APP), anyString(), anyString(), any(java.time.Instant.class), anyString()))
+        when(flow.autoRejectSystem(eq(APP), anyString(), anyString(), any(java.time.Instant.class), anyString(), anyString()))
                 .thenReturn(rejected);
 
         assertThat(service.rejectIfAadhaarDuplicate(APP)).isSameAs(rejected);
@@ -3044,7 +3044,8 @@ class ApplicationVerificationServiceTest {
         org.mockito.ArgumentCaptor<String> detail = org.mockito.ArgumentCaptor.forClass(String.class);
         org.mockito.ArgumentCaptor<String> notes = org.mockito.ArgumentCaptor.forClass(String.class);
         verify(flow).autoRejectSystem(eq(APP), eq(com.navix.loan.entity.ApplicationRejection.AADHAAR_DUPLICATE),
-                detail.capture(), eq(com.navix.loan.entity.ApplicationRejection.INDEFINITE), notes.capture());
+                detail.capture(), eq(com.navix.loan.entity.ApplicationRejection.INDEFINITE),
+                eq("AUTO_REJECT_IDENTITY"), notes.capture());
         assertThat(detail.getValue()).contains("customer #812").contains("application #1934")
                 .doesNotContain("234567890124");
         // The borrower can read event notes: no other customer's reference there.
@@ -3063,6 +3064,18 @@ class ApplicationVerificationServiceTest {
 
         p.setAadhaar(null);
         assertThat(service.rejectIfAadhaarDuplicate(APP)).isNull();
-        verify(flow, never()).autoRejectSystem(any(), any(), any(), any(java.time.Instant.class), any());
+        verify(flow, never()).autoRejectSystem(any(), any(), any(), any(java.time.Instant.class), any(), any());
+    }
+
+    @Test
+    void neverRejectsAFileAlreadyPastIntake() {
+        CustomerProfile p = profile();
+        p.setAadhaar("234567890124");
+        LoanApplication pending = appWithStatus(APP, ApplicationStatus.CREDIT_EXEC_PENDING);
+        pending.setCustomerId(7L);
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(pending));
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        assertThat(service.rejectIfAadhaarDuplicate(APP)).isNull();
+        verify(profileRepo, never()).findSubmittedApplicationIdsByAadhaarForOtherCustomers(any(), any());
     }
 }
