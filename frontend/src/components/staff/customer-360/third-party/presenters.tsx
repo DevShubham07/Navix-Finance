@@ -132,11 +132,13 @@ export function PanBody({ step: s, aadhaar }: Body) {
 
 /**
  * Aadhaar–PAN linkage (lib/staff/aadhaar-pan-link.ts): the two identifiers side by side, joined by
- * the link the PAN provider reported.
+ * the link status. "Unconfirmed" when the PAN provider reports a link that has not been tied to this
+ * customer's own Aadhaar number (e.g. none on file).
  */
 export function AadhaarPanLinkBody({ step: s }: Body) {
   const d = s.derived as D;
   const linked = d.linked === true;
+  const unconfirmed = d.linked == null;
   const Id = ({ label, value }: { label: string; value: unknown }) => (
     <div className="min-w-0 flex-1 rounded border border-line bg-neutral-50 px-3 py-2">
       <div className="text-[8.8px] font-semibold uppercase tracking-wide text-info-500">{label}</div>
@@ -150,13 +152,16 @@ export function AadhaarPanLinkBody({ step: s }: Body) {
           <Id label="Aadhaar number" value={d.aadhaarNumber} />
           <div className="flex shrink-0 flex-col items-center gap-1 px-1">
             <Link2 size={16} className={linked ? "text-success-700" : "text-black"} />
-            {pill(linked ? "Linked" : "Not linked", linked ? "success" : "error")}
+            {pill(linked ? "Linked" : unconfirmed ? "Unconfirmed" : "Not linked", linked ? "success" : unconfirmed ? "warning" : "error")}
           </div>
           <Id label="PAN number" value={d.panNumber} />
         </div>
       </CardShell>
       <StatusCard title="Verification Status" rows={[
-        { icon: Link2, label: "Aadhaar linked to PAN", pill: yn(d.linked) },
+        { icon: Link2, label: "Aadhaar linked to PAN", pill: unconfirmed ? pill("Unconfirmed", "warning") : yn(d.linked) },
+        ...(unconfirmed && d.panReportsLinked != null
+          ? [{ icon: Link2, label: "PAN record reports a link", pill: yn(d.panReportsLinked) }]
+          : []),
         { icon: BadgeCheck, label: "Status", pill: pill(s.status === "PASS" ? "Success" : statusLabel(s), statusVariant(s)) },
         { icon: CalendarClock, label: "Last updated", pill: checkedAt(s) ? pill(checkedAt(s)) : null },
       ]} />

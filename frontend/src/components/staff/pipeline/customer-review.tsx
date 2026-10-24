@@ -106,7 +106,7 @@ export function CustomerReview({ applicationId }: { applicationId: number }) {
         </dl>
       )}
 
-      <VerificationChecksPanel applicationId={applicationId} />
+      <VerificationChecksPanel applicationId={applicationId} aadhaar={p?.aadhaar} />
 
       <div className="mb-2 mt-5 text-xs font-semibold uppercase tracking-wide text-muted">Documents</div>
       {docsQ.isLoading ? (
