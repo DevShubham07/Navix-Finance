@@ -370,7 +370,9 @@ How a real applicant moves through the product — this is now the **designed, b
    **Fraud rule:** the typed number is cross-checked (positionally, against whatever digits the mask
    reveals — `Aadhaar.matchesMasked`) with the masked Aadhaar the PAN record and DigiLocker return; a
    mismatch auto-rejects the file into the rejection register as **`FRAUD_REJECTED`** (365-day block,
-   `flow.autoRejectSystem`), the borrower sees only "Your application has been rejected"
+   `flow.autoRejectSystem`). The same rule compares the **DOB the borrower entered** at intake with the
+   DigiLocker Aadhaar DOB (`dobMismatch`, at DigiLocker completion — the PAN provider returns no DOB); an
+   Aadhaar DOB of 1 January is compared on the year only (year-of-birth-only records); the borrower sees only "Your application has been rejected"
    (`/application-rejected`), and staff/ADMIN read the full number unmasked on the customer Personal tab
    and the applicant review panel. The `email` screen is a real gate: both the personal and the official address must be
    OTP-confirmed (`emailsSettled`, V52/V65) — distinct from the provider deliverability/employer-match

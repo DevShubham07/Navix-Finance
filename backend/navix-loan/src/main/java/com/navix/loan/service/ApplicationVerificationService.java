@@ -458,6 +458,23 @@ public class ApplicationVerificationService {
     }
 
     /**
+     * The DOB fraud check: null when the two agree or when either side is missing (no DOB entered, or
+     * DigiLocker returned only a year of birth, which {@link #parseDob} does not read as a date);
+     * otherwise a staff-readable description of the disagreement. An Aadhaar DOB of 1 January is
+     * compared on the year alone: a record holding only a year of birth is rendered as 01/01/YYYY, and
+     * the borrower's true date must not read as fraud.
+     */
+    static String dobMismatch(LocalDate entered, LocalDate aadhaar) {
+        if (entered == null || aadhaar == null || entered.equals(aadhaar)) {
+            return null;
+        }
+        if (aadhaar.getDayOfYear() == 1 && entered.getYear() == aadhaar.getYear()) {
+            return null;
+        }
+        return "date of birth entered " + entered + ", Aadhaar " + aadhaar;
+    }
+
+    /**
      * Auto-reject into the register as {@link ApplicationRejection#FRAUD_REJECTED} with the
      * {@link ApplicationFlowService#FRAUD_REJECT_BLOCK_DAYS} block. Guarded on the state machine: the
      * PAN check also runs from the staff retry button on files that are no longer rejectable (e.g.
@@ -465,16 +482,21 @@ public class ApplicationVerificationService {
      * decides. Never lets a rejection failure fail the check that found the problem.
      */
     private void rejectForAadhaarMismatch(Long appId, String source, String mismatch) {
+        rejectForIdentityMismatch(appId, "Aadhaar number entered does not match the " + source + " (" + mismatch + ")",
+                source);
+    }
+
+    /** {@link #rejectForAadhaarMismatch} with the register detail spelled out by the caller. */
+    private void rejectForIdentityMismatch(Long appId, String detail, String source) {
         LoanApplication app = applicationRepo.findById(appId).orElse(null);
         if (app == null || !app.getStatus().canTransitionTo(ApplicationStatus.REJECTED)) {
-            log.warn("aadhaar mismatch on application={} in status={} — not rejectable, left for review",
+            log.warn("identity mismatch on application={} in status={} — not rejectable, left for review",
                     appId, app != null ? app.getStatus() : null);
             return;
         }
-        flow.autoRejectSystem(appId, ApplicationRejection.FRAUD_REJECTED,
-                "Aadhaar number entered does not match the " + source + " (" + mismatch + ")",
+        flow.autoRejectSystem(appId, ApplicationRejection.FRAUD_REJECTED, detail,
                 ApplicationFlowService.FRAUD_REJECT_BLOCK_DAYS);
-        log.info("application={} auto-rejected FRAUD_REJECTED (aadhaar mismatch vs {})", appId, source);
+        log.info("application={} auto-rejected FRAUD_REJECTED (identity mismatch vs {})", appId, source);
     }
 
     /**
@@ -1067,8 +1089,12 @@ public class ApplicationVerificationService {
         }
 
         // Aadhaar is the authoritative DOB source — persist it onto the profile (overriding any
-        // earlier PAN-derived value) so the borrower's stored date of birth reflects KYC.
+        // earlier PAN-derived value) so the borrower's stored date of birth reflects KYC. First compare
+        // it with the DOB the borrower entered at intake: a disagreement is the same fraud rule as an
+        // Aadhaar-number mismatch below.
         LocalDate aadhaarDob = parseDob(a.dob());
+        LocalDate enteredDob = profile.getDob();
+        String dobMismatch = dobMismatch(enteredDob, aadhaarDob);
         if (aadhaarDob != null) {
             profile.setDob(aadhaarDob);
         }
@@ -1080,7 +1106,9 @@ public class ApplicationVerificationService {
         // V75: the typed Aadhaar number must agree with the one DigiLocker just fetched (last four
         // digits — the masked form is all the provider returns). A disagreement is the fraud rule, so
         // the card is NOT marked verified and the file is rejected below once the evidence is stored.
-        String aadhaarMismatch = aadhaarMismatch(profile, a.maskedAadhaar());
+        String numberMismatch = aadhaarMismatch(profile, a.maskedAadhaar());
+        String aadhaarMismatch = numberMismatch == null ? dobMismatch
+                : dobMismatch == null ? numberMismatch : numberMismatch + "; " + dobMismatch;
         profile.setAadhaarVerified(aadhaarMismatch == null);
         profileRepo.save(profile);
 
@@ -1134,8 +1162,14 @@ public class ApplicationVerificationService {
         }
 
         Map<String, Object> derived = aadhaarDerived(a);
-        if (aadhaarMismatch != null) {
+        if (numberMismatch != null) {
             derived.put("aadhaarMismatch", true);
+        }
+        if (dobMismatch != null) {
+            derived.put("dobMismatch", true);
+            derived.put("enteredDob", enteredDob.toString());
+        }
+        if (aadhaarMismatch != null) {
             derived.put("applicationRejected", true);
         }
         ApplicationVerification row = upsert(appId, AADHAAR, aadhaarMismatch == null ? PASS : FAIL,
@@ -1149,7 +1183,8 @@ public class ApplicationVerificationService {
             verificationRepo.save(row);
         }
         if (aadhaarMismatch != null) {
-            rejectForAadhaarMismatch(appId, "Aadhaar DigiLocker returned", aadhaarMismatch);
+            rejectForIdentityMismatch(appId, "Details entered do not match the Aadhaar DigiLocker returned ("
+                    + aadhaarMismatch + ")", "DigiLocker Aadhaar");
         }
         // Signzy's requestId is single-use consent state, not customer data. Clear it from the
         // profile and replace the temporary DIGILOCKER row so it cannot be retained in CRM/audits.

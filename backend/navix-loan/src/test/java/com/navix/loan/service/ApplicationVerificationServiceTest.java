@@ -3078,4 +3078,60 @@ class ApplicationVerificationServiceTest {
         assertThat(service.rejectIfAadhaarDuplicate(APP)).isNull();
         verify(profileRepo, never()).findSubmittedApplicationIdsByAadhaarForOtherCustomers(any(), any());
     }
+
+    // ---- DOB fraud rule at DigiLocker completion ----
+
+    private CustomerProfile digilockerReady(LocalDate enteredDob) {
+        CustomerProfile p = profile();
+        p.setDigilockerClientId("CL1");
+        p.setDob(enteredDob);
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(verification.digilockerAadhaar("CL1")).thenReturn(aadhaar("XXXXXXXX1234"));
+        LoanApplication sanctioned = appWithStatus(APP, ApplicationStatus.SANCTIONED);
+        lenient().when(applicationRepo.findById(APP)).thenReturn(Optional.of(sanctioned));
+        return p;
+    }
+
+    @Test
+    void digilockerComplete_dobEnteredDiffersFromAadhaar_rejectsAsFraud() {
+        CustomerProfile p = digilockerReady(LocalDate.of(2003, 4, 24));   // Aadhaar says 2003-03-24
+
+        var result = service.digilockerComplete(APP);
+
+        assertThat(result.status()).isEqualTo("FAIL");
+        assertThat(result.derived()).containsEntry("dobMismatch", true)
+                .containsEntry("enteredDob", "2003-04-24")
+                .containsEntry("applicationRejected", true)
+                .doesNotContainKey("aadhaarMismatch");
+        assertThat(p.getAadhaarVerified()).isFalse();
+        org.mockito.ArgumentCaptor<String> detail = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(flow).autoRejectSystem(eq(APP), eq(com.navix.loan.entity.ApplicationRejection.FRAUD_REJECTED),
+                detail.capture(), eq(ApplicationFlowService.FRAUD_REJECT_BLOCK_DAYS));
+        assertThat(detail.getValue()).contains("2003-04-24").contains("2003-03-24");
+    }
+
+    @Test
+    void digilockerComplete_sameDobOrNoneEntered_doesNotReject() {
+        CustomerProfile p = digilockerReady(LocalDate.of(2003, 3, 24));
+        assertThat(service.digilockerComplete(APP).derived()).doesNotContainKey("dobMismatch");
+        assertThat(p.getAadhaarVerified()).isTrue();
+
+        p.setDob(null);
+        p.setDigilockerClientId("CL1");
+        assertThat(service.digilockerComplete(APP).derived()).doesNotContainKey("dobMismatch");
+        verify(flow, never()).autoRejectSystem(any(), any(), any(), anyInt());
+    }
+
+    @Test
+    void dobMismatch_onlyWhenBothDatesKnownAndDifferent() {
+        LocalDate d = LocalDate.of(2003, 3, 24);
+        assertThat(ApplicationVerificationService.dobMismatch(d, d)).isNull();
+        assertThat(ApplicationVerificationService.dobMismatch(null, d)).isNull();
+        assertThat(ApplicationVerificationService.dobMismatch(d, null)).isNull();   // year-only Aadhaar DOB
+        assertThat(ApplicationVerificationService.dobMismatch(d, d.plusDays(1))).isNotNull();
+        // Year-of-birth-only Aadhaar, rendered 01/01/YYYY: the year decides.
+        LocalDate yobOnly = LocalDate.of(2003, 1, 1);
+        assertThat(ApplicationVerificationService.dobMismatch(d, yobOnly)).isNull();
+        assertThat(ApplicationVerificationService.dobMismatch(d.minusYears(1), yobOnly)).isNotNull();
+    }
 }
