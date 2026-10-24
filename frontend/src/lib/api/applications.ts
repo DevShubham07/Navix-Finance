@@ -414,12 +414,18 @@ export interface LoanView {
   disbursalTxnRef: string | null;
   /** When the loan was settled in full. Null while it is still running. */
   closedOn: string | null;
+  /** Penalty-free days after the due date this loan was written with (1 on legacy loans, 0 on new ones).
+   *  Optional: an older backend omits it, and a missing value reads as 1 (`loanGraceDays`). */
+  graceDays?: number;
 }
+
+/** The loan's grace days, defaulting to the legacy 1 when the backend did not send the field. */
+export const loanGraceDays = (loan: { graceDays?: number } | null | undefined) => loan?.graceDays ?? 1;
 
 /**
  * The three balances the repay screen quotes together: as of the requested day, on the salary day
- * the loan is due, and on the one grace day after it. `due`/`grace` are null when the loan has no
- * due date yet. One call in place of three `outstanding` round trips for the same screen.
+ * the loan is due, and on its grace day after it. `due`/`grace` are null when the loan has no
+ * due date yet; `grace` is also null when the loan carries no grace day. One call in place of three `outstanding` round trips for the same screen.
  */
 export interface OutstandingScheduleView {
   asOf: OutstandingView;
@@ -441,7 +447,7 @@ export interface OutstandingView {
   penaltyPaise?: number;
   verifiedPaise?: number;
   /** The day counts those amounts were charged over — interest capped at the tenure, penalty net
-   *  of the 1-day grace and capped at 30 — so the UI can show "1%/day × 27 days". */
+   *  of the loan's grace days and capped at 30 — so the UI can show "1%/day × 27 days". */
   interestDays?: number;
   penaltyDays?: number;
 }
@@ -519,6 +525,8 @@ export interface TransactionView {
   proofUrl: string | null;
   /** The loan's repayment (due) date — the same on its disbursal row and every repayment against it. */
   repaymentDate: string | null;
+  /** The loan's penalty-free days after that date (1 on legacy loans); missing reads as 1. */
+  graceDays?: number;
 }
 
 /**

@@ -466,6 +466,43 @@ class RepaymentServiceTest {
     }
 
     @Test
+    void noGraceChargesPenaltyFromTheDayAfterDue() {
+        // A loan written without a grace day (grace_days = 0): interest stops at the due date and the
+        // 2%/day penalty starts the very next day — no extra interest day, no penalty-free day.
+        Loan loan = activeLoan();
+        loan.setGraceDays(0);
+        when(loanRepository.findById(1L)).thenReturn(Optional.of(loan));
+        when(paymentRepository.sumAmountByLoanIdAndStatus(eq(1L), eq(PaymentStatus.VERIFIED))).thenReturn(0L);
+
+        var due = repaymentService.outstandingBreakdownAsOf(1L, DUE);
+        var dayAfter = repaymentService.outstandingBreakdownAsOf(1L, DUE.plusDays(1));
+        var fiveLate = repaymentService.outstandingBreakdownAsOf(1L, DUE.plusDays(5));
+
+        assertThat(due.outstandingPaise()).isEqualTo(1_270_000L);
+        assertThat(dayAfter.interestDays()).isEqualTo(27);
+        assertThat(dayAfter.penaltyDays()).isEqualTo(1);
+        assertThat(dayAfter.outstandingPaise()).isEqualTo(1_290_000L); // 27d interest + 2% × 1
+        assertThat(fiveLate.outstandingPaise()).isEqualTo(1_370_000L); // 27d interest + 2% × 5
+    }
+
+    @Test
+    void legacyGraceLoanPricesExactlyAsTheOldConstantFormula() {
+        // Oracle: the pre-V90 formula with its hardcoded 1-day grace, for every day from disbursal to
+        // 40 days past due. A legacy loan (grace_days = 1) must reproduce it to the paise.
+        when(loanRepository.findById(1L)).thenReturn(Optional.of(activeLoan()));
+        when(paymentRepository.sumAmountByLoanIdAndStatus(eq(1L), eq(PaymentStatus.VERIFIED))).thenReturn(0L);
+        long principal = 1_000_000L;
+        int tenure = 27;
+        for (int d = 0; d <= tenure + 40; d++) {
+            int interestDays = Math.min(d, tenure + 1);
+            int penaltyDays = Math.max(0, Math.max(0, d - tenure) - 1);
+            long oracle = principal + principal * interestDays / 100 + principal * 2 * Math.min(penaltyDays, 30) / 100;
+            assertThat(repaymentService.outstandingAsOf(1L, DISBURSED.plusDays(d)))
+                    .as("day %d since disbursal", d).isEqualTo(oracle);
+        }
+    }
+
+    @Test
     void outstandingBreakdownItemizesInterestAndPenalty() {
         when(loanRepository.findById(1L)).thenReturn(Optional.of(activeLoan()));
         when(paymentRepository.sumAmountByLoanIdAndStatus(eq(1L), eq(PaymentStatus.VERIFIED))).thenReturn(0L);

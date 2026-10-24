@@ -150,12 +150,12 @@ public class DashboardService {
      *
      * <p>Not {@code loan.total_repayable}: that is fixed at disbursal as principal + interest to the
      * due date, so a loan prepaid early (interest stops on the day it is paid) reads as under-collected
-     * even when fully repaid, and a late one (grace-day interest + 2%/day penalty) reads as over 100%.
+     * even when fully repaid, and a late one (any grace-day interest + 2%/day penalty) reads as over 100%.
      * <ul>
      *   <li>Closed: principal + interest + penalty accrued up to the day it closed (frozen there). A
      *       settlement waiver is not subtracted, so a settled loan shows the shortfall it really had.</li>
      *   <li>Open: the larger of the contractual figure (what falls due on the due date) and what has
-     *       accrued so far (past due: grace-day interest and penalty on top).</li>
+     *       accrued so far (past due: penalty, plus grace-day interest on older loans, on top).</li>
      * </ul>
      */
     static long dueAmount(Loan l, OutstandingBreakdown b) {

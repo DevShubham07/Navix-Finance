@@ -8,7 +8,7 @@
  */
 import { daysBetween } from "@/lib/calc/loan-math";
 import { isoDayToLocalDate } from "@/lib/customers/customer-360";
-import type { LoanView, OutstandingView } from "@/lib/api/applications";
+import { loanGraceDays, type LoanView, type OutstandingView } from "@/lib/api/applications";
 
 export type LoanBehaviourKind = "early" | "onTime" | "late" | "veryLate" | "open" | "overdue";
 
@@ -27,8 +27,6 @@ export interface LoanBehaviour {
 
 /** Closed this many days (or more) before the due date = early. */
 export const EARLY_THRESHOLD_DAYS = 3;
-/** Closed up to this many days after the due date (the grace day) still counts as on time. */
-export const ON_TIME_UNTIL_DAYS_AFTER_DUE = 1;
 /** Closed more than this many days after the due date = very late. */
 export const LATE_UNTIL_DAYS_AFTER_DUE = 7;
 
@@ -81,7 +79,7 @@ function judge(loan: LoanView, today: Date, outstanding?: OutstandingView | null
     if (!due || !closedOn) return { kind: "onTime", label: "Paid", daysVsDue: null };
     const d = daysBetween(due, closedOn);
     if (d <= -EARLY_THRESHOLD_DAYS) return { kind: "early", label: `Paid ${plural(-d, "day")} early`, daysVsDue: d };
-    if (d <= ON_TIME_UNTIL_DAYS_AFTER_DUE) return { kind: "onTime", label: "Paid on time", daysVsDue: d };
+    if (d <= loanGraceDays(loan)) return { kind: "onTime", label: "Paid on time", daysVsDue: d };
     if (d <= LATE_UNTIL_DAYS_AFTER_DUE) return { kind: "late", label: `Paid ${plural(d, "day")} late`, daysVsDue: d };
     return { kind: "veryLate", label: `Paid ${plural(d, "day")} late`, daysVsDue: d };
   }

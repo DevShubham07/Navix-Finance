@@ -269,16 +269,16 @@ public class NotificationTemplates {
                         + "again — or reach out if you think this is a mistake.\n\n— DhanBoost");
 
         inApp(NotificationType.PAYMENT_DUE_SOON, "Payment due soon",
-                "Your payment of {amount} is due in {daysToDue} day(s) (by {dueDate}). Pay on your salary "
-                        + "day or the day after — no penalty. Prepay anytime to save on interest.");
+                "Your payment of {amount} is due in {daysToDue} day(s) (by {dueDate}). Pay by your due "
+                        + "date to avoid a late penalty. Prepay anytime to save on interest.");
         sms(NotificationType.PAYMENT_DUE_SOON,
                 "Dear {name}, repayment of {amount} on your DhanBoost loan {loanId} is due on {dueDate}. "
                         + "Pay at https://dhanboost.com/login. - DhanBoost");
         email(NotificationType.PAYMENT_DUE_SOON, "Your DhanBoost payment is due soon",
                 "Hi {name},\n\nYour payment of {amount} on application #{applicationId} is due in "
-                        + "{daysToDue} day(s), by {dueDate}. You can pay on your salary day or the day "
-                        + "after with no penalty — or prepay anytime to save on interest (you only pay "
-                        + "interest up to the day you repay).\n\n— DhanBoost");
+                        + "{daysToDue} day(s), by {dueDate}. Pay by your due date to avoid a late penalty "
+                        + "— or prepay anytime to save on interest (you only pay interest up to the day "
+                        + "you repay).\n\n— DhanBoost");
 
         inApp(NotificationType.PAYMENT_OVERDUE, "Payment overdue",
                 "Your payment of {amount} is overdue by {daysOverdue} day(s). Please pay now — a late "

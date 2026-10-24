@@ -31,6 +31,9 @@ describe("loanBehaviour — closed loans", () => {
   it("the grace day (due + 1) is still on time (boundary)", () => {
     expect(loanBehaviour(closedOn("2026-07-01"), today)).toMatchObject({ kind: "onTime", daysVsDue: 1 });
   });
+  it("due + 1 is late on a loan written without a grace day", () => {
+    expect(loanBehaviour({ ...closedOn("2026-07-01"), graceDays: 0 }, today)).toMatchObject({ kind: "late", label: "Paid 1 day late", daysVsDue: 1 });
+  });
   it("2 days after due is late (boundary)", () => {
     expect(loanBehaviour(closedOn("2026-07-02"), today)).toMatchObject({ kind: "late", label: "Paid 2 days late", daysVsDue: 2 });
   });

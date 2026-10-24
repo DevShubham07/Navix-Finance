@@ -152,7 +152,7 @@ public class LoanController {
 
     /**
      * The three balances the repay screen quotes at once: as of today, on the salary day the loan is
-     * due, and on the one grace day after it.
+     * due, and on the loan's grace day after it (null when the loan carries none).
      *
      * <p>The borrower's repay page showed these as three separate {@code /outstanding?asOf=} calls,
      * so opening it cost three round trips (and three recomputes) for one screen. This answers all
@@ -168,9 +168,9 @@ public class LoanController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf) {
         Loan loan = repaymentService.requireReadableLoan(loanId);
         LocalDate due = loan.getDueDate();
-        // One calendar day after the salary day — the same arithmetic the repay page applied to the
-        // due date before it asked for this figure.
-        LocalDate grace = due != null ? due.plusDays(1) : null;
+        // The loan's last penalty-free day after the salary day; null when the loan carries no grace
+        // (loans disbursed after the grace was withdrawn) — the repay page then shows no such column.
+        LocalDate grace = due != null && loan.getGraceDays() > 0 ? due.plusDays(loan.getGraceDays()) : null;
         // `asOf` is handed to the service AS GIVEN, null included: a null means "the ledger's today",
         // which the service resolves in IST. Resolving it here with LocalDate.now() instead would
         // read the JVM's zone (UTC in ECS) and quote the borrower yesterday's balance for the 5.5

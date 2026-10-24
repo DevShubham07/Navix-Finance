@@ -366,7 +366,7 @@ public class ReportService {
         rows.add(row(p, "Interest", "1% of principal per day for the days the money is held.", null));
         rows.add(row(p, "Due date", "The customer's next salary day, no later than 40 days after disbursal.", null));
         rows.add(row(p, "Repayment", "One payment of principal + interest. Paying early only charges interest to the day paid.", null));
-        rows.add(row(p, "Late penalty", "One grace day after the due date, then 2% of principal per day, capped at 30 days.", null));
+        rows.add(row(p, "Late penalty", "2% of principal per day after the due date (after the one grace day on older loans), capped at 30 days.", null));
         rows.add(row(p, "Repeat loans", "A customer who repaid on time can borrow again with a shortened journey; "
                 + "KYC and details are carried over.", null));
 
@@ -554,6 +554,8 @@ public class ReportService {
     /** One priced loan: what it owed, what was paid, where it stands. */
     private static final class Position {
         long loanId, customerId, principal, interest, penalty, paid, outstanding, excess, dpd, totalRepayable;
+        /** Penalty-free days after the due date (loan.grace_days): "on time" runs through them. */
+        int graceDays;
         Long officerId;
         String name, mobile, status, officer, position, employer;
         LocalDate disbursedOn, dueDate, closedOn;
@@ -572,7 +574,7 @@ public class ReportService {
                          order by loan_id, created_at desc)
                 select l.id, l.customer_id, pr.full_name, pr.mobile, cast(l.status as text) status, l.disbursed_on,
                        l.due_date, l.closed_on, l.principal, su.name officer, pr.employer,
-                       coalesce(l.total_repayable, 0), cc.assigned_officer_id
+                       coalesce(l.total_repayable, 0), cc.assigned_officer_id, l.grace_days
                 from loan l
                 left join prof pr on pr.customer_id = l.customer_id
                 left join cc on cc.loan_id = l.id
@@ -598,6 +600,7 @@ public class ReportService {
             r.totalRepayable = rs.getLong(12);
             long officerId = rs.getLong(13);
             r.officerId = rs.wasNull() ? null : officerId;
+            r.graceDays = rs.getInt(14);
             out.add(r);
         });
         Map<Long, OutstandingBreakdown> priced = price(out.stream().map(r -> r.loanId).toList());
@@ -750,7 +753,7 @@ public class ReportService {
                        greatest(0, l.closed_on - l.due_date), l.principal, coalesce(pd.amt, 0),
                        case when st.loan_id is not null then 'Settlement' else 'Full repayment' end,
                        case when l.closed_on < l.due_date then 'Paid early'
-                            when l.closed_on <= l.due_date + 1 then 'On time' else 'Late' end
+                            when l.closed_on <= l.due_date + l.grace_days then 'On time' else 'Late' end
                 from loan l
                 left join prof pr on pr.customer_id = l.customer_id
                 left join pd on pd.loan_id = l.id
@@ -759,9 +762,9 @@ public class ReportService {
                 order by l.closed_on desc, l.id desc
                 """.formatted(p.on("l.closed_on"));
         List<List<Object>> rows = query(sql, p.params());
-        long late = rows.stream().filter(r -> r.get(7) != null && ((Number) r.get(7)).longValue() > 1).count();
+        long late = rows.stream().filter(r -> "Late".equals(r.get(11))).count();
         return totalled(cols, rows, List.of(new Fact("Loans closed", (long) rows.size(), ColumnType.NUMBER),
-                new Fact("Repaid after the grace day", late, ColumnType.NUMBER)));
+                new Fact("Repaid late", late, ColumnType.NUMBER)));
     }
 
     private Table nachRefunds(Period p) {
@@ -1160,13 +1163,13 @@ public class ReportService {
                 Column.number("overall", "Overall efficiency (%)"));
         String sql = """
                 with pd as (select p.loan_id,
-                                   coalesce(sum(p.amount) filter (where p.paid_on <= l.due_date + 1), 0) on_time,
-                                   coalesce(sum(p.amount) filter (where p.paid_on > l.due_date + 1), 0) late
+                                   coalesce(sum(p.amount) filter (where p.paid_on <= l.due_date + l.grace_days), 0) on_time,
+                                   coalesce(sum(p.amount) filter (where p.paid_on > l.due_date + l.grace_days), 0) late
                             from payment p join loan l on l.id = p.loan_id
                             where p.status = 'VERIFIED' group by p.loan_id),
                      x as (select l.due_date, coalesce(pd.on_time, 0) on_time, coalesce(pd.late, 0) late,
-                                  l.closed_on is not null and l.closed_on <= l.due_date + 1 closed_on_time,
-                                  case when l.closed_on is not null and l.closed_on <= l.due_date + 1
+                                  l.closed_on is not null and l.closed_on <= l.due_date + l.grace_days closed_on_time,
+                                  case when l.closed_on is not null and l.closed_on <= l.due_date + l.grace_days
                                        then greatest(coalesce(pd.on_time, 0), 1) else coalesce(l.total_repayable, 0) end due
                            from loan l left join pd on pd.loan_id = l.id
                            where l.disbursed_on is not null and l.due_date is not null and %s)
@@ -1182,7 +1185,7 @@ public class ReportService {
                 new Fact("Collected on time", onTime, ColumnType.MONEY),
                 new Fact("On-time efficiency (%)", pct(onTime, due), ColumnType.NUMBER),
                 new Fact("Overall efficiency (%)", pct(onTime + late, due), ColumnType.NUMBER)), List.of(
-                "On time = verified payments dated on or before the due date's one grace day.",
+                "On time = verified payments dated on or before the due date (plus the one grace day on older loans).",
                 "A loan prepaid in full by its due date owes less interest than its contractual amount, so it counts as 100% collected.",
                 "Due dates still in the future naturally show low collection."), Map.of());
     }
@@ -1252,12 +1255,12 @@ public class ReportService {
             a[0]++;
             a[1] += r.principal;
             a[8] += r.outstanding;
-            boolean matured = r.dueDate != null && r.dueDate.plusDays(1).isBefore(today);
+            boolean matured = r.dueDate != null && r.dueDate.plusDays(r.graceDays).isBefore(today);
             if (!matured && r.closedOn == null) continue;
             a[2]++;
             long worst = r.closedOn != null && r.dueDate != null
                     ? Math.max(0, ChronoUnit.DAYS.between(r.dueDate, r.closedOn)) : r.dpd;
-            if (r.closedOn != null && worst <= 1) a[3]++;
+            if (r.closedOn != null && worst <= r.graceDays) a[3]++;
             else if (r.closedOn != null) a[4]++;
             else if (r.outstanding > 0) a[5]++;
             if (worst > 30) a[6]++;
@@ -1268,8 +1271,8 @@ public class ReportService {
                 pct(a[4] + a[5], a[2]), pct(a[6], a[2]), pct(a[7], a[2]), a[8])));
         return totalled(cols, rows, List.of(new Fact("Cohorts", (long) rows.size(), ColumnType.NUMBER),
                 new Fact("Loans", sum(rows, 1), ColumnType.NUMBER)), List.of(
-                "Rates are over loans whose due date (plus the one grace day) has passed, or which already closed.",
-                "First-payment default: not repaid by the due date's grace day — every DhanBoost loan is a single payment.",
+                "Rates are over loans whose due date (plus the one grace day on older loans) has passed, or which already closed.",
+                "First-payment default: not repaid by the due date (or its grace day on older loans) — every DhanBoost loan is a single payment.",
                 "Ever 30+ / 90+ DPD follows the RBI vintage-delinquency idea: did the loan ever fall that far behind."));
     }
 
@@ -1297,11 +1300,11 @@ public class ReportService {
             a[0]++;
             a[1] += r.principal;
             a[6] += r.outstanding;
-            boolean matured = r.dueDate != null && r.dueDate.plusDays(1).isBefore(today);
+            boolean matured = r.dueDate != null && r.dueDate.plusDays(r.graceDays).isBefore(today);
             if (!matured && r.closedOn == null) continue;
             a[2]++;
             long late = r.closedOn != null && r.dueDate != null ? ChronoUnit.DAYS.between(r.dueDate, r.closedOn) : r.dpd;
-            if (r.closedOn != null && late <= 1) a[3]++;
+            if (r.closedOn != null && late <= r.graceDays) a[3]++;
             else if (r.closedOn != null) a[4]++;
             else if (r.outstanding > 0) a[5]++;
         }

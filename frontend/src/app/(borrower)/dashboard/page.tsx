@@ -21,6 +21,7 @@ import {
   paiseToINR,
   statusLabel,
   type ApplicationStatus,
+  loanGraceDays,
 } from "@/lib/api/applications";
 import { useOnboardingStore } from "@/stores/application-store";
 import { daysBetween } from "@/lib/calc/loan-math";
@@ -97,7 +98,7 @@ export default function DashboardPage() {
   const active = app?.status === "ACTIVE" || app?.status === "OVERDUE";
   const closed = app?.status === "CLOSED";
   const declined = isTerminalBad(app);
-  const nextMilestone = nextBorrowerMilestone(app?.status, loan?.dueDate);
+  const nextMilestone = nextBorrowerMilestone(app?.status, loan?.dueDate, new Date(), loanGraceDays(loan));
 
   // Resume enters the relevant wizard at its first screen; that wizard's journey guard then jumps
   // to wherever the SERVER says this borrower actually is — so it works on a fresh device too

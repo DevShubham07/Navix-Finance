@@ -59,7 +59,11 @@ public class LoanMath {
     /** Legacy/default tenure used only when a salary-derived tenure is unavailable. */
     public static final int TERM_DAYS = 30;
 
-    /** Grace after the due date before any penalty accrues (paying the day after salary is free). */
+    /**
+     * Grace after the due date before any penalty accrues, for loans disbursed <b>from now on</b>.
+     * Stamped onto {@code loan.grace_days} at disbursal; the pricing reads the row, never this
+     * constant, so changing it never touches a loan that already exists.
+     */
     public static final int SALARY_GRACE_DAYS = 1;
 
     /** Floor on a sanctioned advance: ₹1,000 = 100,000 paise. */

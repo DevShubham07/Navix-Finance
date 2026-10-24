@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/staff/staff-ui";
 import { SearchBar } from "@/components/staff/search-bar";
 import { PermissionGate, NoAccessNotice, ROLE_LABEL, useStaffMe, useCan } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
-import { staffApi, paiseToINR, type TransactionDirection, type TransactionView } from "@/lib/api/applications";
+import { staffApi, paiseToINR, loanGraceDays, type TransactionDirection, type TransactionView } from "@/lib/api/applications";
 import { type FilterColumn } from "@/components/staff/column-filter";
 import { Th, thBag, describeRegister } from "@/lib/staff/register-th";
 import { useRegisterQuery } from "@/lib/staff/register-query";
@@ -409,10 +409,10 @@ export default function TransactionsPage() {
 
 function TxnRow({ t, sno, onOpen }: { t: TransactionView; sno: number; onOpen: (loanId: number) => void }) {
   const incoming = t.direction === "INCOMING";
-  // A repayment that came in after the loan's repayment date (and its 1 grace day) reads red.
+  // A repayment that came in after the loan's repayment date (and its grace day, on loans that have one) reads red.
   const paidLate =
     t.type === "REPAYMENT" && t.date != null && t.repaymentDate != null &&
-    new Date(`${t.date}T00:00:00`).getTime() > new Date(`${t.repaymentDate}T00:00:00`).getTime() + 86_400_000;
+    new Date(`${t.date}T00:00:00`).getTime() > new Date(`${t.repaymentDate}T00:00:00`).getTime() + loanGraceDays(t) * 86_400_000;
   return (
     <tr>
       <td className="text-muted">{sno}</td>

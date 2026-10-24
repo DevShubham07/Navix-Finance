@@ -74,7 +74,7 @@ class TransactionServiceTest {
 
     private static TransactionView row(String id, String proofKey) {
         return new TransactionView(id, "REPAYMENT", "INCOMING", 2L, 7L, "Aman", "ABCDE1234F", 100_000L,
-                "PAY-IN-1", "VERIFIED", LocalDate.of(2026, 6, 20), proofKey, null);
+                "PAY-IN-1", "VERIFIED", LocalDate.of(2026, 6, 20), proofKey, null, 1);
     }
 
     @Test

@@ -7,7 +7,7 @@
  */
 import { daysBetween } from "@/lib/calc/loan-math";
 import { isoDayToLocalDate } from "@/lib/customers/customer-360";
-import type { LoanView, OutstandingView, PaymentView } from "@/lib/api/applications";
+import { loanGraceDays, type LoanView, type OutstandingView, type PaymentView } from "@/lib/api/applications";
 
 export type LedgerKey = "principal" | "interest" | "penalty" | "total";
 
@@ -31,7 +31,7 @@ export interface Ledger {
   rows: LedgerRow[];
   daysSinceDisbursal: number | null;
   daysToDue: number | null;
-  /** Due date + 1 day: interest still runs, no penalty. */
+  /** Due date + the loan's grace days: interest still runs, no penalty. Null when the loan has no grace. */
   graceDay: Date | null;
   isOverdue: boolean;
   daysOverdue: number;
@@ -84,7 +84,8 @@ export function buildLedger(input: {
   const due = isoDayToLocalDate(loan.dueDate);
   const daysToDue = due ? daysBetween(today, due) : null;
   const isOverdue = !closed && daysToDue != null && daysToDue < 0;
-  const graceDay = due ? new Date(due.getFullYear(), due.getMonth(), due.getDate() + 1) : null;
+  const graceDays = loanGraceDays(loan);
+  const graceDay = due && graceDays > 0 ? new Date(due.getFullYear(), due.getMonth(), due.getDate() + graceDays) : null;
 
   return {
     rows: [

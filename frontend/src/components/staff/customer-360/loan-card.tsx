@@ -231,7 +231,7 @@ export function FinancialSummaryStrip({ loan, outstanding }: { loan: LoanView; o
         <Field
           label="Late penalty"
           tone="error"
-          caption={penaltyDays > 0 ? `${penaltyDays} ${penaltyDays === 1 ? "day" : "days"} × 2%` : "starts after the grace day"}
+          caption={penaltyDays > 0 ? `${penaltyDays} ${penaltyDays === 1 ? "day" : "days"} × 2%` : "starts after the due date"}
         >
           {money(outstanding?.penaltyPaise)}
         </Field>
@@ -239,7 +239,7 @@ export function FinancialSummaryStrip({ loan, outstanding }: { loan: LoanView; o
       </FieldGrid>
       <p className="mt-2 text-[8.8px] text-muted">
         <span className="font-bold text-warning-800">Note:</span> Penalty is 2%/day of principal, starts the day after the
-        grace day and is capped at 30 days.
+        due date (after the one grace day on older loans) and is capped at 30 days.
       </p>
     </div>
   );

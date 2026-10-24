@@ -206,13 +206,16 @@ describe("TransactionsPage", () => {
       rows: [
         txn(1, { date: "2026-10-01", repaymentDate: "2026-10-05" }),
         txn(2, { date: "2026-10-09", repaymentDate: "2026-10-05", borrowerName: "Late Payer" }),
+        // The grace day itself: on time on a legacy loan (grace 1), late on a loan written without grace.
+        txn(3, { date: "2026-10-06", repaymentDate: "2026-10-05" }),
+        txn(4, { date: "2026-10-06", repaymentDate: "2026-10-05", graceDays: 0 }),
       ],
     }));
     renderPage();
 
     expect(await screen.findByRole("columnheader", { name: /Repayment date/ })).toBeInTheDocument();
     const cells = screen.getAllByTitle("Paid after the repayment date");
-    expect(cells).toHaveLength(1);
+    expect(cells).toHaveLength(2);
     expect(cells[0]).toHaveClass("text-error-700");
   });
 

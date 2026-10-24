@@ -64,7 +64,7 @@ public class TransactionLedgerQuery {
                        l.id as loan_id, l.customer_id, pr.full_name as borrower_name, pr.pan, pr.mobile,
                        coalesce(l.net_disbursed, 0) as amount_paise, l.disbursal_txn_ref as txn_ref,
                        cast(l.status as text) as status, l.disbursed_on as txn_date,
-                       cast(null as text) as proof_url, l.due_date as due_date
+                       cast(null as text) as proof_url, l.due_date as due_date, l.grace_days as grace_days
                 from loan l
                 left join prof pr on pr.loan_id = l.id
                 union all
@@ -72,7 +72,7 @@ public class TransactionLedgerQuery {
                        p.loan_id, l.customer_id, pr.full_name, pr.pan, pr.mobile,
                        coalesce(p.amount, 0), p.txn_ref,
                        cast(p.status as text), p.paid_on,
-                       p.proof_url, l.due_date
+                       p.proof_url, l.due_date, coalesce(l.grace_days, 1)
                 from payment p
                 left join loan l on l.id = p.loan_id
                 left join prof pr on pr.loan_id = p.loan_id
@@ -149,7 +149,7 @@ public class TransactionLedgerQuery {
         String direction = "asc".equalsIgnoreCase(dir) ? "asc" : "desc";
         String sql = LEDGER_CTE
                 + "select t.id, t.type, t.direction, t.loan_id, t.customer_id, t.borrower_name, t.pan,"
-                + " t.amount_paise, t.txn_ref, t.status, t.txn_date, t.proof_url, t.due_date"
+                + " t.amount_paise, t.txn_ref, t.status, t.txn_date, t.proof_url, t.due_date, t.grace_days"
                 + " from ledger t" + where
                 + " order by " + column + " " + direction + " nulls last, t.direction " + direction
                 + ", t.row_id " + direction
@@ -160,7 +160,7 @@ public class TransactionLedgerQuery {
                 rs.getString("borrower_name"), rs.getString("pan"),
                 rs.getLong("amount_paise"), rs.getString("txn_ref"), rs.getString("status"),
                 rs.getObject("txn_date", LocalDate.class), rs.getString("proof_url"),
-                rs.getObject("due_date", LocalDate.class)));
+                rs.getObject("due_date", LocalDate.class), rs.getInt("grace_days")));
     }
 
     /**

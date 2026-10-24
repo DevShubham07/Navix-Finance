@@ -62,6 +62,7 @@ public class LoanService {
         loan.setDailyInterestRate(LoanMath.DAILY_INTEREST_RATE.setScale(4, java.math.RoundingMode.UNNECESSARY));
         loan.setDisbursedOn(disbursed);
         loan.setDueDate(dueDate);
+        loan.setGraceDays(LoanMath.SALARY_GRACE_DAYS);
         long total = loanMath.totalRepayablePaise(principal, tenureDays);
         loan.setTotalRepayable(total);
         loan.setOutstanding(total);

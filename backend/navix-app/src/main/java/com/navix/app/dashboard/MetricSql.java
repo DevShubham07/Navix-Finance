@@ -298,7 +298,7 @@ public final class MetricSql {
          * True when the metric's money is "what the borrower had to pay" ({@code DashboardService.dueAmount}),
          * priced per loan, rather than the stored contractual {@code total_repayable}: that column is fixed
          * at disbursal (principal + interest to the due date) and is wrong for any loan repaid early (owes
-         * less interest) or late (owes the grace day's interest and late penalty).
+         * less interest) or late (owes the late penalty, plus the grace day's interest on older loans).
          */
         boolean dueAmount() {
             return this == DUE_ON || this == COLLECTION_MONTH || this == COLLECTION_GROUP;

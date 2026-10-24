@@ -65,7 +65,9 @@ public final class LoanDtos {
             LoanStatus status,
             String disbursalTxnRef,
             /** When the loan was settled in full (V50). Null while it is still running. */
-            LocalDate closedOn) {
+            LocalDate closedOn,
+            /** Penalty-free days after the due date this loan was written with (1 on legacy loans, V90). */
+            int graceDays) {
 
         public static LoanView of(Loan l) {
             return of(l, l.getOutstanding(), l.getStatus());
@@ -80,7 +82,7 @@ public final class LoanDtos {
             return new LoanView(l.getId(), l.getCustomerId(), l.getPrincipal(), l.getProcessingFee(),
                     l.getGst(), l.getNetDisbursed(), l.getDailyInterestRate(), l.getDisbursedOn(),
                     l.getDueDate(), l.getTotalRepayable(), outstandingPaise, status,
-                    l.getDisbursalTxnRef(), l.getClosedOn());
+                    l.getDisbursalTxnRef(), l.getClosedOn(), l.getGraceDays());
         }
     }
 
@@ -145,7 +147,7 @@ public final class LoanDtos {
      * settlement caps the figure, these components may sum to more than {@code outstandingPaise}.
      *
      * <p>{@code interestDays} / {@code penaltyDays} are the day counts those amounts were charged
-     * over (interest capped at tenure plus the 1-day grace; penalty starts after grace and is capped at 30), so the
+     * over (interest capped at tenure plus the loan's grace days; penalty starts after grace and is capped at 30), so the
      * UI can show the working — "1%/day × 27 days" — instead of a bare rupee figure.
      */
     public record OutstandingView(Long loanId, LocalDate asOf, long outstandingPaise,
@@ -155,12 +157,13 @@ public final class LoanDtos {
 
     /**
      * The three balances the repay screen quotes together: as of the requested day (today by
-     * default), on the salary day the loan is due, and on the one grace day after it — so paying
+     * default), on the salary day the loan is due, and on its grace day after it (if any) — so paying
      * early, on time or a day late each show their own figure.
      *
      * <p>One request instead of three {@code /outstanding?asOf=} calls for the same screen. Each
      * field is the identical {@link OutstandingView} that endpoint returns for that date.
-     * {@code due} and {@code grace} are null when the loan has no due date yet.
+     * {@code due} and {@code grace} are null when the loan has no due date yet; {@code grace} is also
+     * null when the loan carries no grace day.
      */
     public record OutstandingScheduleView(OutstandingView asOf, OutstandingView due,
                                           OutstandingView grace) {
@@ -189,6 +192,8 @@ public final class LoanDtos {
             String proofUrl,
             // The loan's contractual repayment (due) date — the same on the disbursal row and on
             // every repayment against that loan, so a payment can be read as early, on time or late.
-            LocalDate repaymentDate) {
+            LocalDate repaymentDate,
+            // The loan's penalty-free days after that date (1 on legacy loans) — "late" starts after them.
+            int graceDays) {
     }
 }

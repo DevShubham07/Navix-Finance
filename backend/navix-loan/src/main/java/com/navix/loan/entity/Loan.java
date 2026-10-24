@@ -63,6 +63,15 @@ public class Loan extends BaseAuditEntity {
     @Column(name = "due_date")
     private LocalDate dueDate;
 
+    /**
+     * Penalty-free days after the due date (interest still accrues over them). Frozen per loan at
+     * disbursal from {@code LoanMath.SALARY_GRACE_DAYS}; legacy loans carry 1 (V90). The Java default
+     * is 1 too, so a {@code new Loan()} in a test prices like a legacy loan — only
+     * {@code LoanService.disburse} stamps the current policy.
+     */
+    @Column(name = "grace_days", nullable = false)
+    private int graceDays = 1;
+
     /** Total amount repayable on the due date (principal + interest), in paise. */
     @Column(name = "total_repayable")
     private Long totalRepayable;

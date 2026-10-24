@@ -278,7 +278,7 @@ public class RepaymentService {
      *
      * <p>{@code interestDays} / {@code penaltyDays} are the <i>day counts</i> those two amounts were
      * charged over — interest days are capped at the tenure (interest stops accruing at the due date)
-     * and penalty days exclude the {@link LoanMath#SALARY_GRACE_DAYS} grace and are capped at
+     * and penalty days exclude the loan's own {@code graceDays} (1 on legacy loans) and are capped at
      * {@link LoanMath#LATE_PENALTY_CAP_DAYS}. Exposed so collections can show "1%/day × N days"
      * rather than an unexplained rupee figure, without re-deriving (and forking) the math.
      */
@@ -328,9 +328,9 @@ public class RepaymentService {
         }
         int tenureDays = (int) ChronoUnit.DAYS.between(loan.getDisbursedOn(), loan.getDueDate());
         int daysToAsOf = (int) Math.max(0L, ChronoUnit.DAYS.between(loan.getDisbursedOn(), at));
-        int interestDays = Math.min(daysToAsOf, tenureDays + LoanMath.SALARY_GRACE_DAYS);
+        int interestDays = Math.min(daysToAsOf, tenureDays + loan.getGraceDays());
         int rawDpd = loanMath.daysPastDue(loan.getDueDate(), at);
-        int penaltyDays = Math.max(0, rawDpd - LoanMath.SALARY_GRACE_DAYS);
+        int penaltyDays = Math.max(0, rawDpd - loan.getGraceDays());
         long interest = loanMath.interestPaise(loan.getPrincipal(), interestDays);
         long penalty = loanMath.latePenaltyPaise(loan.getPrincipal(), penaltyDays);
         long formulaOwed = loanMath.outstandingPaise(loan.getPrincipal(), interestDays, penaltyDays, verified);

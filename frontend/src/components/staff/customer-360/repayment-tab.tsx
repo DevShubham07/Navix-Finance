@@ -184,7 +184,7 @@ function PaymentsPanel({ ctx, loan }: { ctx: TabCtx; loan: LoanView }) {
           <Field label="Days to due date" tone={ledger.isOverdue ? "error" : "ink"}>
             {ledger.daysToDue == null ? null : ledger.isOverdue ? `${ledger.daysOverdue} days overdue` : `${ledger.daysToDue} days`}
           </Field>
-          <Field label="Grace day" caption="no penalty">{ledger.graceDay ? formatDate(ledger.graceDay) : null}</Field>
+          {ledger.graceDay && <Field label="Grace day" caption="no penalty">{formatDate(ledger.graceDay)}</Field>}
         </FieldGrid>
         {loan.status === "ACTIVE" && !ledger.isOverdue && settled == null && (
           <div className="mt-3 flex items-start gap-2 rounded bg-success-50 px-3 py-2 text-[10.4px] text-success-700">

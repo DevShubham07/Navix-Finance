@@ -20,6 +20,7 @@ import {
   REJECTION_REASON_LABEL,
   type PaymentMethodName,
   type PaymentView,
+  loanGraceDays,
 } from "@/lib/api/applications";
 import { formatApiError } from "@/lib/api/errors";
 import { compressImage } from "@/lib/compress-image";
@@ -75,11 +76,12 @@ export default function RepayPage() {
     queryKey: ["payment-settings"],
     queryFn: () => paymentSettingsApi.get(),
   });
-  // The penalty-free pay-by dates: the salary day (the loan's due date) and the day after (the
-  // built-in 1-day grace) — the labels for `schedule`'s `due` / `grace` balances. Grace day adds one
-  // normal-interest day but no late penalty.
+  // The penalty-free pay-by dates: the salary day (the loan's due date) and, on loans written with a
+  // grace day, the day after — the labels for `schedule`'s `due` / `grace` balances. A grace day adds
+  // one normal-interest day but no late penalty; newer loans carry none and show no such column.
   const dueISO = loanQuery.data?.dueDate ?? null;
-  const graceISO = dueISO ? addIsoCalendarDays(dueISO, 1) : null;
+  const graceDays = loanGraceDays(loanQuery.data);
+  const graceISO = dueISO && graceDays > 0 ? addIsoCalendarDays(dueISO, graceDays) : null;
 
   const record = useMutation({
     mutationFn: async (payload: { amountPaise: number; method: PaymentMethodName; txnRef: string }) => {
@@ -256,10 +258,10 @@ export default function RepayPage() {
         <div className="mb-6 rounded border border-line bg-white p-6 shadow-sm">
           <h3 className="mb-1 font-serif text-base text-navy">When will you pay?</h3>
           <p className="mb-4 text-xs text-muted">
-            Paying on your salary day or the day after is penalty-free — and prepaying any day costs you
-            less interest. Pick whatever suits you; we&apos;ll remind you before it&apos;s due.
+            {graceISO ? "Paying on your salary day or the day after is penalty-free" : "Paying by your salary day is penalty-free"}
+            {" "}— and prepaying any day costs you less interest. Pick whatever suits you; we&apos;ll remind you before it&apos;s due.
           </p>
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className={`grid gap-3 ${graceISO ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
             <PayByOption
               title="Prepay today"
               date={todayISO()}
@@ -273,12 +275,14 @@ export default function RepayPage() {
               amount={schedule.data?.due?.outstandingPaise ?? loan.totalRepayablePaise}
               note="Penalty-free"
             />
-            <PayByOption
-              title="Day after salary"
-              date={graceISO ?? loan.dueDate}
-              amount={schedule.data?.grace?.outstandingPaise ?? loan.totalRepayablePaise}
-              note="One extra interest day · no late penalty"
-            />
+            {graceISO && (
+              <PayByOption
+                title="Day after salary"
+                date={graceISO}
+                amount={schedule.data?.grace?.outstandingPaise ?? loan.totalRepayablePaise}
+                note="One extra interest day · no late penalty"
+              />
+            )}
           </div>
         </div>
       )}

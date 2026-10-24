@@ -174,6 +174,6 @@ public class TransactionService {
     private static TransactionView withProof(TransactionView t, String presignedUrl) {
         return new TransactionView(t.id(), t.type(), t.direction(), t.loanId(), t.customerId(),
                 t.borrowerName(), t.pan(), t.amountPaise(), t.txnRef(), t.status(), t.date(), presignedUrl,
-                t.repaymentDate());
+                t.repaymentDate(), t.graceDays());
     }
 }

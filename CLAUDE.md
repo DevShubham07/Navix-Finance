@@ -132,7 +132,7 @@ navix_final/
 │   ├── navix-storage/            # S3 abstraction (presign)
 │   ├── navix-notification/       # ★ notification engine: events→dispatcher→in-app/SMS/email
 │   ├── navix-app/                # ★ the only bootable module; JwtAuthFilter, SecurityConfig, Flyway
-│   │   └── src/main/resources/db/migration/   # V1..V85 (the REAL schema lives here — see §10)
+│   │   └── src/main/resources/db/migration/   # V1..V90 (the REAL schema lives here — see §10)
 │   └── pom.xml                   # parent BOM
 ├── frontend/
 │   └── src/
@@ -325,8 +325,12 @@ via reject-lead, admin-only).
 **Invariants:**
 - Every credit assignment/reassignment and decision is appended to `application_event`; reassignment
   records the previous and new assignee and keeps the application in `CREDIT_EXEC_PENDING`.
-- Interest accrues through the contractual salary day and for one additional grace day. The grace
-  day has no late penalty; 2% daily penalty starts the following day and is capped at 30 days.
+- **The salary grace is per loan** (`loan.grace_days`, V90), stamped at disbursal from
+  `LoanMath.SALARY_GRACE_DAYS` and read from the row by the one pricing formula
+  (`RepaymentService.breakdown`) — so changing the constant never touches an existing loan. A loan
+  with grace 1 (every loan disbursed before V90) accrues interest through the salary day and one more
+  day with no penalty; 2%/day penalty starts the day after that. A loan with grace 0 accrues interest
+  through the salary day and the penalty starts the very next day. Penalty is capped at 30 days.
 - The DPD bucket is computed-on-read, never stored.
 
 ---
@@ -593,7 +597,7 @@ Canonical **integer-paise** engine (`long` paise, `BigDecimal` rates, `HALF_UP`)
 - `dueDateFromSalary(disbursedOn, salaryCreditDay)` = the **latest** salary-credit date strictly
   after disbursal **and ≤ disbursal + 40 days** (salary day clamped to month length).
 - **Outstanding is compute-on-read** (`RepaymentService.outstandingAsOf`): `principal +
-  interest(daysHeld, capped at tenure) + latePenalty(daysLate past the 1-day grace) − Σ verified
+  interest(daysHeld, capped at tenure + grace) + latePenalty(daysLate past the loan's grace) − Σ verified
   payments`. This is the single "amount owed" surfaced **everywhere** — the `LoanView` from
   `GET /api/loan/{id}`, the collections `LoanSummary`, and `GET …/outstanding` all use it (so they
   agree). The stored `loan.outstanding` column is just a recompute cache; a loan **closes only when
@@ -615,7 +619,7 @@ Flyway migrations live in **`backend/navix-app/src/main/resources/db/migration/`
 navix-common). Applied on every boot:
 
 Flyway migrations live in **`backend/navix-app/src/main/resources/db/migration/`** (not
-navix-common) and are applied on every boot — **V1..V85** today. Each file carries a header comment
+navix-common) and are applied on every boot — **V1..V90** today. Each file carries a header comment
 explaining *why* it exists; that is the source of truth. The index is
 [`docs/MIGRATIONS.md`](docs/MIGRATIONS.md).
 
@@ -807,7 +811,7 @@ The rules that survive outside that file:
 - **[`docs/API_SURFACE.md`](docs/API_SURFACE.md)** — the full endpoint map (controllers still win).
 - **[`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md)** — Signzy / Digitap / Fintrix / SES / UltronSMS:
   capability routing, auth, hosts, live-test status, per-API gotchas.
-- **[`docs/MIGRATIONS.md`](docs/MIGRATIONS.md)** — the V1..V85 Flyway catalog.
+- **[`docs/MIGRATIONS.md`](docs/MIGRATIONS.md)** — the V1..V90 Flyway catalog.
 - **[`docs/whatsapp/WHATSAPP_GUIDE.md`](docs/whatsapp/WHATSAPP_GUIDE.md)** — borrower messaging: WhatsApp
   (SmartChat — API quirks, template catalogue, backlog), SMS (UltronSMS) and DLT in one place.
 

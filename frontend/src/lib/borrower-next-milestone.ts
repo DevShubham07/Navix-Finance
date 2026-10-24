@@ -40,6 +40,8 @@ export function nextBorrowerMilestone(
   status: ApplicationStatus | null | undefined,
   dueDate: string | null | undefined,
   today = new Date(),
+  /** The loan's penalty-free days after the due date (1 on legacy loans, 0 on new ones). */
+  graceDays = 1,
 ): BorrowerNextMilestone {
   if (!status || status === "DRAFT") {
     return {
@@ -72,7 +74,7 @@ export function nextBorrowerMilestone(
   }
 
   if (status === "ACTIVE" || status === "OVERDUE") {
-    return repaymentMilestone(status, dueDate, today);
+    return repaymentMilestone(status, dueDate, today, graceDays);
   }
 
   if (status === "CLOSED") {
@@ -108,6 +110,7 @@ function repaymentMilestone(
   status: "ACTIVE" | "OVERDUE",
   dueDate: string | null | undefined,
   today: Date,
+  graceDays: number,
 ): BorrowerNextMilestone {
   const due = parseCalendarDate(dueDate);
   if (!due) {
@@ -123,7 +126,7 @@ function repaymentMilestone(
   const daysUntilDue = daysBetween(today, due);
   const dueLabel = formatCalendarDate(due);
 
-  if (status === "OVERDUE" || daysUntilDue < -1) {
+  if (status === "OVERDUE" || daysUntilDue < -graceDays) {
     const overdueDays = Math.max(1, -daysUntilDue);
     return {
       title: `Payment overdue by ${overdueDays} ${dayWord(overdueDays)}`,
@@ -134,7 +137,7 @@ function repaymentMilestone(
     };
   }
 
-  if (daysUntilDue === -1) {
+  if (graceDays > 0 && daysUntilDue < 0) {
     return {
       title: "Grace day — pay today",
       detail: "Pay today before the daily late penalty begins tomorrow.",

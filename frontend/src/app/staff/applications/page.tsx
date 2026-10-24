@@ -316,7 +316,7 @@ function AwaitingRepaymentPanel() {
         <RepaymentColumn
           title="Overdue"
           tone="error"
-          note="Past the due date — the 2%/day late penalty is accruing (after a 1-day salary grace, capped at 30 days). Put a collections executive on these."
+          note="Past the due date — the 2%/day late penalty is accruing (capped at 30 days; older loans had a 1-day grace). Put a collections executive on these."
           apps={overdueApps}
           isLoading={isLoading}
           emptyText="Nothing overdue."
