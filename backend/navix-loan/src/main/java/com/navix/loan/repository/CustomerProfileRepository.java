@@ -60,6 +60,20 @@ public interface CustomerProfileRepository extends JpaRepository<CustomerProfile
                                                        @Param("customerId") Long customerId);
 
     /**
+     * The OTHER customers' applications holding this Aadhaar number that were actually submitted (ever
+     * reached {@code KYC_PENDING}), newest first — what the submit-kyc duplicate rule rejects on. An
+     * abandoned draft does not count: anyone can type a number into one, and that must not get the
+     * number's real owner rejected later (those still raise the silent {@code AADHAAR_DUPLICATE} flag).
+     */
+    @Query("select a.id from CustomerProfile p, LoanApplication a "
+            + "where p.applicationId = a.id and p.aadhaar = :aadhaar and a.customerId <> :customerId "
+            + "and exists (select e.id from ApplicationEvent e where e.applicationId = a.id "
+            + "and e.toStatus = com.navix.loan.domain.ApplicationStatus.KYC_PENDING) "
+            + "order by a.id desc")
+    java.util.List<Long> findSubmittedApplicationIdsByAadhaarForOtherCustomers(
+            @Param("aadhaar") String aadhaar, @Param("customerId") Long customerId);
+
+    /**
      * Every mobile this customer has on file across their applications, newest application first.
      * A returning borrower who starts a fresh application while already signed in never passes back
      * through the mobile step, so that application's profile has no mobile of its own — this recovers

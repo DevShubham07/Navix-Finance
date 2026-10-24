@@ -331,6 +331,12 @@ public class ApplicationController {
             throw new BusinessException("KYC_INCOMPLETE",
                     "Upload both sides of your Aadhaar card and PAN card before submitting");
         }
+        // Duplicate-Aadhaar rule: the number is already on another customer's submitted application.
+        // Rejected (permanently, with the earlier case referenced in the register) instead of submitted.
+        LoanApplication duplicateRejected = verification.rejectIfAadhaarDuplicate(id);
+        if (duplicateRejected != null) {
+            return ApiResponse.ok(ApplicationView.of(duplicateRejected));
+        }
         // Credit-side check that rides along with submission; never blocks it (a miss is REVIEW, and an
         // outage is recorded by the service), so a stray exception here must not strand the borrower.
         try {

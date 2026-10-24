@@ -477,6 +477,36 @@ public class ApplicationVerificationService {
         log.info("application={} auto-rejected FRAUD_REJECTED (aadhaar mismatch vs {})", appId, source);
     }
 
+    /**
+     * Duplicate-Aadhaar rule, run at submit-kyc: when the typed number is already on a submitted
+     * application of another customer, reject this file permanently into the register with a reference
+     * to the earlier case. Full 12-digit number only — a masked Aadhaar reveals four digits, far too few
+     * to call two people the same. The borrower sees only the generic rejection; the reference lives in
+     * the staff-only register detail. Returns the rejected application, or null when the rule did not fire.
+     */
+    @Transactional
+    public LoanApplication rejectIfAadhaarDuplicate(Long appId) {
+        LoanApplication app = applicationRepo.findById(appId).orElse(null);
+        CustomerProfile profile = profileRepo.findByApplicationId(appId).orElse(null);
+        String aadhaar = profile == null ? null : com.navix.common.util.Aadhaar.normalize(profile.getAadhaar());
+        if (app == null || isBlank(aadhaar) || !app.getStatus().canTransitionTo(ApplicationStatus.REJECTED)) {
+            return null;
+        }
+        List<Long> earlier = profileRepo.findSubmittedApplicationIdsByAadhaarForOtherCustomers(aadhaar, app.getCustomerId());
+        if (earlier.isEmpty()) {
+            return null;
+        }
+        Long earlierAppId = earlier.get(0);
+        Long earlierCustomerId = applicationRepo.findById(earlierAppId).map(LoanApplication::getCustomerId).orElse(null);
+        String detail = "Aadhaar " + com.navix.common.util.Masking.maskAadhaar(aadhaar)
+                + " already used by customer #" + earlierCustomerId + " (application #" + earlierAppId + ")"
+                + (earlier.size() > 1 ? " and " + (earlier.size() - 1) + " more application(s)" : "");
+        LoanApplication rejected = flow.autoRejectSystem(appId, ApplicationRejection.AADHAAR_DUPLICATE, detail,
+                ApplicationRejection.INDEFINITE, "Identity check failed");
+        log.info("application={} auto-rejected AADHAAR_DUPLICATE (earlier application={})", appId, earlierAppId);
+        return rejected;
+    }
+
     /** Official email + EPFO employer corroboration. */
     @Transactional
     public StepResult verifyEmail(Long appId, String email) {

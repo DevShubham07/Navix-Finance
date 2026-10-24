@@ -476,6 +476,20 @@ public class ApplicationFlowService {
         return doAutoReject(appId, reasonCode, detail, blockDays);
     }
 
+    /**
+     * {@link #autoRejectSystem(Long, String, String, int)} with an explicit block end (e.g.
+     * {@link ApplicationRejection#INDEFINITE}) and separate event notes: the register {@code detail} is
+     * staff-only, while the {@code application_event} notes are readable by the borrower.
+     */
+    @Transactional
+    public LoanApplication autoRejectSystem(Long appId, String reasonCode, String detail, Instant blockedUntil,
+                                            String eventNotes) {
+        LoanApplication app = require(appId);
+        recordRejection(app, reasonCode, detail, true, blockedUntil);
+        transition(app, ApplicationStatus.REJECTED, "AUTO_REJECT_" + reasonCode, eventNotes, blockedUntil);
+        return applicationRepository.save(app);
+    }
+
     private LoanApplication doAutoReject(Long appId, String reasonCode, String detail, int blockDays) {
         LoanApplication app = require(appId);
         Instant blockedUntil = blockDays > 0 ? Instant.now().plus(Duration.ofDays(blockDays)) : null;

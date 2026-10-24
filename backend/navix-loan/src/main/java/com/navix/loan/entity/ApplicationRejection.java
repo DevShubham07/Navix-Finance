@@ -32,6 +32,12 @@ public class ApplicationRejection extends BaseAuditEntity {
      */
     public static final String FRAUD_REJECTED = "FRAUD_REJECTED";
     /**
+     * Engine rule: at submit-kyc the Aadhaar number typed is already on a submitted application of another
+     * customer. Permanent block ({@link #INDEFINITE}); {@link #reasonDetail} names the earlier customer
+     * and application.
+     */
+    public static final String AADHAAR_DUPLICATE = "AADHAAR_DUPLICATE";
+    /**
      * A staffer blocked the customer for future loans (decided when a repayment is verified, or from
      * the customer page). Not a cooling-off: {@link #blockedUntil} is {@link #INDEFINITE} until an
      * ADMIN lifts it, which sets it to the moment of the unblock.

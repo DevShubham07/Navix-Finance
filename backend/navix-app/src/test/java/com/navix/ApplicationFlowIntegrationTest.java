@@ -1,5 +1,6 @@
 package com.navix;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -60,6 +61,8 @@ class ApplicationFlowIntegrationTest {
     private ApplicationVerificationRepository verificationRepository;
     @Autowired
     private org.springframework.jdbc.core.JdbcTemplate jdbc;
+    @Autowired
+    private com.navix.loan.repository.CustomerProfileRepository profileRepository;
 
     /** The onboarding completeness gate is exercised by unit tests; here it is PASS so the
      *  lifecycle test reaches KYC_PENDING without seeding every external verification. */
@@ -199,6 +202,25 @@ class ApplicationFlowIntegrationTest {
     private String bearer(String id, String role) {
         String audience = "BORROWER".equals(role) ? JwtService.AUDIENCE_BORROWER : JwtService.AUDIENCE_STAFF;
         return "Bearer " + jwt.issue(id, "Actor " + id, role, audience);
+    }
+
+    /** The duplicate-Aadhaar rule's lookup, on real Postgres: only another customer's SUBMITTED file counts. */
+    @Test
+    void duplicateAadhaarLookupMatchesOnlyOtherCustomersSubmittedApplications() throws Exception {
+        String aadhaar = "234567890124";
+        long submitted = createApplication(41L);
+        act(submitted, "submit-kyc", "41", "BORROWER", null, "KYC_PENDING");
+        long draftOnly = createApplication(42L);
+        long mine = createApplication(43L);
+        for (long id : new long[] {submitted, draftOnly, mine}) {
+            jdbc.update("insert into customer_profile (application_id, full_name, aadhaar, created_at, created_by)"
+                    + " values (?, 'Dup Test', ?, now(), 'test')", id, aadhaar);
+        }
+
+        assertThat(profileRepository.findSubmittedApplicationIdsByAadhaarForOtherCustomers(aadhaar, 43L))
+                .containsExactly(submitted);
+        // The submitted file's own customer never matches itself.
+        assertThat(profileRepository.findSubmittedApplicationIdsByAadhaarForOtherCustomers(aadhaar, 41L)).isEmpty();
     }
 
     private long createApplication(long customerId) throws Exception {

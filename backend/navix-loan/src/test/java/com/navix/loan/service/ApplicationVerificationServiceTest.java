@@ -3015,4 +3015,54 @@ class ApplicationVerificationServiceTest {
         verify(documentRepo, never()).save(any());
         verifyNoInteractions(verification);
     }
+
+    // ---- duplicate-Aadhaar rule at submit-kyc ----
+
+    private LoanApplication draftFor(Long customerId) {
+        LoanApplication a = appWithStatus(APP, ApplicationStatus.DRAFT);
+        a.setCustomerId(customerId);
+        return a;
+    }
+
+    @Test
+    void aadhaarOnAnotherCustomersSubmittedApplicationRejectsPermanentlyWithReference() {
+        CustomerProfile p = profile();
+        p.setAadhaar("234567890124");
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(draftFor(7L)));
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(profileRepo.findSubmittedApplicationIdsByAadhaarForOtherCustomers("234567890124", 7L))
+                .thenReturn(List.of(1934L));
+        LoanApplication earlier = appWithStatus(1934L, ApplicationStatus.CLOSED);
+        earlier.setCustomerId(812L);
+        when(applicationRepo.findById(1934L)).thenReturn(Optional.of(earlier));
+        LoanApplication rejected = appWithStatus(APP, ApplicationStatus.REJECTED);
+        when(flow.autoRejectSystem(eq(APP), anyString(), anyString(), any(java.time.Instant.class), anyString()))
+                .thenReturn(rejected);
+
+        assertThat(service.rejectIfAadhaarDuplicate(APP)).isSameAs(rejected);
+
+        org.mockito.ArgumentCaptor<String> detail = org.mockito.ArgumentCaptor.forClass(String.class);
+        org.mockito.ArgumentCaptor<String> notes = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(flow).autoRejectSystem(eq(APP), eq(com.navix.loan.entity.ApplicationRejection.AADHAAR_DUPLICATE),
+                detail.capture(), eq(com.navix.loan.entity.ApplicationRejection.INDEFINITE), notes.capture());
+        assertThat(detail.getValue()).contains("customer #812").contains("application #1934")
+                .doesNotContain("234567890124");
+        // The borrower can read event notes: no other customer's reference there.
+        assertThat(notes.getValue()).doesNotContain("812").doesNotContain("1934");
+    }
+
+    @Test
+    void noSubmittedMatchOrNoAadhaarLeavesTheFileAlone() {
+        CustomerProfile p = profile();
+        p.setAadhaar("234567890124");
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(draftFor(7L)));
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(profileRepo.findSubmittedApplicationIdsByAadhaarForOtherCustomers("234567890124", 7L))
+                .thenReturn(List.of());
+        assertThat(service.rejectIfAadhaarDuplicate(APP)).isNull();
+
+        p.setAadhaar(null);
+        assertThat(service.rejectIfAadhaarDuplicate(APP)).isNull();
+        verify(flow, never()).autoRejectSystem(any(), any(), any(), any(java.time.Instant.class), any());
+    }
 }
