@@ -228,10 +228,16 @@ public class SettlementService {
      *
      * <p>Guarded by {@link #requireNonDsaStaff()}: this read carried no authorization at all, so
      * any staff bearer — a DSA included — could list every settlement ever proposed.
+     *
+     * <p>Then narrowed to the collections roles (and ADMIN): each row now carries the borrower's
+     * full PAN, bank account, email and bureau score, and a Telecaller, Accountant or credit role
+     * calling the endpoint directly would otherwise read them for every settled borrower — wider
+     * than their own customer scope. Those roles have no settlements screen to lose.
      */
     @Transactional(readOnly = true)
     public List<SettlementView> listAll() {
         requireNonDsaStaff();
+        requireOneOf(OFFICER_ROLE, MANAGER_ROLE);
         Set<UUID> scoped = collectionsService.scopedCaseIdsOrNull();
         List<Settlement> settlements = settlementRepository.findAll(org.springframework.data.domain.Sort.by(
                 org.springframework.data.domain.Sort.Direction.DESC, "createdAt")).stream()

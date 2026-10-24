@@ -204,6 +204,7 @@ class SettlementServiceTest {
 
     @Test
     void listAllResolvesNamesInOneBatchedCall() {
+        ActorContext.set(HEAD);
         Settlement proposedOnly = proposedByOfficer(); // PROPOSED — approvedBy/rejectedBy are null
         Settlement approved = proposedByOfficer();
         approved.setId(UUID.randomUUID());
@@ -227,6 +228,7 @@ class SettlementServiceTest {
 
     @Test
     void listAllCarriesTheBorrowerAndLoanBehindEachCase() {
+        ActorContext.set(HEAD);
         when(settlementRepository.findAll(any(org.springframework.data.domain.Sort.class)))
                 .thenReturn(java.util.List.of(proposedByOfficer()));
         when(staffDirectory.namesFor(any())).thenReturn(java.util.Map.of(9L, "Sana Khan"));
@@ -286,6 +288,18 @@ class SettlementServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("Staff role required");
 
+        verify(settlementRepository, never()).findAll(any(org.springframework.data.domain.Sort.class));
+    }
+
+    /** The rows carry PAN, account, email and bureau score — so non-collections staff are refused. */
+    @Test
+    void listAllRejectsNonCollectionsStaff() {
+        for (String role : java.util.List.of("TELECALLER", "ACCOUNTANT", "CREDIT_EXECUTIVE", "DISBURSEMENT_HEAD")) {
+            ActorContext.set(new CurrentActor("40", "Someone", role));
+            assertThatThrownBy(() -> service.listAll())
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("COLLECTION_HEAD");
+        }
         verify(settlementRepository, never()).findAll(any(org.springframework.data.domain.Sort.class));
     }
 
