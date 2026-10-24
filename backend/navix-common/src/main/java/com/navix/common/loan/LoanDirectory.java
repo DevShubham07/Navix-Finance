@@ -31,6 +31,16 @@ public interface LoanDirectory {
      */
     Map<Long, LoanSummary> findLoans(Collection<Long> loanIds);
 
+    /**
+     * Batched itemised dues (interest, penalty, verified payments) plus borrower contact/bank
+     * details for every id that resolves — for registers, like settlements, that show the cost
+     * make-up beside each loan. A fixed number of queries for the whole page. Defaults to empty so
+     * test doubles need not implement it.
+     */
+    default Map<Long, LoanDues> findDues(Collection<Long> loanIds) {
+        return Map.of();
+    }
+
 
     /**
      * The collections worklist as of {@code asOf}: every live loan (ACTIVE / OVERDUE /

@@ -4275,6 +4275,26 @@ export interface SettlementView {
   dueDate: string | null;
   dpd: number;
   bucket: DpdBucket;
+  /** Customer-tab details. */
+  pan: string | null;
+  email: string | null;
+  employer: string | null;
+  employmentStatus: string | null;
+  monthlySalaryPaise: number | null;
+  salaryBank: string | null;
+  accountNumber: string | null;
+  ifsc: string | null;
+  bureauScore: number | null;
+  assignedOfficerName: string | null;
+  /** Loan + itemised dues: grossDue = principal + interest + penalty, before payments or a settlement cap. */
+  disbursedOn: string | null;
+  netDisbursedPaise: number | null;
+  interestPaise: number | null;
+  interestDays: number | null;
+  penaltyPaise: number | null;
+  penaltyDays: number | null;
+  paidPaise: number | null;
+  grossDuePaise: number | null;
 }
 
 /**

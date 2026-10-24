@@ -1,6 +1,7 @@
 package com.navix.loan.service;
 
 import com.navix.common.loan.LoanDirectory;
+import com.navix.common.loan.LoanDues;
 import com.navix.common.loan.LoanSummary;
 import com.navix.loan.domain.LoanStatus;
 import com.navix.loan.domain.PaymentMethod;
@@ -80,6 +81,67 @@ public class LoanDirectoryAdapter implements LoanDirectory {
         Map<Long, LoanSummary> result = new HashMap<>();
         for (LoanSummary s : enrich(loans, LocalDate.now(IST))) {
             result.put(s.loanId(), s);
+        }
+        return result;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>One {@link RepaymentService#outstandingBreakdownsForAll} pass (the same formula the repay
+     * page reads) plus the application/profile lookups {@link #enrich} already batches. The bank
+     * account is the one THIS advance was paid into, falling back to the salary account — the same
+     * rule the customers register uses.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Map<Long, LoanDues> findDues(Collection<Long> loanIds) {
+        if (loanIds == null) {
+            return new HashMap<>();
+        }
+        List<Long> ids = loanIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) {
+            return new HashMap<>();
+        }
+        List<Loan> loans = loanRepository.findAllById(ids);
+        if (loans.isEmpty()) {
+            return new HashMap<>();
+        }
+        Map<Long, LoanApplication> appByLoanId = applicationRepository.findByLoanIdIn(
+                        loans.stream().map(Loan::getId).toList()).stream()
+                .filter(a -> a.getLoanId() != null)
+                .collect(Collectors.toMap(LoanApplication::getLoanId, a -> a, (a, b) -> a));
+        List<Long> appIds = appByLoanId.values().stream().map(LoanApplication::getId).toList();
+        Map<Long, CustomerProfile> profileByAppId = appIds.isEmpty() ? Map.of()
+                : profileRepository.findByApplicationIdIn(appIds).stream()
+                        .collect(Collectors.toMap(CustomerProfile::getApplicationId, p -> p, (a, b) -> a));
+        Map<Long, RepaymentService.OutstandingBreakdown> breakdowns =
+                repaymentService.outstandingBreakdownsForAll(loans, LocalDate.now(IST));
+        Map<Long, LoanDues> result = new HashMap<>();
+        for (Loan loan : loans) {
+            RepaymentService.OutstandingBreakdown b = breakdowns.get(loan.getId());
+            if (b == null) {
+                continue;
+            }
+            LoanApplication app = appByLoanId.get(loan.getId());
+            CustomerProfile profile = app != null ? profileByAppId.get(app.getId()) : null;
+            String account = app != null && app.getDisbursalAccountNumber() != null
+                    ? app.getDisbursalAccountNumber()
+                    : (profile != null ? profile.getSalaryAccountNumber() : null);
+            String ifsc = app != null && app.getDisbursalIfsc() != null
+                    ? app.getDisbursalIfsc()
+                    : (profile != null ? profile.getSalaryIfsc() : null);
+            long principal = loan.getPrincipal() != null ? loan.getPrincipal() : 0L;
+            result.put(loan.getId(), new LoanDues(
+                    loan.getId(),
+                    b.interestPaise(), b.interestDays(),
+                    b.penaltyPaise(), b.penaltyDays(),
+                    b.verifiedPaise(),
+                    principal + b.interestPaise() + b.penaltyPaise(),
+                    b.settledAmountPaise(),
+                    profile != null ? profile.getEmail() : null,
+                    account, ifsc,
+                    profile != null ? profile.getBureauScore() : null));
         }
         return result;
     }

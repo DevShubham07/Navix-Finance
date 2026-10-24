@@ -47,6 +47,25 @@ function settlement(overrides: Partial<SettlementView>): SettlementView {
     dueDate: "2026-09-30",
     dpd: 12,
     bucket: "T8_T30",
+    pan: "ABCDE1234F",
+    email: "ravi@example.com",
+    employer: "Acme Corp",
+    employmentStatus: "SALARIED",
+    monthlySalaryPaise: 4_000_000,
+    salaryBank: "HDFC",
+    accountNumber: "1234567890",
+    ifsc: "HDFC0000001",
+    bureauScore: 742,
+    assignedOfficerName: "Officer Nine",
+    disbursedOn: "2026-09-03",
+    netDisbursedPaise: 882_000,
+    // ₹10,000 principal + ₹2,700 interest + ₹2,000 penalty = ₹14,700 owed; ₹1,700 paid → ₹13,000 left.
+    interestPaise: 270_000,
+    interestDays: 27,
+    penaltyPaise: 200_000,
+    penaltyDays: 10,
+    paidPaise: 170_000,
+    grossDuePaise: 1_470_000,
     ...overrides,
   };
 }
@@ -144,9 +163,36 @@ describe("CollectionsSettlementsPage", () => {
     expect(within(ravi).getByRole("link", { name: "Ravi Kumar" })).toHaveAttribute("href", "/staff/customers/7001");
     expect(within(ravi).getByRole("link", { name: "Loan #42" })).toHaveAttribute("href", "/staff/collections/42");
     expect(ravi).toHaveTextContent("9876543210");
-    expect(ravi).toHaveTextContent("12 DPD");
-    // ₹5,000 against ₹13,000 of dues: 38% recovered, ₹8,000 waived.
-    expect(ravi).toHaveTextContent("38% of dues");
+    expect(ravi).toHaveTextContent("ABCDE1234F");
+    expect(ravi).toHaveTextContent("1234567890");
+    expect(ravi).toHaveTextContent("ravi@example.com");
+    // ₹5,000 against ₹14,700 owed: 34% recovered, ₹9,700 lost.
+    expect(ravi).toHaveTextContent("34% of dues");
+    expect(ravi).toHaveTextContent("₹9,700");
+  });
+
+  it("totals due, penalty, net paid and loss per status in the summary table", async () => {
+    renderPage();
+    const summary = await screen.findByRole("table", { name: "Settlement totals" });
+    const [, pendingRow, approvedRow, rejectedRow, totalRow] = within(summary).getAllByRole("row");
+    // Two pending (MINE, THEIRS): 2 × ₹14,700 due, 2 × ₹2,000 penalty, 2 × ₹1,700 paid, 2 × ₹9,700 loss.
+    expect(pendingRow).toHaveTextContent("Pending2₹29,400₹4,000₹3,400₹10,000₹19,400");
+    expect(approvedRow).toHaveTextContent("Approved1₹14,700");
+    expect(rejectedRow).toHaveTextContent("Rejected0");
+    expect(totalRow).toHaveTextContent("Total3₹44,100₹6,000₹5,100₹15,000₹29,100");
+  });
+
+  it("narrows the register and the totals to the chosen period", async () => {
+    vi.spyOn(collectionsApi, "listSettlements").mockResolvedValue([
+      settlement({ id: "eeeeeeee-0000-0000-0000-000000000005", borrowerName: "Old Proposal", createdAt: "2020-01-15T10:00:00Z" }),
+      settlement({ id: "ffffffff-0000-0000-0000-000000000006", borrowerName: "Fresh Proposal", createdAt: new Date().toISOString() }),
+    ]);
+    renderPage();
+    expect(await screen.findByRole("button", { name: "All (2)" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Today" }));
+    expect(screen.getByRole("button", { name: "All (1)" })).toBeInTheDocument();
+    expect(bodyRows()).toHaveLength(1);
+    expect(bodyRows()[0]).toHaveTextContent("Fresh Proposal");
   });
 
   it("asks for confirmation, restating the waiver, before approving", async () => {
@@ -155,7 +201,7 @@ describe("CollectionsSettlementsPage", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
     const dialog = await screen.findByRole("dialog");
     expect(dialog).toHaveTextContent("Ravi Kumar");
-    expect(dialog).toHaveTextContent("Waived");
+    expect(dialog).toHaveTextContent("Loss (written off)");
     expect(approve).not.toHaveBeenCalled();
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));

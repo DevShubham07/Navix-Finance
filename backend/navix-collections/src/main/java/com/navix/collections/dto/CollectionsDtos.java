@@ -176,7 +176,27 @@ public final class CollectionsDtos {
             Long outstandingPaise,
             LocalDate dueDate,
             int dpd,
-            DpdBucket bucket) {
+            DpdBucket bucket,
+            // Customer-tab details.
+            String pan,
+            String email,
+            String employer,
+            String employmentStatus,
+            Long monthlySalaryPaise,
+            String salaryBank,
+            String accountNumber,
+            String ifsc,
+            Long bureauScore,
+            String assignedOfficerName,
+            // Loan + itemised dues (see LoanDues): the cost make-up behind outstandingPaise.
+            LocalDate disbursedOn,
+            Long netDisbursedPaise,
+            Long interestPaise,
+            Integer interestDays,
+            Long penaltyPaise,
+            Integer penaltyDays,
+            Long paidPaise,
+            Long grossDuePaise) {
     }
 
     /** Live DPD helper result: days-past-due plus the derived bucket. */

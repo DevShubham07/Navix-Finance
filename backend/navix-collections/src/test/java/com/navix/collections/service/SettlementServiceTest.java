@@ -239,6 +239,10 @@ class SettlementServiceTest {
                 LocalDate.now().minusDays(40), LocalDate.now().minusDays(10), "Ravi Kumar",
                 "ABXXXXX34F", "9876543210", "Acme Corp", "SALARIED", 4_000_000L, "HDFC", false)));
 
+        when(loanDirectory.findDues(any())).thenReturn(java.util.Map.of(42L, new com.navix.common.loan.LoanDues(
+                42L, 270_000L, 27, 200_000L, 10, 170_000L, 1_470_000L, null,
+                "ravi@example.com", "1234567890", "HDFC0000001", 742L)));
+
         SettlementView v = service.listAll().get(0);
 
         assertThat(v.loanId()).isEqualTo(42L);
@@ -247,7 +251,13 @@ class SettlementServiceTest {
         assertThat(v.mobile()).isEqualTo("9876543210");
         assertThat(v.outstandingPaise()).isEqualTo(1_300_000L);
         assertThat(v.dpd()).isGreaterThan(0);
+        assertThat(v.penaltyPaise()).isEqualTo(200_000L);
+        assertThat(v.paidPaise()).isEqualTo(170_000L);
+        assertThat(v.grossDuePaise()).isEqualTo(1_470_000L);
+        assertThat(v.pan()).isEqualTo("ABXXXXX34F");
+        assertThat(v.accountNumber()).isEqualTo("1234567890");
         verify(loanDirectory, times(1)).findLoans(any());
+        verify(loanDirectory, times(1)).findDues(any());
         verify(loanDirectory, never()).findLoan(anyLong());
     }
 
