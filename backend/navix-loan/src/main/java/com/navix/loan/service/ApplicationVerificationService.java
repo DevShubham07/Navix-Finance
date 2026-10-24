@@ -1095,7 +1095,9 @@ public class ApplicationVerificationService {
         LocalDate aadhaarDob = parseDob(a.dob());
         LocalDate enteredDob = profile.getDob();
         String dobMismatch = dobMismatch(enteredDob, aadhaarDob);
-        if (aadhaarDob != null) {
+        // On a mismatch the entered DOB stays: it is the evidence, and a later DigiLocker run (a file that
+        // could not be rejected) must compare against it again rather than against the Aadhaar DOB itself.
+        if (aadhaarDob != null && dobMismatch == null) {
             profile.setDob(aadhaarDob);
         }
         // Fill blank address from DigiLocker so CRM Personal shows KYC address without a separate step.

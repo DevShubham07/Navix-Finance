@@ -3104,10 +3104,23 @@ class ApplicationVerificationServiceTest {
                 .containsEntry("applicationRejected", true)
                 .doesNotContainKey("aadhaarMismatch");
         assertThat(p.getAadhaarVerified()).isFalse();
+        assertThat(p.getDob()).isEqualTo(LocalDate.of(2003, 4, 24));   // evidence kept, not overwritten
         org.mockito.ArgumentCaptor<String> detail = org.mockito.ArgumentCaptor.forClass(String.class);
         verify(flow).autoRejectSystem(eq(APP), eq(com.navix.loan.entity.ApplicationRejection.FRAUD_REJECTED),
                 detail.capture(), eq(ApplicationFlowService.FRAUD_REJECT_BLOCK_DAYS));
         assertThat(detail.getValue()).contains("2003-04-24").contains("2003-03-24");
+    }
+
+    @Test
+    void digilockerComplete_dobMismatchStaysOnARerunOfAFileThatCouldNotBeRejected() {
+        CustomerProfile p = digilockerReady(LocalDate.of(2003, 4, 24));
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(appWithStatus(APP, ApplicationStatus.ACTIVE)));
+        service.digilockerComplete(APP);
+        p.setDigilockerClientId("CL1");
+        var rerun = service.digilockerComplete(APP);
+        assertThat(rerun.status()).isEqualTo("FAIL");
+        assertThat(rerun.derived()).containsEntry("dobMismatch", true);
+        assertThat(p.getAadhaarVerified()).isFalse();
     }
 
     @Test
