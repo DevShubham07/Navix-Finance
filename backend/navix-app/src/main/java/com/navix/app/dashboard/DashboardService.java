@@ -950,8 +950,11 @@ public class DashboardService {
     }
 
     private RoleView accountantView(DashboardScope scope, LocalDate from, LocalDate to, LocalDate[] prev) {
-        Map<String, long[]> now = team.paymentsByStatus(from, to);
-        Map<String, long[]> before = team.paymentsByStatus(prev[0], prev[1]);
+        // A real accountant sees the payments they decided; ADMIN (working as Accountant) sees the whole desk.
+        // Pending verification stays desk-wide: that queue belongs to no one until someone decides it.
+        Long decidedBy = "ACCOUNTANT".equals(scope.realRole()) ? scope.selfId() : null;
+        Map<String, long[]> now = team.paymentsByStatus(from, to, decidedBy);
+        Map<String, long[]> before = team.paymentsByStatus(prev[0], prev[1], decidedBy);
         long[] zero = new long[2];
         long[] pending = team.pendingVerification();
         List<RoleCard> cards = List.of(

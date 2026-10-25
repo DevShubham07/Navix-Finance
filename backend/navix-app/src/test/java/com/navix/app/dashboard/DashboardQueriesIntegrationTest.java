@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.navix.app.dashboard.BusinessQueries.MonthCollection;
 import com.navix.app.dashboard.DashboardDtos.AumRow;
 import com.navix.app.dashboard.DashboardDtos.Records;
+import com.navix.app.dashboard.DashboardDtos.RoleCard;
 import com.navix.app.dashboard.DashboardDtos.Snapshot;
 import com.navix.app.dashboard.MetricQueries.Agg;
 import com.navix.app.dashboard.MetricSql.Metric;
@@ -357,6 +358,30 @@ class DashboardQueriesIntegrationTest {
         // SQL side is what this pins; the assembly is unit-tested in DashboardTeamDayTest).
         service.collectionsTeamDay(ADMIN, day);
         service.collectionsTeamDay(scope, day);
+    }
+
+    /** A real accountant's Verified/Rejected cards count only the payments they decided; ADMIN sees the desk. */
+    @Test
+    void accountantCardsCountOnlyTheirOwnDecisions() {
+        long loan = jdbc.queryForObject("select min(id) from loan", Long.class);
+        jdbc.update("update payment set decided_by = 15"); // the seeded verified payments
+        payment(loan, 40_000, "REJECTED", "2026-06-12", true);
+        jdbc.update("update payment set decided_by = 16 where status = 'REJECTED'");
+
+        DashboardScope own = new DashboardScope("ACCOUNTANT", List.of(), false, "ACCOUNTANT", 16L);
+        Map<String, RoleCard> cards = new java.util.HashMap<>();
+        service.roleView(own, FROM, TO).cards().forEach(c -> cards.put(c.key(), c));
+        assertThat(cards.get("verified").count()).isZero();
+        assertThat(cards.get("rejectedPayments").count()).isEqualTo(1);
+        assertThat(cards.get("rejectedPayments").amountPaise()).isEqualTo(40_000);
+
+        DashboardScope desk = new DashboardScope("ACCOUNTANT", List.of(), false, "ADMIN", 1L);
+        Map<String, RoleCard> all = new java.util.HashMap<>();
+        service.roleView(desk, FROM, TO).cards().forEach(c -> all.put(c.key(), c));
+        assertThat(all.get("verified").count()).isEqualTo(
+                jdbc.queryForObject("select count(*) from payment where status = 'VERIFIED'"
+                        + " and paid_on between '2026-06-01' and '2026-06-30'", Long.class));
+        assertThat(all.get("rejectedPayments").count()).isEqualTo(1);
     }
 
     @Test

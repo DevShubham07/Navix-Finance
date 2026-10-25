@@ -106,6 +106,8 @@ describe("report periods", () => {
     expect(reportRange("this-quarter", {}, now)).toEqual({ from: "2026-10-01", to: "2026-10-23" });
     expect(reportRange("this-fy", {}, now)).toEqual({ from: "2026-04-01", to: "2026-10-23" });
     expect(reportRange("last-fy", {}, now)).toEqual({ from: "2025-04-01", to: "2026-03-31" });
+    expect(reportRange("last-quarter", {}, now)).toEqual({ from: "2026-07-01", to: "2026-09-30" });
+    expect(reportRange("last-quarter", {}, new Date(2026, 1, 10))).toEqual({ from: "2025-10-01", to: "2025-12-31" });
     expect(reportRange("last-7", {}, now)).toEqual({ from: "2026-10-17", to: "2026-10-23" });
     expect(reportRange("all", {}, now)).toEqual({});
     expect(reportRange("custom", { from: "2026-01-01" }, now)).toEqual({ from: "2026-01-01" });

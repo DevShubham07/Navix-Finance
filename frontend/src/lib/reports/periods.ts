@@ -1,23 +1,21 @@
 /**
  * The reports centre's period presets: the shared ones from `lib/period` (so "this week" means the same
  * as on the performance dashboard) plus the windows a finance reader asks for — rolling 7/30 days, the
- * calendar quarter and the Indian financial year (April–March).
+ * calendar quarter and the Indian financial year (April–March), which now live in the shared list too.
  */
 
-import { PRESETS, addDays, iso, type Range } from "@/lib/period";
+import { PRESETS, addDays, fyStartYear, iso, type Range } from "@/lib/period";
 
 export type ReportPreset = { key: string; label: string; range: (now?: Date) => Range };
 
 const shared = (key: string): ReportPreset => {
   const p = PRESETS.find((x) => x.key === key);
   if (!p) throw new Error(`Unknown preset ${key}`);
-  return { key: p.key, label: p.label, range: () => p.range() };
+  return { key: p.key, label: p.label, range: (now) => p.range(now) };
 };
 
-/** The financial year (1 Apr – 31 Mar) that `d` falls in, as its starting calendar year. */
-export function fyStartYear(d: Date): number {
-  return d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1;
-}
+/** Kept here for existing importers; the definition lives with the shared presets. */
+export { fyStartYear };
 
 export const REPORT_PRESETS: ReportPreset[] = [
   shared("today"),
@@ -28,27 +26,10 @@ export const REPORT_PRESETS: ReportPreset[] = [
   shared("this-month"),
   shared("last-month"),
   { key: "last-30", label: "Last 30 days", range: (now = new Date()) => ({ from: iso(addDays(now, -29)), to: iso(now) }) },
-  {
-    key: "this-quarter",
-    label: "This quarter",
-    range: (now = new Date()) => ({
-      from: iso(new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1)),
-      to: iso(now),
-    }),
-  },
-  {
-    key: "this-fy",
-    label: "This financial year",
-    range: (now = new Date()) => ({ from: iso(new Date(fyStartYear(now), 3, 1)), to: iso(now) }),
-  },
-  {
-    key: "last-fy",
-    label: "Last financial year",
-    range: (now = new Date()) => {
-      const y = fyStartYear(now) - 1;
-      return { from: iso(new Date(y, 3, 1)), to: iso(new Date(y + 1, 2, 31)) };
-    },
-  },
+  shared("this-quarter"),
+  shared("last-quarter"),
+  shared("this-fy"),
+  shared("last-fy"),
   shared("all"),
 ];
 

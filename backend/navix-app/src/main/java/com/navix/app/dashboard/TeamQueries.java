@@ -207,12 +207,16 @@ public class TeamQueries {
         return n == null ? 0 : n;
     }
 
-    /** Payments by status whose payment date falls in the window: {count, paise}. */
-    public Map<String, long[]> paymentsByStatus(LocalDate from, LocalDate to) {
+    /**
+     * Payments by status whose payment date falls in the window: {count, paise}. {@code decidedBy}
+     * narrows it to the payments one accountant verified or rejected; null counts everyone's.
+     */
+    public Map<String, long[]> paymentsByStatus(LocalDate from, LocalDate to, Long decidedBy) {
         Map<String, long[]> out = new LinkedHashMap<>();
         metrics.jdbc().query("select p.status, count(*) as n, coalesce(sum(p.amount), 0) as amt from payment p"
-                        + " where p.paid_on between :from and :to group by 1",
-                p(List.of(), from, to), rs -> {
+                        + " where p.paid_on between :from and :to"
+                        + (decidedBy == null ? "" : " and p.decided_by = :decidedBy") + " group by 1",
+                p(List.of(), from, to).addValue("decidedBy", decidedBy), rs -> {
                     out.put(rs.getString("status"), new long[] {rs.getLong("n"), rs.getLong("amt")});
                 });
         return out;
