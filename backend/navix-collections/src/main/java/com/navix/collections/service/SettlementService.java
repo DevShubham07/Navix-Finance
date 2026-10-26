@@ -150,6 +150,11 @@ public class SettlementService {
         Settlement saved = settlementRepository.save(s);
         Long loanId = caseRepository.findById(saved.getCollectionCaseId())
                 .map(CollectionCase::getLoanId).orElse(null);
+        // The settlement caps what is owed from now on; if the borrower has already paid that much the
+        // loan closes here, in the approval's own transaction, attributed to the approving Head.
+        if (loanId != null) {
+            loanDirectory.recomputeOutstanding(loanId);
+        }
         publishSettlement(saved, loanId, true);
         return toView(saved);
     }

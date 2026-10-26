@@ -610,7 +610,7 @@ class RepaymentServiceTest {
 
         assertThat(loan.getOutstanding()).isZero();
         assertThat(loan.getStatus()).isEqualTo(LoanStatus.CLOSED);
-        verify(applicationFlowService).closeForLoan(1L);
+        verify(applicationFlowService).closeForLoan(1L, "Closed by approved settlement of ₹7,000.00 (full & final)");
     }
 
     /**

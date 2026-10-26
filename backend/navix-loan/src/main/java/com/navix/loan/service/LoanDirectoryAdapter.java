@@ -242,6 +242,12 @@ public class LoanDirectoryAdapter implements LoanDirectory {
         return payment.getId();
     }
 
+    @Override
+    @Transactional
+    public void recomputeOutstanding(Long loanId) {
+        repaymentService.recomputeOutstanding(loanId);
+    }
+
     /** Build the snapshot, resolving the borrower via the application's KYC profile (both nullable). */
     private LoanSummary toSummary(Loan loan) {
         LoanApplication app = applicationRepository.findByLoanId(loan.getId()).orElse(null);

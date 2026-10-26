@@ -1006,9 +1006,18 @@ public class ApplicationFlowService {
      */
     @Transactional
     public void closeForLoan(Long loanId) {
+        closeForLoan(loanId, "Loan fully repaid");
+    }
+
+    /**
+     * As {@link #closeForLoan(Long)}, with the audit note supplied — a settlement closure says so. The
+     * action stays {@code REPAID}: notifications, the journey and every closed-status check key on it.
+     */
+    @Transactional
+    public void closeForLoan(Long loanId, String notes) {
         applicationRepository.findByLoanId(loanId).ifPresent(app -> {
             if (app.getStatus() == ApplicationStatus.ACTIVE || app.getStatus() == ApplicationStatus.OVERDUE) {
-                transition(app, ApplicationStatus.CLOSED, "REPAID", "Loan fully repaid");
+                transition(app, ApplicationStatus.CLOSED, "REPAID", notes);
                 applicationRepository.save(app);
             }
         });

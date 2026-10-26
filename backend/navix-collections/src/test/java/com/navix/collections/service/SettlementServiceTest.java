@@ -135,6 +135,19 @@ class SettlementServiceTest {
     }
 
     @Test
+    void approveRecomputesTheLoanSoAPaidUpSettlementClosesIt() {
+        ActorContext.set(HEAD);
+        when(settlementRepository.findById(settlementId)).thenReturn(Optional.of(proposedByOfficer()));
+        when(settlementRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        when(caseRepository.findById(caseId)).thenReturn(Optional.of(caseWithLoan()));
+        when(loanDirectory.findLoan(2L)).thenReturn(Optional.empty());
+
+        service.approve(settlementId);
+
+        verify(loanDirectory).recomputeOutstanding(2L);
+    }
+
+    @Test
     void approveBySameActorWhoProposedViolatesSod() {
         // A Collection Head may also propose; if that same head then approves, SoD must block it
         // (the role guard passes, so we reach the proposer≠approver check).
@@ -172,6 +185,7 @@ class SettlementServiceTest {
 
         SettlementView rejected = service.reject(settlementId);
 
+        verify(loanDirectory, never()).recomputeOutstanding(anyLong());
         assertThat(rejected.status()).isEqualTo("REJECTED");
         assertThat(rejected.rejectedBy()).isEqualTo(8L);
         assertThat(rejected.rejectedByName()).isEqualTo("Arjun Patel");

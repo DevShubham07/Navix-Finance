@@ -448,7 +448,16 @@ public class RepaymentService {
         loan.setClosedOn(settledOn);
         loanRepository.save(loan);
         // Mirror full repayment onto the application aggregate (ACTIVE/OVERDUE → CLOSED).
-        applicationFlowService.closeForLoan(loanId);
+        // A settlement closure says so in the audit trail: the borrower did not pay the full formula balance.
+        var settlement = settlementDirectory.approvedSettlementAmount(loanId);
+        if (settlement.isPresent()) {
+            applicationFlowService.closeForLoan(loanId, "Closed by approved settlement of "
+                    + java.text.NumberFormat.getCurrencyInstance(java.util.Locale.of("en", "IN"))
+                            .format(settlement.get() / 100.0)
+                    + " (full & final)");
+        } else {
+            applicationFlowService.closeForLoan(loanId);
+        }
         // DSA commission maturity: flip ACCRUED -> PAYABLE (or VOID on an approved settlement /
         // default / write-off). A no-op when this loan has no DSA commission.
         dsaCommissionService.onLoanClosed(loanId);

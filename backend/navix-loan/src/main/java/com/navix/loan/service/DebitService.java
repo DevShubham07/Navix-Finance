@@ -295,7 +295,10 @@ public class DebitService {
             throw new BusinessException("DEBIT_NOT_CONFIGURED", "Debits are not configured");
         }
 
-        long outstanding = repayments.outstandingAsOf(loanId, today);
+        // T-1 cutoff: what we request today settles tomorrow at the earliest. Size the debit to what is owed on
+        // that day, not today: penalty keeps accruing until settlement, and sizing to today left a 1-day residue.
+        LocalDate settle = today.plusDays(1);
+        long outstanding = repayments.outstandingAsOf(loanId, settle);
         if (outstanding <= 0) {
             throw new BusinessException("NOTHING_OUTSTANDING", "Nothing is outstanding on this loan");
         }
@@ -312,8 +315,6 @@ public class DebitService {
         if (amount > Integer.MAX_VALUE) { // Digio's amount_in_paise is int32
             throw new BusinessException("AMOUNT_TOO_LARGE", "The amount is too large for a single debit");
         }
-        // T-1 cutoff: what we request today settles tomorrow at the earliest.
-        LocalDate settle = today.plusDays(1);
         if ((mandate.getFirstCollectionDate() != null && settle.isBefore(mandate.getFirstCollectionDate()))
                 || (mandate.getFinalCollectionDate() != null && settle.isAfter(mandate.getFinalCollectionDate()))) {
             throw new BusinessException("OUTSIDE_MANDATE_WINDOW", "The debit date is outside the mandate period");

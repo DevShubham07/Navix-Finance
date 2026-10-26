@@ -97,4 +97,11 @@ public interface LoanDirectory {
      */
     Long creditCollectionPayment(Long loanId, long amountPaise, String txnRef,
                                  String proofRef, LocalDate paidOn);
+
+    /**
+     * Re-evaluate the loan's penalty- and settlement-aware balance and close it (loan and application)
+     * if nothing is owed. Called when a settlement is approved: the cap applies at once, so a borrower
+     * who has already paid the settled figure must not wait for another payment to be closed.
+     */
+    void recomputeOutstanding(Long loanId);
 }

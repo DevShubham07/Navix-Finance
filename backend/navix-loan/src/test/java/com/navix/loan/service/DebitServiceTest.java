@@ -75,7 +75,7 @@ class DebitServiceTest {
 
         when(loans.findLoan(LOAN)).thenReturn(Optional.of(loan("OVERDUE", today.minusDays(3))));
         when(mandateService.usableMandateForLoan(LOAN)).thenReturn(Optional.of(mandate));
-        when(repayments.outstandingAsOf(LOAN, today)).thenReturn(500_000L);
+        when(repayments.outstandingAsOf(LOAN, today.plusDays(1))).thenReturn(500_000L);
         when(debits.saveAndFlush(any())).thenAnswer(i -> i.getArgument(0));
         when(debits.save(any())).thenAnswer(i -> i.getArgument(0));
         when(port.presentDebit(any())).thenReturn(new DebitPlan("NSP1", "SCHEDULED", null, null));
@@ -119,14 +119,14 @@ class DebitServiceTest {
     }
 
     @Test
-    void defaultsToFullOutstandingAsOfToday() {
+    void defaultsToFullOutstandingAsOfSettlementDay() {
         service.present(LOAN, null, Trigger.MANUAL, 9L);
         ArgumentCaptor<DebitRequest> req = ArgumentCaptor.forClass(DebitRequest.class);
         verify(port).presentDebit(req.capture());
         assertThat(req.getValue().amountPaise()).isEqualTo(500_000L);
         assertThat(req.getValue().umrn()).isEqualTo("UMRN1");
         assertThat(req.getValue().settlementDate()).isEqualTo(today.plusDays(1));
-        verify(repayments).outstandingAsOf(LOAN, today);
+        verify(repayments).outstandingAsOf(LOAN, today.plusDays(1));
     }
 
     @Test
@@ -368,9 +368,9 @@ class DebitServiceTest {
 
     @Test
     void refusesWhenNothingIsOutstanding() {
-        when(repayments.outstandingAsOf(LOAN, today)).thenReturn(0L);
+        when(repayments.outstandingAsOf(LOAN, today.plusDays(1))).thenReturn(0L);
         assertCode(() -> service.present(LOAN, null, Trigger.SCHEDULED, null), "NOTHING_OUTSTANDING");
-        when(repayments.outstandingAsOf(LOAN, today)).thenReturn(-1L);
+        when(repayments.outstandingAsOf(LOAN, today.plusDays(1))).thenReturn(-1L);
         assertCode(() -> service.present(LOAN, 100_000L, Trigger.MANUAL, 9L), "NOTHING_OUTSTANDING");
         verify(port, never()).presentDebit(any());
     }
@@ -406,7 +406,7 @@ class DebitServiceTest {
     @Test
     void refusesAnAmountAboveTheProvidersInt32Ceiling() {
         long overInt32 = (long) Integer.MAX_VALUE + 1;
-        when(repayments.outstandingAsOf(LOAN, today)).thenReturn(overInt32 + 1_000L);
+        when(repayments.outstandingAsOf(LOAN, today.plusDays(1))).thenReturn(overInt32 + 1_000L);
         mandate.setMaximumAmountPaise(overInt32 + 1_000L);
         assertCode(() -> service.present(LOAN, overInt32, Trigger.MANUAL, 9L), "AMOUNT_TOO_LARGE");
         verify(port, never()).presentDebit(any());
