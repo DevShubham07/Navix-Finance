@@ -27,7 +27,7 @@ import org.springframework.web.client.RestClientResponseException;
  * <p><b>Casing:</b> the live API answers {@code snake_case} ({@code ifsc_prefix}, {@code api_mandate}), not
  * the camelCase its published spec documents (docs/digio/13-live-verification-log.md section 2). Responses
  * are read as a {@link JsonNode} tree, which also tolerates the undocumented fields Digio adds without
- * notice. Request and response vocabularies differ too: we write {@code frequency: "Adhoc"} and read back
+ * notice. Request and response vocabularies differ too: we write {@code frequency: "Adhoc"} (Monthly for HDFC) and read back
  * {@code "ADHO"}; nothing here maps that field, so neither direction can break the other.
  *
  * <p><b>Errors:</b> business rejections arrive as HTTP 500 {@code {code:"SYSTEM_ERROR"}} (log section 7), so the
@@ -59,7 +59,7 @@ public class DigioMandateClient implements MandatePort {
         ObjectNode data = JSON.createObjectNode();
         data.put("management_category", "L001");
         data.put("is_recurring", true);
-        data.put("frequency", "Adhoc");
+        data.put("frequency", registrationFrequency(r.ifsc()));
         data.put("first_collection_date", r.firstCollectionDate().toString());
         if (r.finalCollectionDate() != null) {
             data.put("final_collection_date", r.finalCollectionDate().toString());
@@ -299,6 +299,16 @@ public class DigioMandateClient implements MandatePort {
                 op.startsWith("debit_") ? "We could not complete the debit request. Please check the case and try again."
                         : op.endsWith("_cancel") ? "We could not cancel the mandate. Please try again."
                         : "We could not complete the mandate setup. Please try again.");
+    }
+
+    /**
+     * HDFC rejects an L001 mandate filed as Adhoc with {@code AP27 Invalid mandate frequency}, rejected by BANK
+     * (docs/digio/13-live-verification-log.md section 14); every other bank has registered Adhoc fine.
+     * ponytail: a one-bank list; widen it if another bank answers AP27. The debit call still sends "adhoc" —
+     * confirm with Digio what a Monthly mandate's debits and DPD retries need before enabling digio-debit.
+     */
+    static String registrationFrequency(String ifsc) {
+        return ifsc != null && ifsc.regionMatches(true, 0, "HDFC", 0, 4) ? "Monthly" : "Adhoc";
     }
 
     /** Digio rejects apostrophes and hyphens (and caps at 40); the name should still resemble the bank's. */

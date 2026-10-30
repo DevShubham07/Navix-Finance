@@ -79,6 +79,22 @@ class DigioMandateClientTest {
     }
 
     @Test
+    void registerFilesHdfcAsMonthlyBecauseHdfcRejectsAdhocWithAp27() throws Exception {
+        DigioMandateClient c = client();
+        AtomicReference<String> sent = new AtomicReference<>();
+        server.expect(requestTo(BASE + "/v3/client/mandate/create_form"))
+                .andExpect(r -> sent.set(((org.springframework.mock.http.client.MockClientHttpRequest) r).getBodyAsString()))
+                .andRespond(withSuccess(CREATED, MediaType.APPLICATION_JSON));
+
+        c.register(new MandateRequest("CRN1", "Asha", "9876543210", "123456789012", "hdfc0001234",
+                "HDFC Bank", 2_000_000L, LocalDate.of(2026, 11, 1), null));
+
+        assertThat(JSON.readTree(sent.get()).path("mandate_data").path("frequency").asText()).isEqualTo("Monthly");
+        assertThat(DigioMandateClient.registrationFrequency("KKBK0001234")).isEqualTo("Adhoc");
+        assertThat(DigioMandateClient.registrationFrequency(null)).isEqualTo("Adhoc");
+    }
+
+    @Test
     void registerConvertsPaiseToRupeeDecimal() throws Exception {
         DigioMandateClient c = client();
         AtomicReference<String> sent = new AtomicReference<>();

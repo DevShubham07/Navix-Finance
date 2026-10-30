@@ -655,3 +655,20 @@ now contradicted by execution. Only a UMRN (or `revoked`/`cancelled`/`expired`) 
   **unobserved** — "retry next day" is all we were told.
 - Whether a fresh filing tomorrow is flagged against today's six stale `partial` mandates is unknown.
 - Cancelling those stale mandates is a write against real NPCI records and was not attempted.
+
+## 14. First HDFC mandate — `AP27 Invalid mandate frequency`, rejected by BANK (2026-10-30)
+
+Same shape that registered at PNB (`PUNB7031610261030169`) and Kotak (`KKBK7022010261001406`):
+`management_category: "L001"`, `frequency: "Adhoc"`, `is_recurring: true`, MAXIMUM-type. HDFC's
+destination-bank check refused it — NPCI page: UMRN `HDFC7033010261023984`, reason code **`AP27`**,
+"Invalid mandate frequency", *Rejected By: BANK*. Nothing about the borrower; retrying re-files the
+identical request and fails identically.
+
+Digio's spec already warned: L001 "should have a defined frequency that is commensurate with the EMI
+schedule… eg: Monthly"; a wrong one "may lead to mandate registration failure".
+
+**Fix:** `DigioMandateClient.registrationFrequency` files **`Monthly` for HDFC IFSCs only**; every other
+bank keeps the proven `Adhoc`. **Open before `digio-debit` goes on:** the debit call still sends
+`frequency: "adhoc"`, and our DPD 1/3/5/9 re-presentations all fall in one month — ask Digio whether a
+Monthly HDFC mandate accepts that, or refuses with a frequency mismatch. The HDFC borrower already
+rejected is unblocked by the `mandate:override` on that application's newest attempt.
