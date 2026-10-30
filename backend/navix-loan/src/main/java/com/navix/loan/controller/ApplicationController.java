@@ -543,13 +543,15 @@ public class ApplicationController {
      */
     @PostMapping("/{id}/mandate/{mandateId}/cancel")
     public ApiResponse<com.navix.loan.service.MandateService.MandateAttempt> mandateCancel(
-            @PathVariable Long id, @PathVariable Long mandateId) {
+            @PathVariable Long id, @PathVariable Long mandateId,
+            @RequestBody(required = false) CancelMandateRequest req) {
         String role = ActorContext.get() == null ? null : ActorContext.get().role();
         if (role == null || !MANDATE_CANCEL_ROLES.contains(role)) {
             throw new BusinessException("FORBIDDEN_ROLE",
                     "This action requires role COLLECTION_HEAD, DISBURSEMENT_HEAD or ADMIN");
         }
-        return ApiResponse.ok(mandateService.cancel(id, mandateId));
+        return ApiResponse.ok(mandateService.cancel(id, mandateId,
+                req != null && Boolean.TRUE.equals(req.withdrawLocally())));
     }
 
     /**
@@ -601,6 +603,10 @@ public class ApplicationController {
 
     /** {@code reason} is a {@link com.navix.loan.service.MandateService.CancelReason} name. */
     public record CancelActiveMandateRequest(String reason, String notes) {
+    }
+
+    /** {@code withdrawLocally}: mark a never-authorised attempt cancelled on our side when the bank refuses. */
+    public record CancelMandateRequest(Boolean withdrawLocally) {
     }
 
     private static final java.util.Set<String> MANDATE_CANCEL_ROLES = java.util.Set.of(

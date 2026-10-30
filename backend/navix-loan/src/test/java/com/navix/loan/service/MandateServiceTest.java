@@ -669,7 +669,7 @@ class MandateServiceTest {
                 null, null, null, null, null));
         when(mandates.findByCustomerIdOrderByAttemptNoDesc(4471L)).thenReturn(List.of(pending));
 
-        service.cancel(1L, 2L);
+        service.cancel(1L, 2L, false);
 
         assertThat(pending.getStatus()).isEqualTo(Mandate.Status.AUTHORIZATION_FAILED);
         verify(port).cancelMandate("ENA2", null, "HDFC0001234", "C002");
@@ -683,7 +683,7 @@ class MandateServiceTest {
     void cancelRefusesAnActiveMandate() {
         Mandate active = attempt(1, Mandate.Status.ACTIVE, "KKBK7022010261001406");
         when(mandates.findById(1L)).thenReturn(Optional.of(active));
-        assertThatThrownBy(() -> service.cancel(1L, 1L))
+        assertThatThrownBy(() -> service.cancel(1L, 1L, false))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("code", "MANDATE_ACTIVE_NOT_CANCELLABLE");
         verify(port, never()).cancelMandate(any(), any(), any(), any());
@@ -695,7 +695,7 @@ class MandateServiceTest {
         Mandate theirs = attempt(1, Mandate.Status.PENDING_AUTHORIZATION, null);
         theirs.setCustomerId(9999L);
         when(mandates.findById(1L)).thenReturn(Optional.of(theirs));
-        assertThatThrownBy(() -> service.cancel(1L, 1L))
+        assertThatThrownBy(() -> service.cancel(1L, 1L, false))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("code", "MANDATE_NOT_FOUND");
         verify(port, never()).cancelMandate(any(), any(), any(), any());
@@ -707,10 +707,38 @@ class MandateServiceTest {
         Mandate pending = attempt(2, Mandate.Status.PENDING_AUTHORIZATION, null);
         when(mandates.findById(2L)).thenReturn(Optional.of(pending));
         when(port.cancelMandate(any(), any(), any(), any())).thenReturn(false);
-        assertThatThrownBy(() -> service.cancel(1L, 2L))
+        assertThatThrownBy(() -> service.cancel(1L, 2L, false))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("code", "MANDATE_CANCEL_REFUSED");
         assertThat(pending.getStatus()).isEqualTo(Mandate.Status.PENDING_AUTHORIZATION); // unchanged
+    }
+
+    /** Staff-confirmed: a never-authorised attempt the bank won't cancel is withdrawn on our side. */
+    @Test
+    void cancelWithdrawsLocallyWhenTheBankRefusesAnUnauthorisedAttempt() {
+        Mandate pending = attempt(2, Mandate.Status.PENDING_AUTHORIZATION, null);
+        when(mandates.findById(2L)).thenReturn(Optional.of(pending));
+        when(port.cancelMandate(any(), any(), any(), any())).thenReturn(false);
+        when(mandates.findByCustomerIdOrderByAttemptNoDesc(4471L)).thenReturn(List.of(pending));
+
+        var row = service.cancel(1L, 2L, true);
+
+        assertThat(pending.getStatus()).isEqualTo(Mandate.Status.AUTHORIZATION_FAILED);
+        assertThat(row.cancelledAt()).isNotNull();
+        assertThat(row.cancelReason()).startsWith("Withdrawn on our side");
+        verify(port, never()).fetch(any());
+    }
+
+    /** Never a local withdraw for an attempt that holds a UMRN: that is a real authority at the bank. */
+    @Test
+    void cancelNeverWithdrawsLocallyWhenAUmrnExists() {
+        Mandate failed = attempt(2, Mandate.Status.AUTHORIZATION_FAILED, "HDFC7033010261023984");
+        when(mandates.findById(2L)).thenReturn(Optional.of(failed));
+        when(port.cancelMandate(any(), any(), any(), any())).thenReturn(false);
+        assertThatThrownBy(() -> service.cancel(1L, 2L, true))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "MANDATE_CANCEL_REFUSED");
+        assertThat(failed.getCancelledAt()).isNull();
     }
 
     // ---- cancelActive(): revoking the live authority, deliberately ---------------------------------------

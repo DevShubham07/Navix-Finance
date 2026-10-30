@@ -678,9 +678,16 @@ public class MandateService {
      * <p>Reason {@code C002} (corporate request): we are withdrawing our own duplicate filing, not
      * acting on the customer's instruction. The provider decides whether the state permits it at all
      * (11- Q9 is still open), so a refusal surfaces rather than being swallowed.
+     *
+     * <p>{@code withdrawLocally}: Digio refuses to cancel an attempt that was never authorised (no UMRN), yet
+     * settleEarlierAttempts keeps handing that attempt's link back for 7 days — the trap for the HDFC Adhoc
+     * filings that can only ever fail AP27 (docs/digio/13 §14). With the flag, and only for a UMRN-less
+     * attempt the bank refused to cancel, the row is marked cancelled on our side so the next try files
+     * afresh. Staff confirm it in the UI: if the borrower still completes the old link, that mandate lives at
+     * their bank untracked — never debited by us, since debits need an ACTIVE row.
      */
     @Transactional
-    public MandateAttempt cancel(Long appId, Long mandateId) {
+    public MandateAttempt cancel(Long appId, Long mandateId, boolean withdrawLocally) {
         LoanApplication app = applications.findById(appId)
                 .orElseThrow(() -> new BusinessException("APPLICATION_NOT_FOUND", "Application not found"));
         Mandate m = mandates.findById(mandateId)
@@ -697,8 +704,16 @@ public class MandateService {
                     "This mandate is active. Cancelling a live mandate is not done from here.");
         }
         boolean cancelled = port.cancelMandate(m.getDigioMandateId(), m.getUmrn(), m.getIfsc(), "C002");
+        boolean neverAuthorised = m.getUmrn() == null || m.getUmrn().isBlank();
+        if (!cancelled && withdrawLocally && neverAuthorised) {
+            m.setStatus(Mandate.Status.AUTHORIZATION_FAILED);
+            markCancelled(m, "Withdrawn on our side: never authorised, so the bank cannot cancel it");
+            mandates.save(m);
+            log.info("Mandate attempt withdrawn locally crn={} applicationId={}", m.getCustomerRefNumber(), appId);
+            return history(appId).stream().filter(a -> a.id().equals(mandateId)).findFirst().orElseThrow();
+        }
         if (!cancelled) {
-            throw new BusinessException("MANDATE_CANCEL_REFUSED", m.getUmrn() == null || m.getUmrn().isBlank()
+            throw new BusinessException("MANDATE_CANCEL_REFUSED", neverAuthorised
                     ? "This attempt was never authorised, so there is no registered mandate (UMRN) to cancel yet."
                     : "The bank would not cancel this mandate. It may already be closed or past the point of cancellation.");
         }

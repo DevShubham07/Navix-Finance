@@ -199,18 +199,57 @@ export function MandateTab({
 
   // Cancelling withdraws a real registration at NPCI, so it is heads-only and always confirmed first.
   const mayCancel = can("mandate:override") || can("collections:manage");
-  const [cancelId, setCancelId] = React.useState<number | null>(null);
+  // A never-authorised attempt (no UMRN) is one the bank refuses to cancel, so it goes with withdrawLocally:
+  // the server tries the bank first and, on refusal, marks it cancelled on our side only.
+  const [attemptCancel, setAttemptCancel] = React.useState<MandateAttempt | null>(null);
   const cancel = useMutation({
-    mutationFn: (mandateId: number) => staffApi.mandateCancel(applicationId as number, mandateId),
-    onSuccess: () => {
-      toast.success("Mandate cancelled");
-      setCancelId(null);
+    mutationFn: (a: MandateAttempt) => staffApi.mandateCancel(applicationId as number, a.id, !a.umrn),
+    onSuccess: (row) => {
+      toast.success(
+        row.cancelReason?.startsWith("Withdrawn on our side")
+          ? "Attempt withdrawn on our side — the customer's next try files a fresh mandate"
+          : "Mandate attempt cancelled at the bank",
+      );
+      setAttemptCancel(null);
       qc.invalidateQueries({ queryKey: ["staff-mandate", applicationId] });
       qc.invalidateQueries({ queryKey: ["staff-mandate-history", applicationId] });
       onChanged?.();
     },
-    onError: (e) => toast.error(errMessage(e)),
   });
+
+  const attemptCancelPanel = attemptCancel ? (
+    <div className="max-w-2xl space-y-3 rounded-lg border border-warning-100 bg-warning-50 p-4">
+      <div className="flex items-center gap-2 text-sm font-semibold text-navy">
+        <AlertTriangle size={15} className="text-warning-700" /> Cancel mandate attempt #{attemptCancel.attemptNo}?
+      </div>
+      {attemptCancel.umrn ? (
+        <p className="text-xs leading-relaxed text-navy">
+          This asks the bank to withdraw registration {attemptCancel.umrn} at NPCI. It cannot be undone.
+        </p>
+      ) : (
+        <p className="text-xs leading-relaxed text-navy">
+          We ask the bank to cancel it first. A bank usually refuses to cancel an attempt that was never
+          authorised — if so, it is <strong>withdrawn on our side only</strong>, and the customer&apos;s next try
+          files a fresh mandate instead of reopening this one. Their old bank link may still work for up to 7
+          days; if they complete it, that mandate stays at their bank and we never debit it.
+        </p>
+      )}
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => cancel.mutate(attemptCancel)}
+          disabled={cancel.isPending}
+          className="btn btn-sm btn-navy disabled:opacity-50"
+        >
+          {cancel.isPending && <Loader2 size={14} className="animate-spin" />} Yes, cancel attempt
+        </button>
+        <button type="button" onClick={() => setAttemptCancel(null)} disabled={cancel.isPending} className="btn btn-sm">
+          Keep it
+        </button>
+      </div>
+      {cancel.isError && <p className="text-xs text-error-700">{errMessage(cancel.error)}</p>}
+    </div>
+  ) : null;
 
   // Cancelling the LIVE mandate: a deliberate act with a reason and a note, never a one-click row action.
   // Auto-debit stops for any loan it served (manual repayment from then on) and the borrower is notified.
@@ -415,14 +454,15 @@ export function MandateTab({
 
   const historyPanel =
     (attemptsQ.data?.length ?? 0) > 0 ? (
-      <div className="max-w-3xl space-y-2">
+      <div className="max-w-4xl space-y-2">
         <h4 className="text-sm font-semibold text-navy">
           Mandate attempts <span className="font-normal text-muted">({attemptsQ.data?.length})</span>
         </h4>
+        {/* The action column is sticky on the right, so it stays visible when the table scrolls sideways. */}
         <div className="overflow-x-auto rounded-lg border border-line">
           <table className="w-full text-xs">
             <thead>
-              <tr className="border-b border-line bg-grey-50 text-left text-muted">
+              <tr className="border-b border-line bg-grey-50 text-left text-muted [&>th]:whitespace-nowrap">
                 <th className="px-3 py-2 font-medium">#</th>
                 <th className="px-3 py-2 font-medium">Status</th>
                 <th className="px-3 py-2 font-medium">UMRN</th>
@@ -430,17 +470,23 @@ export function MandateTab({
                 <th className="px-3 py-2 font-medium">Ceiling</th>
                 <th className="px-3 py-2 font-medium">Started</th>
                 <th className="px-3 py-2 font-medium">App</th>
-                {mayCancel && <th className="px-3 py-2 font-medium" />}
+                {mayCancel && (
+                  <th className="sticky right-0 border-l border-line bg-grey-50 px-3 py-2 text-right font-medium">
+                    Action
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
               {attemptsQ.data?.map((a: MandateAttempt) => (
                 <tr
                   key={a.id}
-                  className={`border-b border-line/60 last:border-0 ${a.reusable ? "bg-success-50" : ""}`}
+                  className={`border-b border-line/60 align-top last:border-0 [&>td]:whitespace-nowrap ${
+                    a.reusable ? "bg-success-50" : ""
+                  } ${attemptCancel?.id === a.id || activeCancel?.id === a.id ? "bg-warning-50" : ""}`}
                 >
                   <td className="px-3 py-2">{a.attemptNo}</td>
-                  <td className="px-3 py-2">
+                  <td className="min-w-[14rem] max-w-[20rem] px-3 py-2 !whitespace-normal break-words">
                     {a.cancelledAt ? "Cancelled" : STATUS_LABEL[a.status] ?? a.status}
                     {a.reusable && <span className="ml-1 font-semibold text-success-700">· in force</span>}
                     {a.status === "ACTIVE" && !a.cancelledAt && (
@@ -464,47 +510,32 @@ export function MandateTab({
                   <td className="px-3 py-2">{a.createdAt ? formatDateTime(a.createdAt) : "—"}</td>
                   <td className="px-3 py-2 font-mono">{a.applicationId ? `#${a.applicationId}` : "—"}</td>
                   {mayCancel && (
-                    <td className="px-3 py-2 text-right">
-                      {/* An ACTIVE mandate opens the deliberate cancel panel below; a never-filed one has nothing to cancel. */}
-                      {a.status === "ACTIVE" ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActiveCancel(a);
-                            setCancelNotes("");
-                            setCancelReason("CUSTOMER_REQUEST");
-                          }}
-                          className="inline-flex items-center gap-1 whitespace-nowrap text-error-700 hover:underline"
-                        >
-                          <XCircle size={13} /> Cancel mandate…
-                        </button>
-                      ) : a.status === "BANK_UNSUPPORTED" || a.cancelledAt ? null : cancelId === a.id ? (
-                        <span className="inline-flex items-center gap-1 whitespace-nowrap">
-                          <span className="text-navy">Cancel this mandate?</span>
-                          <button
-                            type="button"
-                            onClick={() => cancel.mutate(a.id)}
-                            disabled={cancel.isPending}
-                            className="btn btn-sm btn-navy disabled:opacity-50"
-                          >
-                            {cancel.isPending && <Loader2 size={12} className="animate-spin" />} Yes, cancel
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setCancelId(null)}
-                            disabled={cancel.isPending}
-                            className="btn btn-sm"
-                          >
-                            No
-                          </button>
-                        </span>
+                    <td
+                      className={`sticky right-0 border-l border-line px-3 py-2 text-right ${
+                        a.reusable ? "bg-success-50" : "bg-white"
+                      }`}
+                    >
+                      {/* Both open a confirmation panel under the table; a cancelled or never-filed one has no action. */}
+                      {a.status === "BANK_UNSUPPORTED" || a.cancelledAt ? (
+                        <span className="text-muted">—</span>
                       ) : (
                         <button
                           type="button"
-                          onClick={() => setCancelId(a.id)}
-                          className="inline-flex items-center gap-1 text-error-700 hover:underline"
+                          onClick={() => {
+                            if (a.status === "ACTIVE") {
+                              setAttemptCancel(null);
+                              setActiveCancel(a);
+                              setCancelNotes("");
+                              setCancelReason("CUSTOMER_REQUEST");
+                            } else {
+                              setActiveCancel(null);
+                              cancel.reset();
+                              setAttemptCancel(a);
+                            }
+                          }}
+                          className="inline-flex items-center gap-1 rounded border border-error-100 px-2 py-1 font-medium text-error-700 hover:bg-error-50"
                         >
-                          <XCircle size={13} /> Cancel
+                          <XCircle size={13} /> {a.status === "ACTIVE" ? "Cancel mandate…" : "Cancel…"}
                         </button>
                       )}
                     </td>
@@ -515,7 +546,8 @@ export function MandateTab({
           </table>
         </div>
         {activeCancelPanel}
-        {(attemptsQ.data?.filter((a) => a.status === "PENDING_AUTHORIZATION").length ?? 0) > 1 && (
+        {attemptCancelPanel}
+        {(attemptsQ.data?.filter((a) => a.status === "PENDING_AUTHORIZATION" && !a.cancelledAt).length ?? 0) > 1 && (
           <p className="text-xs text-warning-800">
             More than one attempt is still awaiting authorisation. Each is a live mandate request at the
             bank — if the customer completes one of the older ones they get a second UMRN. Ask them to
@@ -717,7 +749,8 @@ export function MandateTab({
       {mayDebit && (historyQ.data?.length ?? 0) > 0 && (
         <div className="max-w-2xl space-y-2">
           <h4 className="text-sm font-semibold text-navy">Debit attempts</h4>
-          <table className="w-full text-xs">
+          <div className="overflow-x-auto rounded-lg border border-line">
+          <table className="w-full text-xs [&_td]:px-2 [&_th]:px-2">
             <thead>
               <tr className="border-b border-line text-left text-muted">
                 <th className="py-1.5 pr-3 font-medium">#</th>
@@ -726,7 +759,7 @@ export function MandateTab({
                 <th className="py-1.5 pr-3 font-medium">Settlement</th>
                 <th className="py-1.5 pr-3 font-medium">UTR</th>
                 <th className="py-1.5 pr-3 font-medium">Trigger</th>
-                <th className="py-1.5 font-medium" />
+                <th className="sticky right-0 border-l border-line bg-white py-1.5 font-medium" />
               </tr>
             </thead>
             <tbody>
@@ -745,7 +778,7 @@ export function MandateTab({
                   <td className="py-1.5 pr-3">{d.settlementDate ?? "—"}</td>
                   <td className="py-1.5 pr-3 font-mono">{d.utr ?? "—"}</td>
                   <td className="py-1.5 pr-3">{d.trigger ?? "—"}</td>
-                  <td className="py-1.5 text-right">
+                  <td className="sticky right-0 border-l border-line bg-white py-1.5 text-right">
                     {d.status === "SCHEDULED" || d.status === "IN_PROGRESS" ? (
                       cancelDebitId === d.debitId ? (
                         <span className="inline-flex items-center gap-1 whitespace-nowrap">
@@ -793,6 +826,7 @@ export function MandateTab({
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
