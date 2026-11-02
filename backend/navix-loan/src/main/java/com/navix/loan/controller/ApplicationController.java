@@ -578,9 +578,8 @@ public class ApplicationController {
 
     /**
      * Change the account this customer's mandate registers against: refuse anything invalid, penny-drop the
-     * new account, then switch it, withdraw every old mandate and send the invite. Same roles as cancel.
-     * The penny drop runs between the two service calls because MandateService cannot depend on
-     * ApplicationVerificationService (that would close a bean cycle through ApplicationFlowService).
+     * new account, then switch it, withdraw every old mandate and send the invite. Same roles as cancel; before
+     * payout the service narrows it to DISBURSEMENT_HEAD/ADMIN, since the account is then also the payee.
      */
     @PostMapping("/{id}/mandate/change-account")
     public ApiResponse<com.navix.loan.service.MandateService.AccountChange> mandateChangeAccount(
@@ -590,21 +589,8 @@ public class ApplicationController {
             throw new BusinessException("FORBIDDEN_ROLE",
                     "This action requires role COLLECTION_HEAD, DISBURSEMENT_HEAD or ADMIN");
         }
-        var next = mandateService.prepareAccountChange(id, req == null ? null : req.accountNumber(),
-                req == null ? null : req.ifsc(), req == null ? null : req.notes());
-        var drop = verification.verifyPennyDrop(id, next.account(), next.ifsc(), true);
-        java.util.Map<String, Object> d = drop.derived() == null ? java.util.Map.of() : drop.derived();
-        if (!ApplicationVerificationService.PASS.equals(drop.status())) {
-            String why = Boolean.TRUE.equals(d.get("providerError"))
-                    ? "The account could not be verified right now. Try again in a few minutes."
-                    : !Boolean.TRUE.equals(d.get("accountExists"))
-                            ? "The bank could not confirm this account number and IFSC."
-                            : "The name at the bank (" + d.get("beneficiaryName") + ") does not match the customer.";
-            throw new BusinessException("PENNY_DROP_FAILED", why + " Nothing was changed.");
-        }
-        return ApiResponse.ok(mandateService.changeAccount(id, next,
-                d.get("bank") == null ? null : d.get("bank").toString(),
-                d.get("beneficiaryName") == null ? null : d.get("beneficiaryName").toString()));
+        return ApiResponse.ok(mandateService.changeAccount(id, req == null ? null : req.accountNumber(),
+                req == null ? null : req.ifsc(), req == null ? null : req.notes()));
     }
 
     public record ChangeMandateAccountRequest(String accountNumber, String ifsc, String notes) {

@@ -13,6 +13,7 @@ import com.navix.common.verification.MandatePort.BankCapability;
 import com.navix.common.verification.MandatePort.MandateRequest;
 import com.navix.common.verification.MandatePort.MandateResult;
 import com.navix.common.verification.MandatePort.MandateSession;
+import com.navix.common.verification.VerificationPort;
 import com.navix.loan.entity.CustomerMandateCeilingOverride;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.LoanApplication;
@@ -87,6 +88,8 @@ public class MandateService {
     private final MandateDebitRepository debits;
     private final CustomerMandateCeilingOverrideRepository ceilingOverrides;
     private final ProfileChangeLogRepository changeLog;
+    /** The routing chain's @Primary bean; used only by the staff account change's side-effect-free penny drop. */
+    private final VerificationPort verificationPort;
 
     /** Builds the invite link; same property the password-reset emails use. */
     @org.springframework.beans.factory.annotation.Value("${navix.app.frontend-base-url:http://localhost:3000}")
@@ -455,7 +458,11 @@ public class MandateService {
             throw new BusinessException("MANDATE_NO_ACCOUNT",
                     "No verified bank account on file for this customer, so a mandate cannot be set up");
         }
-        CustomerProfile profile = profiles.findByApplicationId(appId).orElse(null);
+        return sendInvite(app, profiles.findByApplicationId(appId).orElse(null));
+    }
+
+    private String sendInvite(LoanApplication app, CustomerProfile profile) {
+        Long appId = app.getId();
         // The existing offer-journey screen, deliberately NOT a new standalone page. That page resolves
         // the application through useLiveApplication (not useOffer, which redirects anything other than
         // SANCTIONED to /loan/status), so an invited borrower with a live part-repaid loan — or a closed
@@ -852,13 +859,15 @@ public class MandateService {
     /** What a staff account change did: the invite link, and one line per old mandate. */
     public record AccountChange(String link, List<String> outcomes) {}
 
+    /** Before payout the account is also the payee, which only the desk that releases the money may change. */
+    private static final java.util.Set<String> PAYEE_ROLES = java.util.Set.of("DISBURSEMENT_HEAD", "ADMIN");
+
     /**
-     * Step 1 of a staff "change mandate account" (Heads/ADMIN, controller): every refusal that must land
-     * BEFORE the penny drop and before any mandate is touched. In particular a bank with no API mandate is
-     * refused here, or staff would cancel everything and land on another BANK_UNSUPPORTED dead end.
+     * Every refusal that must land BEFORE the penny drop and before any mandate is touched. In particular a
+     * bank with no API mandate is refused here, or staff would cancel everything and land on another
+     * BANK_UNSUPPORTED dead end.
      */
-    @Transactional(readOnly = true)
-    public NewAccount prepareAccountChange(Long appId, String accountNumber, String ifscCode, String notes) {
+    NewAccount prepareAccountChange(Long appId, String accountNumber, String ifscCode, String notes) {
         String note = notes == null ? "" : notes.trim();
         if (note.isEmpty()) {
             throw new BusinessException("CHANGE_NOTES_REQUIRED", "Add a note explaining why the account is changing");
@@ -877,6 +886,14 @@ public class MandateService {
         if (account.equals(app.getDisbursalAccountNumber()) && ifsc.equalsIgnoreCase(app.getDisbursalIfsc())) {
             throw new BusinessException("ACCOUNT_UNCHANGED", "That is already the account on file");
         }
+        String status = app.getStatus() == null ? "" : app.getStatus().name();
+        CurrentActor actor = ActorContext.get();
+        if ((status.equals("SANCTIONED") || status.equals("DISBURSEMENT_PENDING"))
+                && (actor == null || !PAYEE_ROLES.contains(actor.role()))) {
+            throw new BusinessException("FORBIDDEN_ROLE",
+                    "This advance has not been paid out, so the account is also where it will be paid."
+                            + " Only the Disbursement Head or ADMIN can change it.");
+        }
         BankCapability cap = capability(ifsc.substring(0, 4));
         if (cap == null || !cap.apiMandate()) {
             throw new BusinessException("MANDATE_BANK_UNSUPPORTED",
@@ -891,26 +908,53 @@ public class MandateService {
     }
 
     /**
-     * Step 2, after the new account passed a penny drop: make it this application's account (the one every
-     * mandate registers against and, while the file is not yet disbursed, where the advance is paid),
-     * withdraw every mandate the customer holds, and invite them to register on the new account.
+     * Staff "change mandate account" (Heads/ADMIN, controller; before payout Disbursement Head/ADMIN only):
+     * penny-drop the new account, make it this application's account (the one every mandate registers
+     * against and, while the file is not yet disbursed, where the advance is paid), withdraw every mandate
+     * the customer holds, and invite them to register on the new account.
+     *
+     * <p>The penny drop goes straight to the port, NOT through ApplicationVerificationService: that writes the
+     * file's PENNY_DROP row with the checked account in it, and a manual PASS of that row later adopts that
+     * account as the verified payee. A staff trial of a wrong account must leave no such trace.
      *
      * <p>Never throws once a provider cancel has gone out: a rollback cannot undo a cancel Digio accepted. A
      * refusal is reported per row instead, and the account change stands. An old ACTIVE mandate the bank
      * would not cancel debits the old account, so it can no longer match this application anyway.
      */
     @Transactional
-    public AccountChange changeAccount(Long appId, NewAccount next, String bank, String holderName) {
+    public AccountChange changeAccount(Long appId, String accountNumber, String ifscCode, String notes) {
+        NewAccount next = prepareAccountChange(appId, accountNumber, ifscCode, notes);
         LoanApplication app = applications.findById(appId)
                 .orElseThrow(() -> new BusinessException("APPLICATION_NOT_FOUND", "Application not found"));
         Long customerId = app.getCustomerId();
-        lockCustomerAndLoans(customerId);
         CustomerProfile profile = profiles.findByApplicationId(appId).orElse(null);
+        VerificationPort.PennyDropCheck drop;
+        try {
+            drop = verificationPort.pennyDrop(next.account(), next.ifsc(), "navix-" + appId + "-MANDATE_ACCOUNT");
+        } catch (RuntimeException e) {
+            log.warn("Mandate account penny drop failed applicationId={} exception={}", appId,
+                    e.getClass().getSimpleName());
+            throw new BusinessException("PENNY_DROP_FAILED",
+                    "The account could not be verified right now. Try again in a few minutes. Nothing was changed.");
+        }
+        double nameMatch = ApplicationVerificationService.nameSimilarity(
+                profile == null ? null : profile.getFullName(), drop.fullName());
+        if (!drop.accountExists() || nameMatch < ApplicationVerificationService.NAME_MATCH_THRESHOLD) {
+            // Deliberately no account-holder name in the message: it would make this a "who owns this account" lookup.
+            throw new BusinessException("PENNY_DROP_FAILED", (drop.accountExists()
+                    ? "The name on this bank account does not match the customer."
+                    : "The bank could not confirm this account number and IFSC.") + " Nothing was changed.");
+        }
+        String bank = drop.bank();
+        String holderName = drop.fullName();
+        lockCustomerAndLoans(customerId);
 
         logAccountChange(customerId, appId, "disbursalAccountNumber",
                 Masking.maskAccount(app.getDisbursalAccountNumber()), Masking.maskAccount(next.account()));
         logAccountChange(customerId, appId, "disbursalIfsc", app.getDisbursalIfsc(), next.ifsc());
         logAccountChange(customerId, appId, "mandateAccountChangeNote", null, next.note());
+        logAccountChange(customerId, appId, "mandateAccountPennyDrop", null,
+                "PASS via " + drop.provider() + " txn " + drop.txnId() + ", name match " + Math.round(nameMatch * 100) + "%");
         app.setDisbursalAccountNumber(next.account());
         app.setDisbursalIfsc(next.ifsc());
         // The new mandate row takes its bank label from here, so the old bank's name must not linger.
@@ -978,7 +1022,8 @@ public class MandateService {
         }
         log.info("Mandate account changed applicationId={} customerId={} oldMandates={}", appId, customerId,
                 outcomes.size());
-        return new AccountChange(invite(appId), outcomes);
+        // sendInvite, not invite(): invite() refuses when a usable mandate exists, and nothing may throw here.
+        return new AccountChange(sendInvite(app, profile), outcomes);
     }
 
     private void logAccountChange(Long customerId, Long appId, String field, String oldValue, String newValue) {

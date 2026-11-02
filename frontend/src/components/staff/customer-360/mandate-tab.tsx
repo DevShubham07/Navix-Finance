@@ -380,7 +380,8 @@ export function MandateTab({
   const toWithdraw = attemptsQ.data?.filter((a) => !a.cancelledAt) ?? [];
   const beforePayout = status === "SANCTIONED" || status === "DISBURSEMENT_PENDING";
 
-  const changeAccountPanel = mayCancel ? (
+  // Before payout the account is also the payee, so only the disbursement desk (mandate:override) may change it.
+  const changeAccountPanel = mayCancel && (!beforePayout || can("mandate:override")) ? (
     <div className="max-w-2xl space-y-3 rounded-lg border border-line bg-grey-50 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="text-sm font-semibold text-navy">Change mandate account</div>

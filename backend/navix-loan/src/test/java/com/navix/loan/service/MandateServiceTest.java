@@ -31,6 +31,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import com.navix.common.verification.VerificationPort;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
@@ -45,6 +46,7 @@ class MandateServiceTest {
     @Mock com.navix.loan.repository.MandateDebitRepository debits;
     @Mock com.navix.loan.repository.CustomerMandateCeilingOverrideRepository ceilingOverrides;
     @Mock com.navix.loan.repository.ProfileChangeLogRepository changeLog;
+    @Mock com.navix.common.verification.VerificationPort verificationPort;
 
     MandateService service;
     LoanApplication app;
@@ -53,7 +55,7 @@ class MandateServiceTest {
     @BeforeEach
     void setUp() {
         service = new MandateService(port, mandates, applications, profiles, new LoanMath(), featureFlags,
-                eventPublisher, debits, ceilingOverrides, changeLog);
+                eventPublisher, debits, ceilingOverrides, changeLog, verificationPort);
         app = new LoanApplication();
         app.setId(1L);
         app.setCustomerId(4471L);
@@ -1160,10 +1162,11 @@ class MandateServiceTest {
     @Test
     void accountChangeRefusesABankWithNoApiMandateBeforeTouchingAnything() {
         bankOk(); // HDFC only; NESF (Slice) is not on the list
-        assertThatThrownBy(() -> service.prepareAccountChange(1L, "033325224496703", "NESF0000333", "new bank"))
+        assertThatThrownBy(() -> service.changeAccount(1L, "033325224496703", "NESF0000333", "new bank"))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("code", "MANDATE_BANK_UNSUPPORTED");
         verify(port, never()).cancelMandate(any(), any(), any(), any());
+        verify(verificationPort, never()).pennyDrop(any(), any(), any());
     }
 
     @Test
@@ -1172,11 +1175,11 @@ class MandateServiceTest {
         Mandate active = attempt(1, Mandate.Status.ACTIVE, "HDFC7033010261023984");
         when(mandates.findByCustomerIdOrderByAttemptNoDesc(4471L)).thenReturn(List.of(active));
         when(debits.existsByMandateIdAndStatusIn(org.mockito.ArgumentMatchers.eq(1L), any())).thenReturn(true);
-        assertThatThrownBy(() -> service.prepareAccountChange(1L, "99887766554433", "HDFC0009999", "moved"))
+        assertThatThrownBy(() -> service.changeAccount(1L, "99887766554433", "HDFC0009999", "moved"))
                 .hasFieldOrPropertyWithValue("code", "MANDATE_DEBIT_IN_FLIGHT");
-        assertThatThrownBy(() -> service.prepareAccountChange(1L, "123456789012", "hdfc0001234", "same"))
+        assertThatThrownBy(() -> service.changeAccount(1L, "123456789012", "hdfc0001234", "same"))
                 .hasFieldOrPropertyWithValue("code", "ACCOUNT_UNCHANGED");
-        assertThatThrownBy(() -> service.prepareAccountChange(1L, "99887766554433", "HDFC0009999", " "))
+        assertThatThrownBy(() -> service.changeAccount(1L, "99887766554433", "HDFC0009999", " "))
                 .hasFieldOrPropertyWithValue("code", "CHANGE_NOTES_REQUIRED");
         verify(port, never()).cancelMandate(any(), any(), any(), any());
     }
@@ -1198,9 +1201,8 @@ class MandateServiceTest {
         when(port.cancelMandate(eqStr("ENA1"), any(), any(), any())).thenReturn(true);
         assertThat(service.isBankUnsupported(1L)).isTrue();
 
-        var result = service.changeAccount(1L,
-                new MandateService.NewAccount("99887766554433", "KKBK0001111", "Slice has no eMandate"),
-                "Kotak Mahindra Bank", "ASHA RAO");
+        kotakPasses();
+        var result = service.changeAccount(1L, "99887766554433", "kkbk0001111", "Slice has no eMandate");
 
         assertThat(app.getDisbursalAccountNumber()).isEqualTo("99887766554433");
         assertThat(app.getDisbursalIfsc()).isEqualTo("KKBK0001111");
@@ -1224,13 +1226,52 @@ class MandateServiceTest {
         when(mandates.findByCustomerIdOrderByAttemptNoDesc(4471L)).thenReturn(List.of(active));
         when(port.cancelMandate(any(), any(), any(), any())).thenReturn(false);
 
-        var result = service.changeAccount(1L,
-                new MandateService.NewAccount("99887766554433", "KKBK0001111", "moved banks"), null, null);
+        kotakPasses();
+        when(verificationPort.pennyDrop(any(), any(), any())).thenReturn(new VerificationPort.PennyDropCheck(
+                "T2", "SIGNZY", true, "Asha Rao", null, "KKBK0001111", null, null, null));
+        var result = service.changeAccount(1L, "99887766554433", "KKBK0001111", "moved banks");
 
         assertThat(active.getCancelledAt()).isNull();
         assertThat(active.getStatus()).isEqualTo(Mandate.Status.ACTIVE);
         assertThat(result.outcomes()).singleElement().asString().contains("NOT cancelled");
         assertThat(app.getDisbursalBank()).isEqualTo("KKBK");
+    }
+
+    /**
+     * A failed penny drop changes nothing and cancels nothing, and never names the account holder (that would
+     * make this a lookup of who owns any account).
+     */
+    @Test
+    void accountChangeFailsClosedOnANameMismatch() {
+        kotakPasses();
+        when(verificationPort.pennyDrop(any(), any(), any())).thenReturn(new VerificationPort.PennyDropCheck(
+                "T3", "SIGNZY", true, "Somebody Else", "Kotak", "KKBK0001111", null, null, null));
+        assertThatThrownBy(() -> service.changeAccount(1L, "99887766554433", "KKBK0001111", "moved"))
+                .hasFieldOrPropertyWithValue("code", "PENNY_DROP_FAILED")
+                .satisfies(e -> assertThat(e.getMessage()).doesNotContain("Somebody"));
+        assertThat(app.getDisbursalAccountNumber()).isEqualTo("123456789012");
+        verify(port, never()).cancelMandate(any(), any(), any(), any());
+        verify(changeLog, never()).save(any());
+    }
+
+    /** Before payout the account is also the payee: a Collection Head may not redirect where an advance is paid. */
+    @Test
+    void accountChangeBeforePayoutIsForTheDisbursementDeskOnly() {
+        app.setStatus(com.navix.loan.domain.ApplicationStatus.SANCTIONED);
+        com.navix.common.security.ActorContext.set(new com.navix.common.security.CurrentActor("2", "Head", "COLLECTION_HEAD"));
+        try {
+            assertThatThrownBy(() -> service.changeAccount(1L, "99887766554433", "KKBK0001111", "moved"))
+                    .hasFieldOrPropertyWithValue("code", "FORBIDDEN_ROLE");
+            verify(verificationPort, never()).pennyDrop(any(), any(), any());
+        } finally {
+            com.navix.common.security.ActorContext.clear();
+        }
+    }
+
+    private void kotakPasses() {
+        lenient().when(port.liveBanks()).thenReturn(List.of(new BankCapability("KKBK", true, List.of("debit"))));
+        lenient().when(verificationPort.pennyDrop(any(), any(), any())).thenReturn(new VerificationPort.PennyDropCheck(
+                "T1", "SIGNZY", true, "ASHA RAO", "Kotak Mahindra Bank", "KKBK0001111", null, null, null));
     }
 
     private static String eqStr(String s) {
