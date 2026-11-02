@@ -576,6 +576,40 @@ public class ApplicationController {
         return ApiResponse.ok(mandateService.cancelActive(id, mandateId, reason, req == null ? null : req.notes()));
     }
 
+    /**
+     * Change the account this customer's mandate registers against: refuse anything invalid, penny-drop the
+     * new account, then switch it, withdraw every old mandate and send the invite. Same roles as cancel.
+     * The penny drop runs between the two service calls because MandateService cannot depend on
+     * ApplicationVerificationService (that would close a bean cycle through ApplicationFlowService).
+     */
+    @PostMapping("/{id}/mandate/change-account")
+    public ApiResponse<com.navix.loan.service.MandateService.AccountChange> mandateChangeAccount(
+            @PathVariable Long id, @RequestBody ChangeMandateAccountRequest req) {
+        String role = ActorContext.get() == null ? null : ActorContext.get().role();
+        if (role == null || !MANDATE_CANCEL_ROLES.contains(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE",
+                    "This action requires role COLLECTION_HEAD, DISBURSEMENT_HEAD or ADMIN");
+        }
+        var next = mandateService.prepareAccountChange(id, req == null ? null : req.accountNumber(),
+                req == null ? null : req.ifsc(), req == null ? null : req.notes());
+        var drop = verification.verifyPennyDrop(id, next.account(), next.ifsc(), true);
+        java.util.Map<String, Object> d = drop.derived() == null ? java.util.Map.of() : drop.derived();
+        if (!ApplicationVerificationService.PASS.equals(drop.status())) {
+            String why = Boolean.TRUE.equals(d.get("providerError"))
+                    ? "The account could not be verified right now. Try again in a few minutes."
+                    : !Boolean.TRUE.equals(d.get("accountExists"))
+                            ? "The bank could not confirm this account number and IFSC."
+                            : "The name at the bank (" + d.get("beneficiaryName") + ") does not match the customer.";
+            throw new BusinessException("PENNY_DROP_FAILED", why + " Nothing was changed.");
+        }
+        return ApiResponse.ok(mandateService.changeAccount(id, next,
+                d.get("bank") == null ? null : d.get("bank").toString(),
+                d.get("beneficiaryName") == null ? null : d.get("beneficiaryName").toString()));
+    }
+
+    public record ChangeMandateAccountRequest(String accountNumber, String ifsc, String notes) {
+    }
+
     /** The mandate ceiling: the formula, any ADMIN override, and what a new registration would use. Staff. */
     @GetMapping("/{id}/mandate/ceiling")
     public ApiResponse<com.navix.loan.service.MandateService.MandateCeilingView> mandateCeiling(@PathVariable Long id) {

@@ -7,6 +7,7 @@ import com.navix.common.notification.event.MandateCancelledEvent;
 import com.navix.common.notification.event.MandateInviteEvent;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
+import com.navix.common.util.Masking;
 import com.navix.common.verification.MandatePort;
 import com.navix.common.verification.MandatePort.BankCapability;
 import com.navix.common.verification.MandatePort.MandateRequest;
@@ -655,7 +656,8 @@ public class MandateService {
             return Optional.of(toView(m, false, !appId.equals(m.getLoanApplicationId())));
         }
         return mandates.findFirstByLoanApplicationIdOrderByAttemptNoDesc(appId)
-                .map(m -> toView(m, m.getStatus() == Mandate.Status.BANK_UNSUPPORTED, false));
+                .map(m -> toView(m, m.getStatus() == Mandate.Status.BANK_UNSUPPORTED && m.getCancelledAt() == null,
+                        false));
     }
 
     /**
@@ -785,13 +787,7 @@ public class MandateService {
         // Same customer lock init takes, then every loan lock DebitService.prepare takes, in id order so two
         // cancels cannot deadlock. A presentation that already holds a loan lock finishes first; one that
         // starts after us re-checks the mandate under its lock and finds it dead.
-        mandates.lockCustomer(customerId);
-        applications.findByCustomerId(customerId).stream()
-                .map(LoanApplication::getLoanId)
-                .filter(Objects::nonNull)
-                .distinct()
-                .sorted()
-                .forEach(loanId -> debits.lockLoan(DebitService.LOCK_NAMESPACE | loanId));
+        lockCustomerAndLoans(customerId);
 
         Mandate m = mandates.findById(mandateId)
                 .orElseThrow(() -> new BusinessException("MANDATE_NOT_FOUND", "Mandate not found"));
@@ -834,6 +830,165 @@ public class MandateService {
         log.info("Active mandate cancelled crn={} applicationId={} reason={}", m.getCustomerRefNumber(), appId,
                 reason.code);
         return history(appId).stream().filter(a -> a.id().equals(mandateId)).findFirst().orElseThrow();
+    }
+
+    private void lockCustomerAndLoans(Long customerId) {
+        mandates.lockCustomer(customerId);
+        applications.findByCustomerId(customerId).stream()
+                .map(LoanApplication::getLoanId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .sorted()
+                .forEach(loanId -> debits.lockLoan(DebitService.LOCK_NAMESPACE | loanId));
+    }
+
+    private static final Pattern IFSC = Pattern.compile("^[A-Z]{4}0[A-Z0-9]{6}$");
+    private static final EnumSet<MandateDebit.Status> IN_FLIGHT =
+            EnumSet.of(MandateDebit.Status.SCHEDULED, MandateDebit.Status.IN_PROGRESS);
+
+    /** A validated new mandate account; {@code note} is the staff reason, already trimmed. */
+    public record NewAccount(String account, String ifsc, String note) {}
+
+    /** What a staff account change did: the invite link, and one line per old mandate. */
+    public record AccountChange(String link, List<String> outcomes) {}
+
+    /**
+     * Step 1 of a staff "change mandate account" (Heads/ADMIN, controller): every refusal that must land
+     * BEFORE the penny drop and before any mandate is touched. In particular a bank with no API mandate is
+     * refused here, or staff would cancel everything and land on another BANK_UNSUPPORTED dead end.
+     */
+    @Transactional(readOnly = true)
+    public NewAccount prepareAccountChange(Long appId, String accountNumber, String ifscCode, String notes) {
+        String note = notes == null ? "" : notes.trim();
+        if (note.isEmpty()) {
+            throw new BusinessException("CHANGE_NOTES_REQUIRED", "Add a note explaining why the account is changing");
+        }
+        String account = accountNumber == null ? "" : accountNumber.replaceAll("\\s", "");
+        String ifsc = ifscCode == null ? "" : ifscCode.trim().toUpperCase(Locale.ROOT);
+        if (!ACCOUNT.matcher(account).matches() || !IFSC.matcher(ifsc).matches()) {
+            throw new BusinessException("ACCOUNT_INVALID", "Enter a valid account number (8-18 digits) and IFSC");
+        }
+        LoanApplication app = applications.findById(appId)
+                .orElseThrow(() -> new BusinessException("APPLICATION_NOT_FOUND", "Application not found"));
+        if (app.getDisbursalConfirmedAt() == null && !Boolean.TRUE.equals(app.getDisbursalAccountVerified())) {
+            throw new BusinessException("MANDATE_ACCOUNT_UNCONFIRMED",
+                    "This customer has not confirmed a bank account on this application yet");
+        }
+        if (account.equals(app.getDisbursalAccountNumber()) && ifsc.equalsIgnoreCase(app.getDisbursalIfsc())) {
+            throw new BusinessException("ACCOUNT_UNCHANGED", "That is already the account on file");
+        }
+        BankCapability cap = capability(ifsc.substring(0, 4));
+        if (cap == null || !cap.apiMandate()) {
+            throw new BusinessException("MANDATE_BANK_UNSUPPORTED",
+                    "This bank cannot register an eMandate online. Use an account at another bank.");
+        }
+        if (mandates.findByCustomerIdOrderByAttemptNoDesc(app.getCustomerId()).stream()
+                .anyMatch(m -> debits.existsByMandateIdAndStatusIn(m.getId(), IN_FLIGHT))) {
+            throw new BusinessException("MANDATE_DEBIT_IN_FLIGHT",
+                    "A debit is still being processed. Wait for it to settle, then change the account.");
+        }
+        return new NewAccount(account, ifsc, note.length() > 400 ? note.substring(0, 400) : note);
+    }
+
+    /**
+     * Step 2, after the new account passed a penny drop: make it this application's account (the one every
+     * mandate registers against and, while the file is not yet disbursed, where the advance is paid),
+     * withdraw every mandate the customer holds, and invite them to register on the new account.
+     *
+     * <p>Never throws once a provider cancel has gone out: a rollback cannot undo a cancel Digio accepted. A
+     * refusal is reported per row instead, and the account change stands. An old ACTIVE mandate the bank
+     * would not cancel debits the old account, so it can no longer match this application anyway.
+     */
+    @Transactional
+    public AccountChange changeAccount(Long appId, NewAccount next, String bank, String holderName) {
+        LoanApplication app = applications.findById(appId)
+                .orElseThrow(() -> new BusinessException("APPLICATION_NOT_FOUND", "Application not found"));
+        Long customerId = app.getCustomerId();
+        lockCustomerAndLoans(customerId);
+        CustomerProfile profile = profiles.findByApplicationId(appId).orElse(null);
+
+        logAccountChange(customerId, appId, "disbursalAccountNumber",
+                Masking.maskAccount(app.getDisbursalAccountNumber()), Masking.maskAccount(next.account()));
+        logAccountChange(customerId, appId, "disbursalIfsc", app.getDisbursalIfsc(), next.ifsc());
+        logAccountChange(customerId, appId, "mandateAccountChangeNote", null, next.note());
+        app.setDisbursalAccountNumber(next.account());
+        app.setDisbursalIfsc(next.ifsc());
+        // The new mandate row takes its bank label from here, so the old bank's name must not linger.
+        app.setDisbursalBank(bank != null && !bank.isBlank() ? bank : next.ifsc().substring(0, 4));
+        if (holderName != null && !holderName.isBlank()) {
+            app.setDisbursalHolderName(holderName);
+        }
+        app.setDisbursalAccountVerified(true);
+        app.setDisbursalAccountChanged(profile == null
+                || !next.account().equals(profile.getSalaryAccountNumber())
+                || !next.ifsc().equalsIgnoreCase(profile.getSalaryIfsc()));
+        if (app.getDisbursalConfirmedAt() == null) {
+            app.setDisbursalConfirmedAt(Instant.now());
+        }
+        applications.save(app);
+
+        String reason = "Account changed by staff: " + next.note();
+        List<String> outcomes = new java.util.ArrayList<>();
+        for (Mandate m : mandates.findByCustomerIdOrderByAttemptNoDesc(customerId)) {
+            if (m.getCancelledAt() != null) {
+                continue;
+            }
+            String label = m.getCustomerRefNumber() + " (" + m.getBankName() + " ..." + m.getAccountLast4() + ")";
+            if (m.getStatus() == Mandate.Status.BANK_UNSUPPORTED) {
+                markCancelled(m, reason); // nothing was filed; closing it is what lets the borrower start afresh
+                mandates.save(m);
+                outcomes.add(label + ": closed, nothing had been filed");
+                continue;
+            }
+            if (debits.existsByMandateIdAndStatusIn(m.getId(), IN_FLIGHT)) {
+                outcomes.add(label + ": NOT cancelled, a debit is still in flight");
+                continue;
+            }
+            boolean active = m.getStatus() == Mandate.Status.ACTIVE;
+            boolean accepted;
+            try {
+                accepted = port.cancelMandate(m.getDigioMandateId(), m.getUmrn(), m.getIfsc(),
+                        CancelReason.CORPORATE_REQUEST.code);
+            } catch (RuntimeException e) {
+                log.warn("Mandate cancel on account change failed crn={} exception={}", m.getCustomerRefNumber(),
+                        e.getClass().getSimpleName());
+                accepted = false;
+            }
+            if (active && !accepted) {
+                outcomes.add(label + ": NOT cancelled, the bank refused. It is a live mandate on the old account;"
+                        + " ask the customer to cancel it with their bank");
+                continue;
+            }
+            if (active || m.getStatus() == Mandate.Status.PENDING_AUTHORIZATION) {
+                // ACTIVE: accepted but not yet processed by the bank. Pending: withdrawn. Dead to us either way.
+                m.setStatus(Mandate.Status.AUTHORIZATION_FAILED);
+                if (active) {
+                    m.setDigioState("cancel_requested");
+                }
+            }
+            markCancelled(m, accepted ? reason : reason + " (withdrawn on our side)");
+            mandates.save(m);
+            if (active) {
+                eventPublisher.publishEvent(new MandateCancelledEvent(customerId, appId,
+                        profile == null ? null : profile.getFullName(), m.getBankName(), m.getAccountLast4(),
+                        false, Instant.now()));
+            }
+            outcomes.add(label + (active ? ": live mandate cancelled at the bank"
+                    : accepted ? ": cancelled at the bank" : ": withdrawn on our side"));
+        }
+        log.info("Mandate account changed applicationId={} customerId={} oldMandates={}", appId, customerId,
+                outcomes.size());
+        return new AccountChange(invite(appId), outcomes);
+    }
+
+    private void logAccountChange(Long customerId, Long appId, String field, String oldValue, String newValue) {
+        ProfileChangeLog entry = new ProfileChangeLog();
+        entry.setCustomerId(customerId);
+        entry.setApplicationId(appId);
+        entry.setField(field);
+        entry.setOldValue(oldValue);
+        entry.setNewValue(newValue);
+        changeLog.save(entry);
     }
 
     private static void markCancelled(Mandate m, String reason) {
@@ -915,7 +1070,8 @@ public class MandateService {
      */
     public boolean isBankUnsupported(Long appId) {
         return mandates.findFirstByLoanApplicationIdOrderByAttemptNoDesc(appId)
-                .filter(m -> m.getStatus() == Mandate.Status.BANK_UNSUPPORTED).isPresent();
+                .filter(m -> m.getStatus() == Mandate.Status.BANK_UNSUPPORTED && m.getCancelledAt() == null)
+                .isPresent();
     }
 
     /**

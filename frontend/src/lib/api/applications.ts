@@ -2336,6 +2336,17 @@ export const staffApi = {
   mandateInvite: (id: number) =>
     bff<{ link: string }>(`${STAFF_BASE}/${id}/mandate/invite`, "POST", {}),
 
+  /**
+   * Switch the account mandates register against: penny-drops it, withdraws every old mandate (outcome per
+   * row) and sends the invite. COLLECTION_HEAD/DISB_HEAD/ADMIN; a note is required.
+   */
+  mandateChangeAccount: (id: number, accountNumber: string, ifsc: string, notes: string) =>
+    bff<{ link: string; outcomes: string[] }>(`${STAFF_BASE}/${id}/mandate/change-account`, "POST", {
+      accountNumber,
+      ifsc,
+      notes,
+    }),
+
   /** The application's uploaded documents (metadata). */
   documents: (id: number) => bff<DocumentView[]>(`${STAFF_BASE}/${id}/documents`, "GET"),
 

@@ -1154,4 +1154,86 @@ class MandateServiceTest {
                 .hasFieldOrPropertyWithValue("code", "MANDATE_ATTEMPTS_EXHAUSTED");
         verify(port, never()).register(any());
     }
+
+    // ---- change mandate account (staff) -------------------------------------------------------------------
+
+    @Test
+    void accountChangeRefusesABankWithNoApiMandateBeforeTouchingAnything() {
+        bankOk(); // HDFC only; NESF (Slice) is not on the list
+        assertThatThrownBy(() -> service.prepareAccountChange(1L, "033325224496703", "NESF0000333", "new bank"))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "MANDATE_BANK_UNSUPPORTED");
+        verify(port, never()).cancelMandate(any(), any(), any(), any());
+    }
+
+    @Test
+    void accountChangeRefusesWhileADebitIsInFlightAndWhenUnchanged() {
+        bankOk();
+        Mandate active = attempt(1, Mandate.Status.ACTIVE, "HDFC7033010261023984");
+        when(mandates.findByCustomerIdOrderByAttemptNoDesc(4471L)).thenReturn(List.of(active));
+        when(debits.existsByMandateIdAndStatusIn(org.mockito.ArgumentMatchers.eq(1L), any())).thenReturn(true);
+        assertThatThrownBy(() -> service.prepareAccountChange(1L, "99887766554433", "HDFC0009999", "moved"))
+                .hasFieldOrPropertyWithValue("code", "MANDATE_DEBIT_IN_FLIGHT");
+        assertThatThrownBy(() -> service.prepareAccountChange(1L, "123456789012", "hdfc0001234", "same"))
+                .hasFieldOrPropertyWithValue("code", "ACCOUNT_UNCHANGED");
+        assertThatThrownBy(() -> service.prepareAccountChange(1L, "99887766554433", "HDFC0009999", " "))
+                .hasFieldOrPropertyWithValue("code", "CHANGE_NOTES_REQUIRED");
+        verify(port, never()).cancelMandate(any(), any(), any(), any());
+    }
+
+    /**
+     * The Slice case: the newest attempt is BANK_UNSUPPORTED. Changing the account closes it (so the borrower's
+     * page offers "Continue to your bank" again and the override no longer applies), withdraws the pending
+     * attempt the bank will not cancel, revokes the live one, and switches the account the next mandate uses.
+     */
+    @Test
+    void accountChangeWithdrawsEveryOldMandateAndSwitchesTheAccount() {
+        Mandate unsupported = attempt(3, Mandate.Status.BANK_UNSUPPORTED, null);
+        Mandate pending = attempt(2, Mandate.Status.PENDING_AUTHORIZATION, null);
+        Mandate active = attempt(1, Mandate.Status.ACTIVE, "HDFC7033010261023984");
+        when(mandates.findByCustomerIdOrderByAttemptNoDesc(4471L)).thenReturn(List.of(unsupported, pending, active));
+        when(mandates.findFirstByLoanApplicationIdOrderByAttemptNoDesc(1L)).thenReturn(Optional.of(unsupported));
+        when(mandates.findFirstByCustomerIdOrderByAttemptNoDesc(4471L)).thenReturn(Optional.of(unsupported));
+        when(port.cancelMandate(eqStr("ENA2"), any(), any(), any())).thenReturn(false);
+        when(port.cancelMandate(eqStr("ENA1"), any(), any(), any())).thenReturn(true);
+        assertThat(service.isBankUnsupported(1L)).isTrue();
+
+        var result = service.changeAccount(1L,
+                new MandateService.NewAccount("99887766554433", "KKBK0001111", "Slice has no eMandate"),
+                "Kotak Mahindra Bank", "ASHA RAO");
+
+        assertThat(app.getDisbursalAccountNumber()).isEqualTo("99887766554433");
+        assertThat(app.getDisbursalIfsc()).isEqualTo("KKBK0001111");
+        assertThat(app.getDisbursalBank()).isEqualTo("Kotak Mahindra Bank");
+        assertThat(app.getDisbursalAccountVerified()).isTrue();
+        assertThat(List.of(unsupported, pending, active)).allSatisfy(m -> assertThat(m.getCancelledAt()).isNotNull());
+        assertThat(pending.getStatus()).isEqualTo(Mandate.Status.AUTHORIZATION_FAILED);
+        assertThat(active.getStatus()).isEqualTo(Mandate.Status.AUTHORIZATION_FAILED);
+        verify(port, never()).cancelMandate(eqStr("ENA3"), any(), any(), any()); // nothing was ever filed
+        verify(eventPublisher).publishEvent(any(com.navix.common.notification.event.MandateCancelledEvent.class));
+        assertThat(result.outcomes()).hasSize(3);
+        assertThat(result.link()).endsWith("/loan/mandate");
+        assertThat(service.isBankUnsupported(1L)).isFalse();
+        assertThat(service.status(1L).derived()).containsEntry("status", "NOT_STARTED");
+    }
+
+    /** A live mandate the bank will not cancel is reported, never thrown: other cancels may already be done. */
+    @Test
+    void accountChangeReportsALiveMandateTheBankRefusedWithoutThrowing() {
+        Mandate active = attempt(1, Mandate.Status.ACTIVE, "HDFC7033010261023984");
+        when(mandates.findByCustomerIdOrderByAttemptNoDesc(4471L)).thenReturn(List.of(active));
+        when(port.cancelMandate(any(), any(), any(), any())).thenReturn(false);
+
+        var result = service.changeAccount(1L,
+                new MandateService.NewAccount("99887766554433", "KKBK0001111", "moved banks"), null, null);
+
+        assertThat(active.getCancelledAt()).isNull();
+        assertThat(active.getStatus()).isEqualTo(Mandate.Status.ACTIVE);
+        assertThat(result.outcomes()).singleElement().asString().contains("NOT cancelled");
+        assertThat(app.getDisbursalBank()).isEqualTo("KKBK");
+    }
+
+    private static String eqStr(String s) {
+        return org.mockito.ArgumentMatchers.eq(s);
+    }
 }

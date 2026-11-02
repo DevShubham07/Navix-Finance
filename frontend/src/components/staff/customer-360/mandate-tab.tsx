@@ -344,6 +344,206 @@ export function MandateTab({
     </div>
   ) : null;
 
+  // Change the account mandates register against (e.g. the bank has no eMandate). Two steps: the form, then a
+  // confirmation listing every old mandate that will be withdrawn. The server penny-drops the new account
+  // before it touches anything, then cancels the old mandates and sends the invite.
+  const [acctStep, setAcctStep] = React.useState<"closed" | "form" | "confirm">("closed");
+  const [acctNumber, setAcctNumber] = React.useState("");
+  const [acctConfirm, setAcctConfirm] = React.useState("");
+  const [acctIfsc, setAcctIfsc] = React.useState("");
+  const [acctNotes, setAcctNotes] = React.useState("");
+  const [acctOutcomes, setAcctOutcomes] = React.useState<string[]>();
+  const changeAccount = useMutation({
+    mutationFn: () =>
+      staffApi.mandateChangeAccount(applicationId as number, acctNumber.trim(), acctIfsc.trim().toUpperCase(), acctNotes.trim()),
+    onSuccess: (r) => {
+      toast.success("Account changed; old mandates withdrawn and invite sent");
+      setInviteLink(r.link);
+      setAcctOutcomes(r.outcomes);
+      setAcctStep("closed");
+      setAcctNumber("");
+      setAcctConfirm("");
+      setAcctIfsc("");
+      setAcctNotes("");
+      qc.invalidateQueries({ queryKey: ["staff-mandate", applicationId] });
+      qc.invalidateQueries({ queryKey: ["staff-mandate-history", applicationId] });
+      onChanged?.();
+    },
+  });
+  const acctError =
+    acctNumber.trim() !== "" && !/^\d{8,18}$/.test(acctNumber.trim()) ? "Account number must be 8–18 digits."
+    : acctConfirm.trim() !== "" && acctConfirm.trim() !== acctNumber.trim() ? "The two account numbers do not match."
+    : acctIfsc.trim() !== "" && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(acctIfsc.trim().toUpperCase()) ? "Enter a valid 11-character IFSC."
+    : null;
+  const acctReady =
+    !acctError && acctNumber.trim() !== "" && acctConfirm.trim() !== "" && acctIfsc.trim() !== "" && acctNotes.trim() !== "";
+  const toWithdraw = attemptsQ.data?.filter((a) => !a.cancelledAt) ?? [];
+  const beforePayout = status === "SANCTIONED" || status === "DISBURSEMENT_PENDING";
+
+  const changeAccountPanel = mayCancel ? (
+    <div className="max-w-2xl space-y-3 rounded-lg border border-line bg-grey-50 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-sm font-semibold text-navy">Change mandate account</div>
+        {acctStep === "closed" && (
+          <button
+            type="button"
+            onClick={() => {
+              changeAccount.reset();
+              setAcctOutcomes(undefined);
+              setAcctStep("form");
+            }}
+            className="btn btn-sm"
+          >
+            Change account…
+          </button>
+        )}
+      </div>
+      {acctStep === "closed" && !acctOutcomes && (
+        <p className="text-xs text-muted">
+          Use when the customer&apos;s bank cannot register an eMandate, or they want auto-repayment from another account.
+        </p>
+      )}
+      {acctOutcomes && (
+        <div className="text-xs text-navy">
+          <p className="font-medium">Done. What happened to the old mandates:</p>
+          {acctOutcomes.length === 0 ? (
+            <p className="text-muted">There were none to withdraw.</p>
+          ) : (
+            <ul className="ml-4 list-disc">
+              {acctOutcomes.map((o) => (
+                <li key={o} className={o.includes("NOT cancelled") ? "font-medium text-error-700" : ""}>{o}</li>
+              ))}
+            </ul>
+          )}
+          <p className="mt-1 text-muted">The invite link is in the invite box; the customer registers on the new account.</p>
+        </div>
+      )}
+      {acctStep === "form" && (
+        <div className="space-y-2">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div>
+              <label className="block text-xs text-muted" htmlFor="mandate-acct">New account number</label>
+              <input
+                id="mandate-acct"
+                inputMode="numeric"
+                autoComplete="off"
+                value={acctNumber}
+                onChange={(e) => setAcctNumber(e.target.value.replace(/\s/g, ""))}
+                className="w-full rounded border border-line bg-white px-2 py-1.5 font-mono text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-muted" htmlFor="mandate-acct-confirm">Re-enter account number</label>
+              <input
+                id="mandate-acct-confirm"
+                inputMode="numeric"
+                autoComplete="off"
+                onPaste={(e) => e.preventDefault()}
+                value={acctConfirm}
+                onChange={(e) => setAcctConfirm(e.target.value.replace(/\s/g, ""))}
+                className="w-full rounded border border-line bg-white px-2 py-1.5 font-mono text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-muted" htmlFor="mandate-ifsc">IFSC</label>
+              <input
+                id="mandate-ifsc"
+                autoComplete="off"
+                maxLength={11}
+                value={acctIfsc}
+                onChange={(e) => setAcctIfsc(e.target.value.toUpperCase())}
+                placeholder="HDFC0001234"
+                className="w-full rounded border border-line bg-white px-2 py-1.5 font-mono text-sm"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs text-muted" htmlFor="mandate-acct-notes">Reason (required)</label>
+            <textarea
+              id="mandate-acct-notes"
+              value={acctNotes}
+              onChange={(e) => setAcctNotes(e.target.value)}
+              maxLength={400}
+              rows={2}
+              placeholder="e.g. Slice account cannot register an eMandate; customer shared their Kotak account on call"
+              className="w-full rounded border border-line bg-white px-2 py-1.5 text-sm"
+            />
+          </div>
+          {acctError && <p className="text-xs text-error-700">{acctError}</p>}
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setAcctStep("confirm")}
+              disabled={!acctReady}
+              className="btn btn-sm btn-navy disabled:opacity-50"
+            >
+              Review change
+            </button>
+            <button type="button" onClick={() => setAcctStep("closed")} className="btn btn-sm">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      {acctStep === "confirm" && (
+        <div className="space-y-3 rounded-lg border border-warning-100 bg-warning-50 p-3">
+          <div className="flex items-center gap-2 text-sm font-semibold text-navy">
+            <AlertTriangle size={15} className="text-warning-700" /> Change the mandate account to ••••{" "}
+            {acctNumber.trim().slice(-4)} ({acctIfsc.trim().toUpperCase()})?
+          </div>
+          <ul className="ml-4 list-disc space-y-1 text-xs leading-relaxed text-navy">
+            <li>We first verify the new account with a penny drop. If it fails, nothing changes.</li>
+            <li>
+              {toWithdraw.length === 0 ? (
+                "The customer has no mandates to withdraw."
+              ) : (
+                <>
+                  <strong>
+                    All {toWithdraw.length} old mandate{toWithdraw.length === 1 ? "" : "s"} will be cancelled:
+                  </strong>{" "}
+                  {toWithdraw
+                    .map((a) => `#${a.attemptNo} ${a.bankName ?? ""} ••••${a.accountLast4 ?? "—"} (${STATUS_LABEL[a.status] ?? a.status})`)
+                    .join(", ")}
+                  .
+                </>
+              )}
+            </li>
+            {toWithdraw.some((a) => a.status === "ACTIVE") && (
+              <li className="font-medium text-error-700">
+                This includes a live mandate: automatic debits stop until the customer authorises the new one, and
+                they are notified. This cannot be undone.
+              </li>
+            )}
+            {beforePayout && (
+              <li className="font-medium">This advance has not been paid out yet, so it will be paid to the new account.</li>
+            )}
+            <li>The customer gets an invite to register the mandate on the new account.</li>
+          </ul>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => changeAccount.mutate()}
+              disabled={changeAccount.isPending}
+              className="btn btn-sm btn-navy disabled:opacity-50"
+            >
+              {changeAccount.isPending && <Loader2 size={14} className="animate-spin" />} Yes, change account and cancel
+              old mandates
+            </button>
+            <button
+              type="button"
+              onClick={() => setAcctStep("form")}
+              disabled={changeAccount.isPending}
+              className="btn btn-sm"
+            >
+              Back
+            </button>
+          </div>
+          {changeAccount.isError && <p className="text-xs text-error-700">{errMessage(changeAccount.error)}</p>}
+        </div>
+      )}
+    </div>
+  ) : null;
+
   // Mandate ceiling: everyone on this tab sees what a NEW mandate will be registered for; only ADMIN may
   // raise it (V89). It never changes what the customer may borrow, and an existing mandate keeps its own.
   const isAdmin = can("customer:manage");
@@ -614,6 +814,7 @@ export function MandateTab({
           }
         />
         {invitePanel}
+        {changeAccountPanel}
         {ceilingPanel}
         {refreshButton && <div>{refreshButton}</div>}
         {historyPanel}
@@ -689,6 +890,7 @@ export function MandateTab({
       {refreshButton && <div className="flex flex-wrap gap-2">{refreshButton}</div>}
 
       {m.status !== "ACTIVE" ? invitePanel : null}
+      {changeAccountPanel}
       {ceilingPanel}
 
       {showDebit && (
