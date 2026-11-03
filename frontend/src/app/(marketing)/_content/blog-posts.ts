@@ -35,7 +35,7 @@ function page(p: {
   </div></div>
   <div class="sec"><div class="wrap"><div class="prose" style="max-width:760px;margin:0 auto">
     ${p.body}
-    <p style="margin-top:32px;font-size:.86rem;color:var(--muted)"><em>This article is general information, not financial advice. Loans are offered by DhanBoost's RBI-registered NBFC partners; all rates and charges are set out in your Key Fact Statement before you accept an offer.</em></p>
+    <p style="margin-top:32px;font-size:.86rem;color:var(--muted)"><em>This article is general information, not financial advice. Loans are offered by DhanBoost's RBI-registered NBFC partner, MLB Securities Private Limited; all rates and charges are set out in your Key Fact Statement before you accept an offer.</em></p>
     <div style="text-align:center;margin-top:32px"><a href="/blog" class="btn btn-ghost" data-link="">← All resources</a></div>
   </div></div></div>
 </section>`;
@@ -109,7 +109,7 @@ export const POSTS: Record<string, BlogPost> = {
     <h2>3. The app or link isn't official</h2>
     <p>Scammers clone brand names and logos. Always check you're on the official domain — for us, that's <b>dhanboost.com</b> — and that emails come from <b>${BRAND.email}</b>. Be wary of loan offers arriving by random WhatsApp, SMS or Telegram links, or apps downloaded from outside official stores.</p>
     <h2>4. There's no clear lender or registration</h2>
-    <p>Every legitimate loan in India is made by an RBI-registered entity. If you can't tell who the actual lender is, or there's no Key Fact Statement, walk away. DhanBoost is a platform; the loan is sanctioned and disbursed by our RBI-registered NBFC partners, and that's stated clearly before you sign.</p>
+    <p>Every legitimate loan in India is made by an RBI-registered entity. If you can't tell who the actual lender is, or there's no Key Fact Statement, walk away. DhanBoost is a platform; the loan is sanctioned and disbursed by our RBI-registered NBFC partner, MLB Securities Private Limited, and that's stated clearly before you sign.</p>
     <h2>5. They ask for OTPs, full card numbers or remote access</h2>
     <p>No genuine lender needs your OTP, full card/CVV, or remote-control access to your phone. These requests exist only to drain your account. Never share them.</p>
     <h2>How to stay safe</h2>

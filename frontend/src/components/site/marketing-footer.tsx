@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { BrandMark } from "./brand-mark";
-import { BRAND } from "@/lib/brand";
+import { BRAND, NBFC_PARTNER } from "@/lib/brand";
 
 /** Public marketing footer — ported from the design export (classes styled by marketing-theme.css). */
 export function MarketingFooter() {
@@ -74,12 +74,14 @@ export function MarketingFooter() {
             </div>
           </div>
         </div>
+        <div className="f-partner">
+          NBFC Partner : <b>{NBFC_PARTNER.name}.</b>
+        </div>
         <div className="f-disc">
-          <b>Disclaimer:</b> DhanBoost (NAVIX Finance Private Limited) operates a digital lending
-          platform offering salary-linked personal loans. Loan approval is subject to DhanBoost&apos;s
-          credit policy and eligibility assessment. DhanBoost does not charge any advance fee for loan
-          processing. Representative APR and all charges are disclosed before you accept any offer.
-          Please borrow responsibly.
+          <b>Disclaimer:</b> {NBFC_PARTNER.disclaimer} DhanBoost (NAVIX Finance Private Limited) is a
+          digital lending platform and does not charge any advance fee for loan processing.
+          Representative APR and all charges are disclosed before you accept any offer. Please borrow
+          responsibly.
         </div>
         <div className="f-bottom">
           <span>

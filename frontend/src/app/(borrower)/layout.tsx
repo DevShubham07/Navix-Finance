@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Linkedin } from "lucide-react";
 import { AppHeader } from "@/components/app/app-header";
 import { OnboardingGate } from "@/components/app/onboarding-gate";
-import { BRAND } from "@/lib/brand";
+import { BRAND, NBFC_PARTNER } from "@/lib/brand";
 
 // The borrower app + its public auth-entry pages (login/signup/forgot/reset) are not search
 // content — keep them out of the index (crawlable so the noindex is seen; see robots.ts).
@@ -17,6 +17,14 @@ export default function BorrowerLayout({ children }: { children: React.ReactNode
       <OnboardingGate />
       <main className="flex-1">{children}</main>
       <footer className="shrink-0 border-t border-line bg-white py-5">
+        <div className="container">
+          <div className="mb-4 space-y-1.5 border-b border-line pb-4 text-xs leading-relaxed text-muted">
+            <p className="text-sm font-semibold text-navy">NBFC Partner : {NBFC_PARTNER.name}.</p>
+            <p>
+              <b className="text-navy">Disclaimer:</b> {NBFC_PARTNER.disclaimer}
+            </p>
+          </div>
+        </div>
         <div className="container flex flex-wrap items-center justify-between gap-3 text-sm text-muted">
           <span>
             © 2026 {BRAND.legalName} · Built by{" "}

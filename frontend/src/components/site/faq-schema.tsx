@@ -11,7 +11,7 @@ import { BRAND } from "@/lib/brand";
 const FAQ: { q: string; a: string }[] = [
   {
     q: "Is DhanBoost a lender?",
-    a: "No. DhanBoost is a digital lending platform. All loans are sanctioned and disbursed by our RBI-registered NBFC partners, who are the lender of record and remain regulated by the RBI.",
+    a: "No. DhanBoost is a digital lending platform. All loans are sanctioned and disbursed by our NBFC partner, MLB Securities Private Limited, which is registered with the Reserve Bank of India and is the lender of record.",
   },
   {
     q: "How quickly can I get a loan?",

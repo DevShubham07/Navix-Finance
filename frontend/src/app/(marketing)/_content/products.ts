@@ -11,7 +11,7 @@ export const html = `<section class="page active" id="products">
   <div class="sec"><div class="wrap">
     <div class="pcard reveal" style="flex-direction:column;border:2px solid var(--gold-400);box-shadow:var(--shadow-md)">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;width:100%">
-        <div><span class="ptag" style="background:var(--success);color:#fff">● Live now</span><h3 style="font-size:1.7rem;margin:10px 0 6px">Instant Personal Loan</h3><p style="max-width:520px">Quick personal loans for any purpose — medical emergencies, education, travel, bills or a cash-flow gap before payday. Fully digital, disbursed by our RBI-registered NBFC partners.</p></div>
+        <div><span class="ptag" style="background:var(--success);color:#fff">● Live now</span><h3 style="font-size:1.7rem;margin:10px 0 6px">Instant Personal Loan</h3><p style="max-width:520px">Quick personal loans for any purpose — medical emergencies, education, travel, bills or a cash-flow gap before payday. Fully digital, disbursed by our RBI-registered NBFC partner, MLB Securities Private Limited.</p></div>
         <a href="/signup/start" class="btn btn-gold" data-link="">Apply Now</a>
       </div>
       <div class="grid-3" style="width:100%;margin-top:26px;gap:16px">
@@ -34,7 +34,7 @@ export const html = `<section class="page active" id="products">
       <div class="fcard reveal"><div class="fico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"></path></svg></div><h3 style="font-size:1.1rem">No advance fees</h3><p style="font-size:.9rem">You never pay anything upfront.</p></div>
       <div class="fcard reveal d1"><div class="fico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"></path><path d="M7 14l4-4 3 3 5-6"></path></svg></div><h3 style="font-size:1.1rem">No pre-closure charge</h3><p style="font-size:.9rem">Repay early and save.</p></div>
       <div class="fcard reveal d2"><div class="fico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2"></rect><path d="M8 6h8M8 10h8"></path></svg></div><h3 style="font-size:1.1rem">Key Fact Statement</h3><p style="font-size:.9rem">Full cost shown upfront.</p></div>
-      <div class="fcard reveal d3"><div class="fico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.5 9 8 11 4.5-2 8-6 8-11V5l-8-3z"></path></svg></div><h3 style="font-size:1.1rem">RBI-aligned</h3><p style="font-size:.9rem">Through regulated NBFCs.</p></div>
+      <div class="fcard reveal d3"><div class="fico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.5 9 8 11 4.5-2 8-6 8-11V5l-8-3z"></path></svg></div><h3 style="font-size:1.1rem">RBI-aligned</h3><p style="font-size:.9rem">Lent by MLB Securities Private Limited, an RBI-registered NBFC.</p></div>
     </div>
   </div></div>
 </section>`;

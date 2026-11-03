@@ -36,16 +36,9 @@ export const BRAND = {
 export const PAYMENT_SAFETY_NOTICE =
   "Always use our secure Repayment on Website Link for loan payments. Do not make direct bank payments to fake UPI links or unauthorised payment links. DhanBoost is not responsible for payments made to other accounts.";
 
-/** RBI-registered NBFC lending partners (placeholder disclosures). */
-export const LENDING_PARTNERS = [
-  {
-    name: "Arthveda Capital Private Limited",
-    corNo: "", // TODO: real RBI CoR number (placeholder removed — see seoPlan.md Track B / B2)
-    blurb: "Lender of record · sanction letter & Key Fact Statement issued by the NBFC.",
-  },
-  {
-    name: "Sentinel Finserv Limited",
-    corNo: "", // TODO: real RBI CoR number (placeholder removed — see seoPlan.md Track B / B2)
-    blurb: "Lender of record · sanction letter & Key Fact Statement issued by the NBFC.",
-  },
-] as const;
+/** The RBI-registered NBFC that sanctions and disburses every loan (the lender of record). */
+export const NBFC_PARTNER = {
+  name: "MLB Securities Private Limited",
+  disclaimer:
+    "MLB Securities Private Limited is a registered NBFC with the Reserve Bank of India. Loan approval is subject to credit assessment and verification. Interest rates and charges are subject to change. Please read all terms and conditions carefully before applying.",
+} as const;

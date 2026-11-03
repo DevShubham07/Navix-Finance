@@ -13,7 +13,7 @@ export const html = `<section class="page active" id="faq">
   <div class="sec"><div class="wrap">
     <div class="sec-head left" style="margin-bottom:24px"><span class="eyebrow">General</span></div>
     <div class="faq" style="margin-bottom:48px">
-      <div class="qa"><h3 class="qh"><button class="q" aria-expanded="false">Is DhanBoost a lender?<span class="qi">+</span></button></h3><div class="a"><p>No. DhanBoost is a digital lending platform. All loans are sanctioned and disbursed by our RBI-registered NBFC partners, who are the lender of record and remain regulated by the RBI.</p></div></div>
+      <div class="qa"><h3 class="qh"><button class="q" aria-expanded="false">Is DhanBoost a lender?<span class="qi">+</span></button></h3><div class="a"><p>No. DhanBoost is a digital lending platform. All loans are sanctioned and disbursed by our NBFC partner, MLB Securities Private Limited, which is registered with the Reserve Bank of India and is the lender of record.</p></div></div>
       <div class="qa"><h3 class="qh"><button class="q" aria-expanded="false">How quickly can I get a loan?<span class="qi">+</span></button></h3><div class="a"><p>Eligibility decisions are often instant. Once your KYC is complete and you e-sign the agreement, funds are typically disbursed by the partner NBFC within 24–48 hours.</p></div></div>
       <div class="qa"><h3 class="qh"><button class="q" aria-expanded="false">Will applying affect my credit score?<span class="qi">+</span></button></h3><div class="a"><p>Checking eligibility on DhanBoost does not impact your credit score. A formal credit enquiry only happens if you proceed and accept a loan offer from the partner NBFC.</p></div></div>
     </div>

@@ -4,7 +4,7 @@
 export const html = `<section class="page active" id="fair">
   <div class="page-hero"><div class="wrap"><div class="crumb"><a href="/" data-link="">Home</a> &nbsp;/&nbsp; Fair Practices Code</div><h1>Fair Practices Code</h1><p>Our commitment to fair, transparent and respectful lending. Last updated: June 2026.</p></div></div>
   <div class="sec"><div class="wrap"><div class="prose">
-    <p>DhanBoost and its partner NBFCs are committed to fair, transparent and ethical conduct, aligned with RBI's Fair Practices guidelines and Digital Lending Guidelines (2022).</p>
+    <p>DhanBoost and its NBFC partner, MLB Securities Private Limited, are committed to fair, transparent and ethical conduct, aligned with RBI's Fair Practices guidelines and Digital Lending Guidelines (2022).</p>
     <h2>1. Transparency</h2>
     <ul>
       <li>All terms, interest, APR and charges are disclosed upfront in the Key Fact Statement.</li>
