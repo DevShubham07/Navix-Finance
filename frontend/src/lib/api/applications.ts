@@ -452,7 +452,56 @@ export interface OutstandingView {
   penaltyDays?: number;
 }
 
-export type PaymentMethodName = "UPI" | "BANK_TRANSFER" | "NACH";
+export type PaymentMethodName = "UPI" | "BANK_TRANSFER" | "NACH" | "PAYU";
+
+export type PayuOrderStatus = "INITIATED" | "PENDING" | "SUCCESS" | "FAILED" | "EXPIRED";
+
+/** A PayU checkout attempt as the borrower sees it (mirrors backend PayuController OrderView). */
+export interface PayuOrderView {
+  txnid: string;
+  status: PayuOrderStatus;
+  amountPaise: number;
+  feePaise: number | null;
+  mode: string | null;
+  bankRefNum: string | null;
+  credited: boolean;
+  createdAt: string;
+}
+
+export interface PayuStateView {
+  enabled: boolean;
+  manualAllowed: boolean;
+  creditCardFeePaise: number | null;
+  openOrder: PayuOrderView | null;
+  lastOrder: PayuOrderView | null;
+}
+
+/** Hidden-form checkout handoff: POST `fields` to `action`. */
+export interface PayuCheckoutView {
+  action: string;
+  fields: Record<string, string>;
+  order: PayuOrderView;
+}
+/** A PayU order Accounts must look at (mirrors backend PayuReviewService.ReviewView). */
+export type PayuReviewReason = "AMOUNT_MISMATCH" | "NO_PROVIDER_ID" | "LOAN_SETTLED" | "FEE_MISMATCH" | "OVERPAID";
+export interface PayuReviewView {
+  orderId: number;
+  txnid: string;
+  loanId: number;
+  customerId: number;
+  customerName: string | null;
+  amountPaise: number;
+  feePaise: number | null;
+  mihpayid: string | null;
+  bankRefNum: string | null;
+  mode: string | null;
+  paidOn: string | null;
+  status: PayuOrderStatus;
+  reviewReason: PayuReviewReason;
+  overpayment: boolean;
+  credited: boolean;
+  createdAt: string;
+}
 export type PaymentStatusName = "PENDING_VERIFICATION" | "VERIFIED" | "REJECTED";
 
 /** A recorded repayment against a loan (mirrors backend PaymentView). */
@@ -1493,6 +1542,17 @@ export const borrowerApi = {
     payload: { amountPaise: number; method: PaymentMethodName; txnRef?: string; proofUrl?: string; paidOn?: string },
   ) => bff<PaymentView>(`${BORROWER_LOAN_BASE}/${loanId}/repayments`, "POST", payload),
 
+  /** PayU checkout state for this loan; `amountPaise` lets the server quote the credit-card fee. */
+  payuState: (loanId: number, amountPaise?: number) =>
+    bff<PayuStateView>(
+      `${BORROWER_LOAN_BASE}/${loanId}/payu/state${amountPaise ? `?amountPaise=${amountPaise}` : ""}`,
+      "GET",
+    ),
+  payuCreateOrder: (loanId: number, amountPaise: number) =>
+    bff<PayuCheckoutView>(`${BORROWER_LOAN_BASE}/${loanId}/payu/orders`, "POST", { amountPaise }),
+  payuOrder: (loanId: number, txnid: string) =>
+    bff<PayuOrderView>(`${BORROWER_LOAN_BASE}/${loanId}/payu/orders/${encodeURIComponent(txnid)}`, "GET"),
+
   /** Repayments recorded against this loan (the borrower's payment history). */
   repayments: (loanId: number) => bff<PaymentView[]>(`${BORROWER_LOAN_BASE}/${loanId}/repayments`, "GET"),
 
@@ -2244,6 +2304,11 @@ export const staffApi = {
   // --- repayment verification (accountant maker-checker) ---
   /** Repayments awaiting proof verification, across all loans (accountant queue). */
   pendingRepayments: () => bff<PaymentView[]>(`${STAFF_LOAN_BASE}/pending-repayments`, "GET"),
+  /** PayU orders captured but not credited / needing a refund / looking wrong (Accountant + Admin). */
+  payuReviewQueue: () => bff<PayuReviewView[]>(`${STAFF_LOAN_BASE}/payu-review`, "GET"),
+  /** Record that a person dealt with one. Changes no money and no order state. */
+  resolvePayuReview: (orderId: number, note: string) =>
+    bff<null>(`${STAFF_LOAN_BASE}/payu-review/${orderId}/resolve`, "POST", { note }),
 
   /**
    * One page of the ledger with the register's column filters applied server-side.

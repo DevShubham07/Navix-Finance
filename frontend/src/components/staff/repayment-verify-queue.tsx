@@ -43,6 +43,7 @@ const METHOD_LABEL: Record<PaymentMethodName, string> = {
   UPI: "UPI",
   BANK_TRANSFER: "Bank transfer",
   NACH: "NACH auto-debit",
+  PAYU: "PayU",
 };
 
 /** Sortable + filterable columns. Customer, loan id, reference and proof are identity or links. */

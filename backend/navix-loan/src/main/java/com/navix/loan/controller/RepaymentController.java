@@ -7,6 +7,8 @@ import com.navix.loan.dto.LoanDtos.AdminRepaymentRequest;
 import com.navix.loan.dto.LoanDtos.PaymentView;
 import com.navix.loan.dto.LoanDtos.RejectRepaymentRequest;
 import com.navix.loan.dto.LoanDtos.RepaymentRequest;
+import com.navix.loan.domain.PaymentMethod;
+import com.navix.loan.payu.PayuService;
 import com.navix.loan.service.RepaymentService;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -30,6 +32,7 @@ public class RepaymentController {
 
     private final RepaymentService repaymentService;
     private final com.navix.loan.service.CustomerService customerService;
+    private final PayuService payuService;
 
     /**
      * Record a repayment (full, partial or prepayment) against the loan. Borrower (own loan only —
@@ -47,6 +50,17 @@ public class RepaymentController {
                                            @Valid @RequestBody RepaymentRequest request) {
         requireRole("BORROWER", "ADMIN");
         requireOwnProofKey(request.proofUrl());
+        if ("BORROWER".equals(ActorContext.get().role())) {
+            // A PayU payment is created only by PayU's confirmation, never claimed by the borrower; and with
+            // PayU on, the manual screenshot flow is open only after a failed attempt.
+            if (request.method() == PaymentMethod.PAYU) {
+                throw new BusinessException("INVALID_METHOD", "That payment method cannot be recorded manually");
+            }
+            if (!payuService.manualAllowed(loanId)) {
+                throw new BusinessException("MANUAL_PAYMENT_NOT_AVAILABLE",
+                        "Please pay online. Manual payment opens if the online payment does not go through.");
+            }
+        }
         return ApiResponse.ok(repaymentService.view(repaymentService.recordPayment(
                 loanId, request.amountPaise(), request.method(), request.txnRef(),
                 request.proofUrl(), request.paidOn())));

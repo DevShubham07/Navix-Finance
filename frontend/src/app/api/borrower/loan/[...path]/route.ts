@@ -31,9 +31,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
 
   const { path } = await ctx.params;
   const suffix = joinPath(path);
-  // Borrowers may only record a repayment — never verify one.
-  if (!/^\d+\/repayments$/.test(suffix)) {
-    return forbidden("Only recording a repayment is allowed here.");
+  // Borrowers may only record a repayment or start a PayU checkout — never verify a payment.
+  if (!/^\d+\/(repayments|payu\/orders)$/.test(suffix)) {
+    return forbidden("Only recording a repayment or starting a PayU payment is allowed here.");
   }
 
   return proxyToBackend(req, `/api/loan/${suffix}`, session.token);

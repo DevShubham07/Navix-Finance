@@ -81,7 +81,7 @@ export interface Loan {
 }
 
 /** How a repayment was made. NACH auto-debit is a future capability. */
-export type RepaymentMethod = "UPI" | "BANK_TRANSFER" | "NACH";
+export type RepaymentMethod = "UPI" | "BANK_TRANSFER" | "NACH" | "PAYU";
 
 export type RepaymentStatus = "PENDING_VERIFICATION" | "VERIFIED" | "REJECTED";
 

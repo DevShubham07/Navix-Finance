@@ -42,7 +42,7 @@ import {
 import { can as rbacCan, type Permission } from "@/lib/auth/rbac";
 
 const inr = (p: number | null | undefined) => (p == null ? null : paiseToINR(p));
-const METHOD_LABEL: Record<string, string> = { UPI: "UPI", BANK_TRANSFER: "Bank transfer", NACH: "NACH" };
+const METHOD_LABEL: Record<string, string> = { UPI: "UPI", BANK_TRANSFER: "Bank transfer", NACH: "NACH", PAYU: "PayU" };
 const TH = "py-2 pr-3 text-[9.2px] font-semibold uppercase tracking-wide";
 
 export function RepaymentTab(ctx: TabCtx) {

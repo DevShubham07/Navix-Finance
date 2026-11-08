@@ -189,7 +189,7 @@ function PaymentRow({ p }: { p: PaymentView }) {
       <span className="flex items-center gap-2">
         <span className="font-semibold text-ink">{paiseToINR(p.amountPaise)}</span>
         <span className="text-xs text-muted">
-          {p.method === "UPI" ? "UPI" : "Bank"}
+          {p.method === "UPI" ? "UPI" : p.method === "PAYU" ? "PayU" : "Bank"}
           {p.txnRef ? ` · ${p.txnRef}` : ""}
           {p.paidOn ? ` · ${formatDate(p.paidOn)}` : ""}
         </span>

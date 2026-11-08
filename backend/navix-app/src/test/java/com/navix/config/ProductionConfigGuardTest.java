@@ -139,4 +139,34 @@ class ProductionConfigGuardTest {
         assertThatCode(() -> guard(false, STRONG_SECRET, false, false).check())
                 .doesNotThrowAnyException();
     }
+
+    private static ProductionConfigGuard payuGuard(boolean dev, boolean flagOn, String key, String salt, String url) {
+        FeatureFlagService f = mock(FeatureFlagService.class);
+        org.mockito.Mockito.lenient().when(f.isEnabled("payu-repayment", false)).thenReturn(flagOn);
+        ProductionConfigGuard g = new ProductionConfigGuard(sms(false, false), f);
+        ReflectionTestUtils.setField(g, "allowDevDefaults", dev);
+        ReflectionTestUtils.setField(g, "payuKey", key);
+        ReflectionTestUtils.setField(g, "payuSalt", salt);
+        ReflectionTestUtils.setField(g, "payuCheckoutUrl", url);
+        ReflectionTestUtils.setField(g, "payuCommandUrl", "https://info.payu.in/merchant/postservice.php?form=2");
+        return g;
+    }
+
+    @Test
+    void payu_flagOff_neverBlocksADeploy() {
+        assertThatCode(payuGuard(false, false, "", "", "https://test.payu.in/_payment")::checkPayu)
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void payu_flagOn_refusesBlankCredentialsAndTestHosts() {
+        assertThatThrownBy(payuGuard(false, true, "", "s", "https://secure.payu.in/_payment")::checkPayu)
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("NAVIX_PAYU_KEY");
+        assertThatThrownBy(payuGuard(false, true, "k", "s", "https://test.payu.in/_payment")::checkPayu)
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("test.payu.in");
+        assertThatCode(payuGuard(false, true, "k", "s", "https://secure.payu.in/_payment")::checkPayu)
+                .doesNotThrowAnyException();
+        assertThatCode(payuGuard(true, true, "", "", "https://test.payu.in/_payment")::checkPayu)
+                .doesNotThrowAnyException();
+    }
 }

@@ -118,6 +118,24 @@ navix:
     # The lender's own settlement account a NACH debit pays into. Blank = DebitService refuses to present.
     corporate-account-number: ${NAVIX_DIGIO_CORPORATE_ACCOUNT_NUMBER:}
     expire-in-days: ${NAVIX_DIGIO_EXPIRE_IN_DAYS:7}
+  payu:
+    # PayU Hosted Checkout for loan repayments. Off unless the `payu-repayment` feature_flag row is enabled.
+    # Credentials come from SSM /navix/<env>/navix/payu/... (never committed). Defaults are the TEST hosts;
+    # ProductionConfigGuard refuses a blank key/salt or a test.payu.in URL once the flag is ON.
+    key: ${NAVIX_PAYU_KEY:}
+    salt: ${NAVIX_PAYU_SALT:}
+    checkout-url: ${NAVIX_PAYU_CHECKOUT_URL:https://test.payu.in/_payment}
+    command-url: ${NAVIX_PAYU_COMMAND_URL:https://test.payu.in/merchant/postservice.php?form=2}
+    # Where PayU posts the browser back (surl/furl/curl); the BFF route there redirects to /repay.
+    return-url: ${NAVIX_PAYU_RETURN_URL:${navix.app.frontend-base-url}/api/payu/return}
+    # test.payu.in may only be used where this is true: a sandbox payment verifies as captured with no money.
+    allow-sandbox: ${NAVIX_PAYU_ALLOW_SANDBOX:${NAVIX_ALLOW_DEV_DEFAULTS:false}}
+    # PayU's published list rates (mode:bps, payu.in/pricing 2026-11-09); RuPay credit is unpublished, so a
+    # placeholder. Replace with the signed contract rates. Blank = no card fee is added.
+    card-fee-bps: ${NAVIX_PAYU_CARD_FEE_BPS:CC:200,AMEX:300,RUPAYCC:200,DINR:300}
+    card-fee-gst-bps: ${NAVIX_PAYU_CARD_FEE_GST_BPS:1800}
+    # Reconcile sweep for orders whose webhook never arrived (PayuReconcileScheduler), every 5 minutes.
+    reconcile-cron: ${NAVIX_PAYU_RECONCILE_CRON:0 */5 * * * *}
   digitap:
     # Two hosts: svc (KYC/Employment/Email), api (Credit/Location/Face-Match/OCR). Auth = Basic base64(id:secret).
     svc-base-url: ${DIGITAP_SVC_BASE_URL:https://svcdemo.digitap.work}

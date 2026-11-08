@@ -67,6 +67,18 @@ public class ProductionConfigGuard {
     @Value("${navix.digio.provider:digio}")
     private String digioProvider;
 
+    @Value("${navix.payu.key:}")
+    private String payuKey;
+
+    @Value("${navix.payu.salt:}")
+    private String payuSalt;
+
+    @Value("${navix.payu.checkout-url:https://test.payu.in/_payment}")
+    private String payuCheckoutUrl;
+
+    @Value("${navix.payu.command-url:https://test.payu.in/merchant/postservice.php?form=2}")
+    private String payuCommandUrl;
+
     @Value("${navix.email.provider:log}")
     private String emailProvider;
 
@@ -127,6 +139,28 @@ public class ProductionConfigGuard {
                     + "digio-mandate flag is ON — every eMandate would be recorded as registered without a "
                     + "real NPCI filing. Set NAVIX_DIGIO_PROVIDER=digio (and the NAVIX_DIGIO_* "
                     + "credentials), or turn the flag off.");
+        }
+    }
+
+    /**
+     * PayU is checked <b>only when the {@code payu-repayment} flag is actually on</b>, for the same reason as
+     * Digio: with the flag off nothing calls PayU, so refusing the boot would block every unrelated deploy
+     * over a disabled feature. With it on, a blank key/salt makes every checkout fail and a {@code test.payu.in}
+     * URL would send real borrowers to a sandbox that takes no money while the loan stays unpaid.
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    void checkPayu() {
+        if (allowDevDefaults || !featureFlags.isEnabled("payu-repayment", false)) {
+            return;
+        }
+        if (payuKey == null || payuKey.isBlank() || payuSalt == null || payuSalt.isBlank()) {
+            throw new IllegalStateException("The payu-repayment flag is ON but navix.payu.key/salt are blank. "
+                    + "Set NAVIX_PAYU_KEY and NAVIX_PAYU_SALT (SSM /navix/<env>/navix/payu/...), or turn the flag off.");
+        }
+        if (payuCheckoutUrl.contains("test.payu.in") || payuCommandUrl.contains("test.payu.in")) {
+            throw new IllegalStateException("The payu-repayment flag is ON but a PayU URL still points at "
+                    + "test.payu.in. Set NAVIX_PAYU_CHECKOUT_URL and NAVIX_PAYU_COMMAND_URL to the live hosts, "
+                    + "or turn the flag off.");
         }
     }
 }

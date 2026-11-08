@@ -22,6 +22,7 @@ import {
   PIPELINE_ROLES,
 } from "@/components/staff/live-pipeline";
 import { RepaymentVerifyQueue } from "@/components/staff/repayment-verify-queue";
+import { PayuReviewQueue } from "@/components/staff/payu-review-queue";
 import {
   CollectionPaymentApprovalQueue,
   CollectionPaymentValidationQueue,
@@ -180,6 +181,7 @@ function RoleQueues({ role, realRole, meId }: { role: StaffRole; realRole: Staff
       {role === "ACCOUNTANT" && (
         <>
           <RepaymentVerifyQueue />
+          <PayuReviewQueue />
           <CollectionPaymentValidationQueue />
         </>
       )}
