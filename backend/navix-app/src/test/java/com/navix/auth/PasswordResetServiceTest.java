@@ -40,6 +40,10 @@ class PasswordResetServiceTest {
     @Mock
     private CustomerProfileRepository profileRepository;
     @Mock
+    private com.navix.loan.repository.LoanApplicationRepository applicationRepository;
+    @Mock
+    private com.navix.config.StaffSessionRegistry staffSessionRegistry;
+    @Mock
     private EmailClient emailClient;
     @Mock
     private EmailSuppressionService suppression;
@@ -51,7 +55,7 @@ class PasswordResetServiceTest {
     void setUp() {
         EmailProperties emailProperties = new EmailProperties("log", true, null, null, null);
         service = new PasswordResetService(tokenRepository, credentialRepository, staffRepository,
-                profileRepository, passwordEncoder, emailClient, suppression, emailProperties,
+                profileRepository, applicationRepository, staffSessionRegistry, passwordEncoder, emailClient, suppression, emailProperties,
                 "http://localhost:3000");
     }
 
@@ -112,21 +116,32 @@ class PasswordResetServiceTest {
     }
 
     @Test
-    void borrowerResetSendsOnEmailMatch() {
-        when(profileRepository.findFirstByEmailIgnoreCaseOrderByApplicationIdDesc("borrower@navix.test"))
-                .thenReturn(Optional.of(profile("borrower@navix.test", "9876543210")));
+    void borrowerResetTokenSubjectIsTheApplicationsCustomerNotTheMobileDerivedId() {
+        // The profile mobile is borrower-editable; aiming it at someone else's last 7 digits (9876543)
+        // used to retarget the token at THEIR customer id. The subject must come from the account.
+        CustomerProfile p = profile("borrower@navix.test", "1239876543");
+        p.setApplicationId(11L);
+        com.navix.loan.entity.LoanApplication app = new com.navix.loan.entity.LoanApplication();
+        app.setCustomerId(77L);
+        when(profileRepository.findFirstByEmailIgnoreCaseAndPersonalEmailVerifiedTrueOrderByApplicationIdDesc(
+                "borrower@navix.test")).thenReturn(Optional.of(p));
+        when(applicationRepository.findById(11L)).thenReturn(Optional.of(app));
         when(emailClient.send(any())).thenReturn(EmailResult.ok("ref"));
 
         service.requestBorrowerReset("borrower@navix.test");
 
-        verify(tokenRepository).save(any());
+        org.mockito.ArgumentCaptor<PasswordResetToken> saved =
+                org.mockito.ArgumentCaptor.forClass(PasswordResetToken.class);
+        verify(tokenRepository).save(saved.capture());
+        assertThat(saved.getValue().getSubjectId()).isEqualTo(77L);
+        assertThat(AuthController.deriveCustomerId("1239876543")).isNotEqualTo(77L);
         verify(emailClient).send(any());
     }
 
     @Test
-    void borrowerResetSendsNothingWhenMatchedProfileHasNoMobile() {
-        when(profileRepository.findFirstByEmailIgnoreCaseOrderByApplicationIdDesc("borrower@navix.test"))
-                .thenReturn(Optional.of(profile("borrower@navix.test", null)));
+    void borrowerResetSendsNothingWhenNoOtpVerifiedProfileMatches() {
+        when(profileRepository.findFirstByEmailIgnoreCaseAndPersonalEmailVerifiedTrueOrderByApplicationIdDesc(
+                "borrower@navix.test")).thenReturn(Optional.empty());
 
         service.requestBorrowerReset("borrower@navix.test");
 
@@ -136,7 +151,7 @@ class PasswordResetServiceTest {
 
     @Test
     void borrowerResetSendsNothingOnNoMatch() {
-        when(profileRepository.findFirstByEmailIgnoreCaseOrderByApplicationIdDesc("nobody@navix.test"))
+        when(profileRepository.findFirstByEmailIgnoreCaseAndPersonalEmailVerifiedTrueOrderByApplicationIdDesc("nobody@navix.test"))
                 .thenReturn(Optional.empty());
 
         service.requestBorrowerReset("nobody@navix.test");
@@ -149,7 +164,7 @@ class PasswordResetServiceTest {
     void borrowerResetIsANoOpOnBlankEmail() {
         service.requestBorrowerReset(null);
 
-        verify(profileRepository, never()).findFirstByEmailIgnoreCaseOrderByApplicationIdDesc(any());
+        verify(profileRepository, never()).findFirstByEmailIgnoreCaseAndPersonalEmailVerifiedTrueOrderByApplicationIdDesc(any());
         verify(tokenRepository, never()).save(any());
     }
 }

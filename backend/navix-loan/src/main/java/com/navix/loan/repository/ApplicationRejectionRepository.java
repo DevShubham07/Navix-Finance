@@ -32,6 +32,10 @@ public interface ApplicationRejectionRepository extends JpaRepository<Applicatio
     List<ApplicationRejection> findByMobileAndReasonCodeAndBlockedUntilAfter(
             String mobile, String reasonCode, Instant now);
 
+    /** Any live block recorded against the customer id itself, whatever mobile the profile now carries. */
+    Optional<ApplicationRejection> findFirstByCustomerIdAndBlockedUntilAfterOrderByBlockedUntilDesc(
+            Long customerId, Instant now);
+
     /** A live block of this kind on the customer id itself — survives a correction of the mobile on file. */
     Optional<ApplicationRejection> findFirstByCustomerIdAndReasonCodeAndBlockedUntilAfter(
             Long customerId, String reasonCode, Instant now);

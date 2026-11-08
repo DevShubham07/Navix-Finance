@@ -57,6 +57,19 @@ class StaffSessionRegistryTest {
     }
 
     @Test
+    void revokedSessions_rejectEveryTokenMintedBefore() {
+        // Logout / role change / password reset all call revokeSessions(): the stored sid becomes a
+        // fresh value no existing token carries, so the old token fails instead of being grandfathered.
+        StaffUser staff = staffWith("sess-1");
+        staff.revokeSessions();
+        when(staffRepository.findById(9L)).thenReturn(Optional.of(staff));
+        StaffSessionRegistry registry = new StaffSessionRegistry(staffRepository);
+
+        assertThat(registry.isCurrent("9", "sess-1")).isFalse();
+        assertThat(staff.getActiveSessionAt()).isNull();
+    }
+
+    @Test
     void noActiveSession_isCurrentRegardlessOfToken() {
         // A staff row that has never logged in (or cleanly logged out) has no active session —
         // nothing to compare against, so any presented sid is treated as current rather than

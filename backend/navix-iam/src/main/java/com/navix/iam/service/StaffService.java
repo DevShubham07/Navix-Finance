@@ -82,6 +82,9 @@ public class StaffService {
         StaffRole previousRole = staff.getRole();
         applyStatus(staff, request.status());
         staff.setRole(request.role());
+        if (previousRole != request.role()) {
+            staff.revokeSessions(); // tokens carry the old role claim; the ROLE_CHANGED event evicts the cache
+        }
         StaffUser saved = staffUserRepository.save(staff);
         if (previousRole != request.role()) {
             eventPublisher.publishEvent(new StaffAccountEvent(saved.getId(), saved.getEmail(), saved.getName(),

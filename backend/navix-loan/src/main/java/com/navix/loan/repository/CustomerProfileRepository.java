@@ -34,6 +34,10 @@ public interface CustomerProfileRepository extends JpaRepository<CustomerProfile
      */
     Optional<CustomerProfile> findFirstByEmailIgnoreCaseOrderByApplicationIdDesc(String email);
 
+    /** As above, restricted to a personal email the borrower proved with an emailed OTP (the reset gate). */
+    Optional<CustomerProfile> findFirstByEmailIgnoreCaseAndPersonalEmailVerifiedTrueOrderByApplicationIdDesc(
+            String email);
+
     // --- identity uniqueness (a mobile/PAN may belong to only one customer) ---
     // Scoped to OTHER customers: a profile is matched by joining its application to resolve the
     // owning customerId, then excluding the queried customer. This lets the SAME customer

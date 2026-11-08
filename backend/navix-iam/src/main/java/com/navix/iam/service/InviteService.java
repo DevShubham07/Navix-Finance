@@ -107,6 +107,7 @@ public class InviteService {
         staff.setName(name);
         staff.setRole(invite.getRole());
         staff.setStatus(StaffStatus.ACTIVE);
+        staff.revokeSessions(); // re-activating an existing row must not leave its old tokens valid
         if (passwordHash != null) {
             staff.setPasswordHash(passwordHash);
         }

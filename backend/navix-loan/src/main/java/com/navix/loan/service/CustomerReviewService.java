@@ -71,6 +71,8 @@ public class CustomerReviewService {
     private final ProfileChangeLogger changeLogger;
     /** Read-only here: decides whether the Aadhaar number is still editable (see {@link #saveProfile}). */
     private final ApplicationVerificationRepository verificationRepository;
+    /** The OTP-proven login mobile a borrower may keep on their profile (see {@link #saveProfile}). */
+    private final com.navix.common.security.BorrowerIdentityPort borrowerIdentity;
 
     @Transactional
     public CustomerProfile saveProfile(Long appId, ProfileRequest req) {
@@ -99,8 +101,25 @@ public class CustomerReviewService {
                     "This mobile number is already registered with another customer.");
         }
 
+        // A borrower's profile mobile keys the forgot-password lookup and the cooling-off blocks, so it
+        // must be the number they proved by OTP at sign-in, never a free-text value. Staff/ADMIN edits
+        // (CustomerService) are a separate path and are not bound by this.
+        boolean borrower = "BORROWER".equals(ActorContext.get().role());
+        if (borrower && mobile != null && !borrowerIdentity.isLoginMobile(mobile, customerId)) {
+            throw new BusinessException("MOBILE_MISMATCH",
+                    "The mobile number must be the one you signed in with.");
+        }
+
         CustomerProfile p = profileRepository.findByApplicationId(appId).orElseGet(CustomerProfile::new);
         p.setApplicationId(appId);
+        // Name / PAN / DOB are what verification and the credit decision are recorded against: free to
+        // correct while DRAFT (nothing has been compared yet), frozen once the file has left it.
+        if (borrower && app.getStatus() != ApplicationStatus.DRAFT
+                && (changed(p.getFullName(), trimToNull(req.fullName())) || changed(p.getPan(), pan)
+                || (req.dob() != null && p.getDob() != null && !req.dob().equals(p.getDob())))) {
+            throw new BusinessException("PROFILE_LOCKED",
+                    "Your name, PAN and date of birth can't be changed after you submit. Contact support.");
+        }
         // PARTIAL MERGE: onboarding saves the profile in slices (name on the email step, salary on
         // the salary step, bank on the penny-drop step, …). Only overwrite a field when this request
         // actually provides it, so a later slice never wipes an earlier one — otherwise the profile
@@ -171,6 +190,9 @@ public class CustomerReviewService {
         String email = trimToNull(req.email());
         if (email != null) {
             log(customerId, appId, "email", p.getEmail(), email);
+            if (!email.equalsIgnoreCase(p.getEmail())) {
+                p.setPersonalEmailVerified(null); // inbox control was proven for the OLD address
+            }
             p.setEmail(email);
         }
 
@@ -256,6 +278,11 @@ public class CustomerReviewService {
         }
     }
 
+    /** True when the request supplies a value that differs from a value already on file. */
+    private static boolean changed(String stored, String requested) {
+        return requested != null && stored != null && !requested.equals(stored);
+    }
+
     private void log(Long customerId, Long appId, String field, String oldVal, String newVal) {
         changeLogger.logIfChanged(customerId, appId, field, oldVal, newVal);
     }
@@ -321,6 +348,7 @@ public class CustomerReviewService {
         String email = trimToNull(req.email());
         if (email != null && !email.equals(p.getEmail())) {
             logChange(customerId, appId, "email", p.getEmail(), email);
+            p.setPersonalEmailVerified(null); // inbox control was proven for the OLD address
             p.setEmail(email);
             changed.add("email");
         }

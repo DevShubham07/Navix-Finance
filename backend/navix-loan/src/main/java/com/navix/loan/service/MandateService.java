@@ -839,6 +839,15 @@ public class MandateService {
         return history(appId).stream().filter(a -> a.id().equals(mandateId)).findFirst().orElseThrow();
     }
 
+    /**
+     * Serialises per-customer work until the caller's transaction commits (the same advisory lock the
+     * mandate paths take). Public so {@code ApplicationFlowService} can hold it across its
+     * check-then-insert of a new application.
+     */
+    public void lockCustomer(long customerId) {
+        mandates.lockCustomer(customerId);
+    }
+
     private void lockCustomerAndLoans(Long customerId) {
         mandates.lockCustomer(customerId);
         applications.findByCustomerId(customerId).stream()

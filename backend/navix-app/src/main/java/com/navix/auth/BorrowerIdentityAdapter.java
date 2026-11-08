@@ -23,4 +23,11 @@ class BorrowerIdentityAdapter implements BorrowerIdentityPort {
                 .map(claim -> !claim.getCustomerId().equals(customerId))
                 .orElse(false);
     }
+
+    @Override
+    public boolean isLoginMobile(String mobile, Long customerId) {
+        String digits = mobile.replaceAll("\\D", "");
+        String ten = digits.length() > 10 ? digits.substring(digits.length() - 10) : digits;
+        return mobileRepository.findById(customerId).map(c -> c.getMobile().equals(ten)).orElse(false);
+    }
 }

@@ -183,8 +183,38 @@ class AuthControllerTest {
 
         controller.staffLogout(request);
 
-        assertThat(admin.getActiveSessionId()).isNull();
+        // Never null: a null sid would make StaffSessionRegistry accept every old token again. The
+        // fresh sid matches no token, and a null timestamp keeps the next login free of SESSION_CONFLICT.
+        assertThat(admin.getActiveSessionId()).isNotNull().isNotEqualTo("my-session");
+        assertThat(admin.getActiveSessionAt()).isNull();
         verify(staffSessionRegistry).invalidate(9L);
+    }
+
+    @Test
+    void staffLogin_afterLogout_isNotASessionConflict() {
+        StaffUser admin = admin();
+        admin.revokeSessions();
+        when(staffRepository.findByEmail("meera.krishnan@navix.example")).thenReturn(Optional.of(admin));
+
+        var resp = controller.staffLogin(
+                new StaffLoginRequest("meera.krishnan@navix.example", "Admin@12345", null, null));
+
+        assertThat(resp.isSuccess()).isTrue();
+    }
+
+    @Test
+    void staffLogin_unknownAndInactiveAccountsGetTheSameAnswerAsAWrongPassword() {
+        StaffUser disabled = admin();
+        disabled.setStatus(StaffStatus.DISABLED);
+        when(staffRepository.findByEmail("meera.krishnan@navix.example")).thenReturn(Optional.of(disabled));
+        when(staffRepository.findByEmail("nobody@navix.example")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> controller.staffLogin(
+                new StaffLoginRequest("meera.krishnan@navix.example", "Admin@12345", null, null)))
+                .hasFieldOrPropertyWithValue("code", "INVALID_CREDENTIALS");
+        assertThatThrownBy(() -> controller.staffLogin(
+                new StaffLoginRequest("nobody@navix.example", "whatever", null, null)))
+                .hasFieldOrPropertyWithValue("code", "INVALID_CREDENTIALS");
     }
 
     @Test
@@ -262,6 +292,32 @@ class AuthControllerTest {
                 new BorrowerPasswordLoginRequest("9819000001", "right-password", null));
         assertThat(resp.getData().customerId()).isEqualTo(9000001L);
         verify(mobileRepository).save(any());
+    }
+
+    @Test
+    void borrowerPasswordLogin_prefixedSpellingsShareOneLimiterKey() {
+        // "+91…", "0…" and the bare number are one account: the third wrong guess across ANY mix of
+        // spellings must trip the limiter, not hand out a fresh budget per spelling.
+        when(mobileRepository.findById(9000001L)).thenReturn(Optional.empty());
+        when(credentialRepository.findById(9000001L)).thenReturn(Optional.of(new BorrowerCredential() {{
+            setCustomerId(9000001L);
+            setPasswordHash(new BCryptPasswordEncoder().encode("right-password"));
+        }}));
+        for (String spelling : new String[] {"9819000001", "+91 9819000001", "09819000001"}) {
+            assertThatThrownBy(() -> controller.borrowerPasswordLogin(
+                    new BorrowerPasswordLoginRequest(spelling, "wrong-password", null)))
+                    .hasFieldOrPropertyWithValue("code", "INVALID_CREDENTIALS");
+        }
+        assertThatThrownBy(() -> controller.borrowerPasswordLogin(
+                new BorrowerPasswordLoginRequest("919819000001", "wrong-password", null)))
+                .hasFieldOrPropertyWithValue("code", "TOO_MANY_ATTEMPTS");
+    }
+
+    @Test
+    void borrowerPasswordLogin_rejectsANumberThatIsNotTenDigits() {
+        assertThatThrownBy(() -> controller.borrowerPasswordLogin(
+                new BorrowerPasswordLoginRequest("98190", "anything", null)))
+                .hasFieldOrPropertyWithValue("code", "INVALID_MOBILE");
     }
 
     @Test

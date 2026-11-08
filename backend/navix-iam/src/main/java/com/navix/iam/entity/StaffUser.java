@@ -64,6 +64,16 @@ public class StaffUser extends BaseAuditEntity {
     @Column(name = "active_session_at")
     private java.time.Instant activeSessionAt;
 
+    /**
+     * Kills every token minted so far: a fresh random sid no token carries, with no timestamp so
+     * {@code staffLogin} does not read it as a live session (no SESSION_CONFLICT). A NULL sid would
+     * instead make {@code StaffSessionRegistry} treat every old token as current again.
+     */
+    public void revokeSessions() {
+        this.activeSessionId = java.util.UUID.randomUUID().toString();
+        this.activeSessionAt = null;
+    }
+
     /** Opt-out of operational email notifications (V63). STAFF_IAM mail ignores this — see NotificationDispatcher. */
     @Column(name = "email_opt_in", nullable = false)
     private boolean emailOptIn = true;

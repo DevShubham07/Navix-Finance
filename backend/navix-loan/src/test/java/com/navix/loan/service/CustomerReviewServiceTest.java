@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -65,6 +66,8 @@ class CustomerReviewServiceTest {
     private ProfileChangeLogger changeLogger;
     @Mock
     private com.navix.loan.repository.ApplicationVerificationRepository verificationRepository;
+    @Mock
+    private com.navix.common.security.BorrowerIdentityPort borrowerIdentity;
 
     private CustomerReviewService service;
 
@@ -72,7 +75,7 @@ class CustomerReviewServiceTest {
     void setUp() {
         service = new CustomerReviewService(applicationRepository, profileRepository, documentRepository,
                 storage, verificationInvalidation, eligibilityService, changeLogRepository, changeLogger,
-                verificationRepository);
+                verificationRepository, borrowerIdentity);
         ActorContext.set(BORROWER);
     }
 
@@ -144,6 +147,7 @@ class CustomerReviewServiceTest {
         when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(application()));
         when(profileRepository.existsPanForOtherCustomer("ABCDE1234F", CUSTOMER_ID)).thenReturn(false);
         when(profileRepository.existsMobileForOtherCustomer("9876543210", CUSTOMER_ID)).thenReturn(false);
+        when(borrowerIdentity.isLoginMobile("9876543210", CUSTOMER_ID)).thenReturn(true);
         when(profileRepository.findByApplicationId(APP_ID)).thenReturn(Optional.empty());
         when(profileRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
@@ -153,6 +157,35 @@ class CustomerReviewServiceTest {
         assertThat(saved.getApplicationId()).isEqualTo(APP_ID);
         assertThat(saved.getPan()).isEqualTo("ABCDE1234F");
         assertThat(saved.getMobile()).isEqualTo("9876543210");
+    }
+
+    @Test
+    void borrowerCannotSetAMobileOtherThanTheirLoginMobile() {
+        when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(application()));
+        when(borrowerIdentity.isLoginMobile("9000000001", CUSTOMER_ID)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.saveProfile(APP_ID, req(null, "9000000001")))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("signed in with");
+        verify(profileRepository, never()).save(any());
+    }
+
+    @Test
+    void borrowerCannotChangeNamePanOrDobOnceFileLeftDraft() {
+        LoanApplication app = application();
+        app.setStatus(ApplicationStatus.KYC_PENDING);
+        when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(app));
+        CustomerProfile existing = new CustomerProfile();
+        existing.setApplicationId(APP_ID);
+        existing.setFullName("Asha Verma");
+        existing.setPan("ABCDE1234F");
+        when(profileRepository.findByApplicationId(APP_ID)).thenReturn(Optional.of(existing));
+
+        // a different PAN is refused; re-sending the same name + PAN is a no-op, not an error
+        assertThatThrownBy(() -> service.saveProfile(APP_ID, req("ZZZZZ9999Z", null)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("can't be changed");
+        service.saveProfile(APP_ID, req("ABCDE1234F", null));
     }
 
     // ---- V75: Aadhaar number slice ------------------------------------------------------

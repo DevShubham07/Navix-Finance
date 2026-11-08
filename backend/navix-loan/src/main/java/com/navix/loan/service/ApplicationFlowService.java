@@ -1398,6 +1398,11 @@ public class ApplicationFlowService {
      * flight. Server-enforced so a direct create call can't bypass the UI gating.
      */
     private void assertCanStartNewApplication(Long customerId) {
+        // Held to commit, i.e. across the caller's insert: two parallel requests queue here, so the
+        // second one sees the first one's application instead of both passing the check below.
+        if (customerId != null) {
+            mandateService.lockCustomer(customerId);
+        }
         assertNotBlocked(customerId);
         List<LoanApplication> apps = applicationRepository.findByCustomerId(customerId);
         if (apps.stream().anyMatch(a -> LIVE_LOAN_STATUSES.contains(a.getStatus()))) {
@@ -1543,11 +1548,16 @@ public class ApplicationFlowService {
             throw new BusinessException("NOT_ELIGIBLE",
                     "Your account is not eligible for new loans. Please contact support.");
         }
+        // Blocks are keyed on the customer id AND the mobile: a borrower who edits the mobile on their
+        // profile must not walk out from under a block recorded against them.
         String mobile = latestProfileForCustomer(customerId).map(CustomerProfile::getMobile).orElse(null);
-        if (mobile == null || mobile.isBlank()) {
-            return;
-        }
-        rejectionRepository.findFirstByMobileAndBlockedUntilAfterOrderByBlockedUntilDesc(mobile, Instant.now())
+        Optional<ApplicationRejection> byCustomer = customerId == null ? Optional.empty()
+                : rejectionRepository.findFirstByCustomerIdAndBlockedUntilAfterOrderByBlockedUntilDesc(
+                        customerId, Instant.now());
+        Optional<ApplicationRejection> byMobile = mobile == null || mobile.isBlank() ? Optional.empty()
+                : rejectionRepository.findFirstByMobileAndBlockedUntilAfterOrderByBlockedUntilDesc(
+                        mobile, Instant.now());
+        (byCustomer.isPresent() ? byCustomer : byMobile)
                 .ifPresent(block -> {
                     log.info("blocked application start customer={} until={}", customerId, block.getBlockedUntil());
                     // A staff block has no date to promise (CustomerService.block, year 9999) — the

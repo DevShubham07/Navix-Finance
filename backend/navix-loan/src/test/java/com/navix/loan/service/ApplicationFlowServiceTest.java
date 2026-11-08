@@ -210,6 +210,22 @@ class ApplicationFlowServiceTest {
                 .hasMessage("Your account is not eligible for new loans. Please contact support.");
     }
 
+    /** A rejection is recorded against the customer id too: a borrower who edits their profile mobile
+     *  after a manual reject must still be turned away. */
+    @Test
+    void rejectionBlockHoldsOnTheCustomerIdAfterTheBorrowerChangesTheirMobile() {
+        actor("7", "BORROWER");
+        ApplicationRejection block = new ApplicationRejection();
+        block.setReasonCode(ApplicationRejection.MANUAL);
+        block.setBlockedUntil(java.time.Instant.now().plusSeconds(86_400));
+        when(rejectionRepository.findFirstByCustomerIdAndBlockedUntilAfterOrderByBlockedUntilDesc(
+                eq(7L), any())).thenReturn(Optional.of(block));
+
+        assertThatThrownBy(() -> flow.createDraft(7L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "NOT_ELIGIBLE");
+    }
+
     @Test
     void creditToActiveHappyPath() {
         LoanApplication app = appAt(ApplicationStatus.KYC_PENDING);

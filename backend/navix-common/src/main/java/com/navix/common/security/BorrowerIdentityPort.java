@@ -25,4 +25,11 @@ public interface BorrowerIdentityPort {
      *     False when the derived id is unclaimed, or already claimed by {@code customerId} itself.
      */
     boolean wouldCollideWithAnotherCustomer(String mobile, Long customerId);
+
+    /**
+     * @return true only when {@code mobile} is the number {@code customerId} proved by OTP at sign-in
+     *     (the {@code borrower_mobile} claim). A borrower may keep only that number on their profile:
+     *     it keys the forgot-password lookup and the cooling-off blocks.
+     */
+    boolean isLoginMobile(String mobile, Long customerId);
 }
