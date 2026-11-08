@@ -59,7 +59,7 @@ export const html = `<section class="page active" id="home">
       <div class="fcard reveal d1"><div class="fico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg></div><h3>100% transparent pricing</h3><p>Every rupee of interest and charges is shown upfront before you accept. No surprises, no advance fees.</p></div>
       <div class="fcard reveal d2"><div class="fico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.5 9 8 11 4.5-2 8-6 8-11V5l-8-3z"></path><path d="M9 12l2 2 4-4"></path></svg></div><h3>Strong data security</h3><p>Your data is protected with strong encryption and strict access controls. We never sell your information.</p></div>
       <div class="fcard reveal"><div class="fico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2"></rect><path d="M8 6h8M8 10h8M8 14h3"></path></svg></div><h3>Minimal documentation</h3><p>Just PAN, Aadhaar and bank details — verified digitally. Complete everything from your phone.</p></div>
-      <div class="fcard reveal d1"><div class="fico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"></path><path d="M7 14l4-4 3 3 5-6"></path></svg></div><h3>Flexible repayment</h3><p>Repay via UPI, net-banking or auto-debit. No pre-closure or prepayment charges — clear early, save more.</p></div>
+      <div class="fcard reveal d1"><div class="fico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"></path><path d="M7 14l4-4 3 3 5-6"></path></svg></div><h3>Flexible repayment</h3><p>Repay via UPI or net-banking. No pre-closure or prepayment charges — clear early, save more.</p></div>
       <div class="fcard reveal d2"><div class="fico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg></div><h3>Real human support</h3><p>Friendly support over chat, email and phone, six days a week — plus a transparent grievance redressal channel.</p></div>
     </div>
   </div></div>
@@ -125,7 +125,7 @@ export const html = `<section class="page active" id="home">
           <div class="jp-text">
             <span class="jp-kicker">Step 04 — Money in</span>
             <h3>Funds land in your account</h3>
-            <p>Funds are sent straight to your bank account. Repay easily via UPI, net-banking or auto-debit.</p>
+            <p>Funds are sent straight to your bank account. Repay easily via UPI or net-banking.</p>
             <span class="jp-meta"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10l9-6 9 6"></path><path d="M5 10v9h14v-9"></path><path d="M9 19v-5h6v5"></path></svg> Disbursed in 24–48h</span>
           </div>
           <div class="jp-visual"><div class="mini-card funds">
@@ -177,8 +177,8 @@ export const html = `<section class="page active" id="home">
     <div class="faq reveal d1">
       <div class="qa"><button class="q">How quickly can I get a loan from DhanBoost?<span class="qi">+</span></button><div class="a"><p>The whole journey is fully online. Once your agreement is e-signed and your KYC is complete, your funds are released to your bank account.</p></div></div>
       <div class="qa"><button class="q">What documents do I need to apply?<span class="qi">+</span></button><div class="a"><p>Typically just your PAN, Aadhaar (for KYC) and bank account details. Everything is verified digitally — no physical paperwork or branch visits.</p></div></div>
-      <div class="qa"><button class="q">Are there any hidden charges or advance fees?<span class="qi">+</span></button><div class="a"><p>Never. DhanBoost does not charge any advance or upfront fee. All applicable interest and charges are shown in your loan summary before you accept the offer.</p></div></div>
-      <div class="qa"><button class="q">Will checking my eligibility affect my credit score?<span class="qi">+</span></button><div class="a"><p>No. Checking your eligibility on DhanBoost does not impact your credit score — a formal credit enquiry only happens if you choose to accept an offer.</p></div></div>
+      <div class="qa"><button class="q">Are there any hidden charges or advance fees?<span class="qi">+</span></button><div class="a"><p>You never pay anything before your loan is disbursed. A processing fee of 10% of the loan amount plus 18% GST on that fee is deducted from the amount disbursed. All interest and charges are shown in your Key Fact Statement before you accept the offer.</p></div></div>
+      <div class="qa"><button class="q">Will checking my eligibility affect my credit score?<span class="qi">+</span></button><div class="a"><p>The calculator involves no credit check. If you apply, a credit report is obtained from a credit bureau with your consent, before any offer is made, and this may show as an enquiry on your credit report.</p></div></div>
     </div>
     <div style="text-align:center;margin-top:40px" class="reveal d1"><a href="/faq" class="btn btn-navy" data-link="">View all FAQs</a></div>
   </div></div>
@@ -267,7 +267,7 @@ export const html = `<section class="page active" id="home">
   <!-- FINAL CTA -->
   <div class="sec"><div class="wrap"><div class="ctaband reveal">
     <h2>Ready when you are</h2>
-    <p>Check your eligibility in minutes. It's free, it won't affect your credit score, and there's never an advance fee.</p>
+    <p>Check your eligibility in minutes. It's free to apply, and there's never an advance fee.</p>
     <div class="hero-cta">
       <a href="/signup/start" class="btn btn-gold btn-lg" data-link="">Apply Now <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"></path></svg></a>
       <a href="/calculator" class="btn btn-outline-light btn-lg" data-link="">Try the calculator</a>

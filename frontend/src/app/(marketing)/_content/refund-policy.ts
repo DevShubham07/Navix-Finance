@@ -3,7 +3,7 @@
 import { BRAND } from "@/lib/brand";
 
 export const html = `<section class="page active" id="refund-policy">
-  <div class="page-hero"><div class="wrap"><div class="crumb"><a href="/" data-link="">Home</a> &nbsp;/&nbsp; Refund &amp; Cancellation Policy</div><h1>Refund &amp; Cancellation Policy</h1><p>When money comes back to you, how to ask for it, and how long it takes. Effective 20 July 2026.</p></div></div>
+  <div class="page-hero"><div class="wrap"><div class="crumb"><a href="/" data-link="">Home</a> &nbsp;/&nbsp; Refund &amp; Cancellation Policy</div><h1>Refund &amp; Cancellation Policy</h1><p>When money comes back to you, how to ask for it, and how long it takes. Effective 20 July 2026. Updated November 2026.</p></div></div>
   <div class="sec"><div class="wrap"><div class="prose">
 
     <h2>1. Scope</h2>
@@ -43,6 +43,12 @@ export const html = `<section class="page active" id="refund-policy">
     <h3>4.5 Loan cancelled before the money moved</h3>
     <p>If your loan is cancelled after e-signing but before any amount is released, the agreement does not take effect, no interest accrues, and no fee is payable.</p>
 
+    <h3>4.6 Failed or pending online payment</h3>
+    <p>If you paid through PayU and your account was debited but the payment failed, the amount is returned to the account or card you paid from once the payment has been reconciled. If a payment shows as pending, please do not pay again until its status is confirmed.</p>
+
+    <h3>4.7 Disputes and chargebacks</h3>
+    <p>If something looks wrong with a payment, please contact us first so we can resolve it quickly. If your bank or card issuer upholds a chargeback on a repayment, that payment no longer counts towards your loan and the amount may become due again. We will tell you if this happens.</p>
+
     <h2>5. What is not refundable</h2>
     <ul>
       <li><b>Interest already accrued</b> on an advance you have used. Interest is charged for the days the money was with you; repaying early reduces it, but days already elapsed are payable.</li>
@@ -50,13 +56,14 @@ export const html = `<section class="page active" id="refund-policy">
       <li><b>Late-payment charges</b> correctly levied on an overdue amount.</li>
       <li><b>A disbursed loan you no longer want.</b> Once the money is in your account the advance is live; return it as a prepayment — there is no prepayment charge, and you pay interest only for the days held.</li>
       <li><b>Third-party charges</b> levied by your own bank or payment provider.</li>
+      <li><b>The credit card fee</b> shown before you paid through PayU, except where the payment failed or was charged in error.</li>
     </ul>
 
     <h2>6. How to request a refund</h2>
     <ol>
       <li>Write to <b>${BRAND.email}</b>, or call ${BRAND.phone} (${BRAND.hours}).</li>
       <li>Give us your registered mobile number, your loan or application reference, the amount, and the date of the transaction.</li>
-      <li>Attach proof of payment — a bank statement entry, UPI reference, or payment screenshot.</li>
+      <li>Attach proof of payment — a bank statement entry, UPI reference, PayU transaction reference, or payment screenshot.</li>
     </ol>
     <p>We may ask for a bank statement showing the debit before we release money, so that it goes back to the right account.</p>
 
@@ -65,6 +72,7 @@ export const html = `<section class="page active" id="refund-policy">
       <li><b>Acknowledgement:</b> within <b>48 hours</b> of your request.</li>
       <li><b>Decision:</b> within <b>2 working days</b> of receiving complete details and proof.</li>
       <li><b>Credit:</b> within <b>2 working days</b> of approval. Your bank may take a further working day or two to show it.</li>
+      <li><b>Payments made through PayU:</b> once we start the refund, it typically takes 5–21 days to reach you, depending on your payment method and bank.</li>
     </ul>
     <p>Refunds are returned to the <b>same source</b> the payment came from. Where that is not possible, they are credited to your registered bank account on record. We do not refund in cash or to a third-party account.</p>
     <p>If a refund is declined, we tell you why, in writing.</p>

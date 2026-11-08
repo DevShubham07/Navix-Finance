@@ -148,7 +148,7 @@ export const POSTS: Record<string, BlogPost> = {
     <h2>Age and mix of credit</h2>
     <p>A longer track record of well-managed accounts helps. So does a healthy mix — for example, a card plus a loan repaid responsibly — because it shows you can handle different kinds of credit. This is a smaller factor, and it builds naturally over time; don't open accounts just to "improve the mix".</p>
     <h2>Hard enquiries</h2>
-    <p>Every time you formally apply for credit, a "hard enquiry" is recorded, and several in a short window can look like you're desperate for funds. Checking your <em>own</em> score, or checking eligibility that doesn't trigger a formal enquiry, does not hurt you. On DhanBoost, checking eligibility does not impact your score — a formal enquiry only happens if you proceed and accept an offer.</p>
+    <p>Every time you formally apply for credit, a "hard enquiry" is recorded, and several in a short window can look like you're desperate for funds. Checking your <em>own</em> score, or checking eligibility that doesn't trigger a formal enquiry, does not hurt you. On DhanBoost, using the calculator involves no credit check. When you submit an application, a credit report is obtained with your consent, before any offer is made, and this may show as an enquiry on your credit report.</p>
     <h2>Common myths</h2>
     <ul>
       <li><b>"Checking my score lowers it."</b> False — checking your own score is a soft enquiry and has no impact.</li>
@@ -243,16 +243,16 @@ export const POSTS: Record<string, BlogPost> = {
 
   "repaying-on-dhanboost": {
     slug: "repaying-on-dhanboost",
-    title: "Repaying on DhanBoost: UPI, net-banking & auto-debit",
+    title: "Repaying on DhanBoost: UPI and net-banking",
     description:
-      "Every way to repay your DhanBoost loan — UPI, net-banking and auto-debit — plus how repaying early saves you interest.",
+      "How to repay your DhanBoost loan by UPI or net-banking, plus how repaying early saves you interest.",
     category: "Product",
     readMin: 3,
     date: "Apr 2026",
     datePublished: "2026-04-05",
     html: page({
       category: "Product",
-      title: "Repaying on DhanBoost: UPI, net-banking & auto-debit",
+      title: "Repaying on DhanBoost: UPI and net-banking",
       lede: "A quick walkthrough of every way to repay — and how clearing early saves you money.",
       readMin: 3,
       date: "Apr 2026",
@@ -262,13 +262,11 @@ export const POSTS: Record<string, BlogPost> = {
     <h2>The ways to pay</h2>
     <ul>
       <li><b>UPI:</b> the fastest option — pay from any UPI app to the details shown on your repayment screen. Payments usually reflect within minutes.</li>
-      <li><b>Net-banking:</b> transfer from your bank's net-banking to the account shown on your dashboard. Keep the reference number until it's confirmed.</li>
-      <li><b>Auto-debit:</b> if you've set up a mandate, the due amount is collected automatically on your due date — so you can't forget. Just keep enough balance in the account.</li>
-    </ul>
+      <li><b>Net-banking:</b> transfer from your bank's net-banking to the account shown on your dashboard. Keep the reference number until it's confirmed.</li>    </ul>
     <h2>Repaying early saves you interest</h2>
     <p>DhanBoost charges 1% per day on the principal over the actual tenure, and there are <b>no pre-closure or prepayment charges</b>. That means clearing your loan early genuinely reduces what you pay — you're only charged interest for the days you actually held the loan. If salary lands early, paying early is a small, easy win.</p>
     <h2>If you might miss the date</h2>
-    <p>Life happens. If you think you'll be late, contact us early at <b>${BRAND.email}</b>. A late payment attracts a fee of 2% per day on the overdue principal (capped at 30 days) and can affect your credit score, so it's always worth talking to us before the date rather than after.</p>
+    <p>Life happens. If you think you'll be late, contact us early at <b>${BRAND.email}</b>. A late payment attracts a fee of 2% per day on the overdue principal (capped at 30 days). The lender may also report late payments to credit bureaus, which can lower your credit score, so it's always worth talking to us before the date rather than after.</p>
     <h2>After you repay</h2>
     <p>Once your payment is confirmed, your loan is marked closed and you're free to borrow again in future if you need to. Keep your payment confirmation for your records — and that's it. Simple by design.</p>`,
     }),

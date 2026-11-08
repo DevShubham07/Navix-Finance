@@ -36,9 +36,17 @@ export const BRAND = {
 export const PAYMENT_SAFETY_NOTICE =
   "Always use our secure Repayment on Website Link for loan payments. Do not make direct bank payments to fake UPI links or unauthorised payment links. DhanBoost is not responsible for payments made to other accounts.";
 
+/**
+ * Shown at the top of the four new policy pages until they are approved under DB-LGL-004.
+ * On approval: set to "", remove `robots` from each page.tsx, and add the routes to sitemap.ts.
+ */
+export const POLICY_DRAFT_NOTICE =
+  '<div class="callout"><b>Draft for review.</b> This page is awaiting approval by Legal, Compliance and MLB Securities Private Limited and is not yet in force.</div>';
+
 /** The RBI-registered NBFC that sanctions and disburses every loan (the lender of record). */
 export const NBFC_PARTNER = {
   name: "MLB Securities Private Limited",
+  cin: "U74899DL1995PTC067535",
   disclaimer:
     "MLB Securities Private Limited is a registered NBFC with the Reserve Bank of India. Loan approval is subject to credit assessment and verification. Interest rates and charges are subject to change. Please read all terms and conditions carefully before applying.",
 } as const;

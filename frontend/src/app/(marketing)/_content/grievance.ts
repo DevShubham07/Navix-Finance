@@ -11,7 +11,7 @@ export const html = `<section class="page active" id="grievance">
     <div class="callout">
       <p style="margin-bottom:8px"><b>Level 1 — Customer Support</b><br>Email <b>${BRAND.email}</b> or call ${BRAND.phone} (${BRAND.hours}). Typical response within 1 business day.</p>
       <p style="margin-bottom:8px"><b>Level 2 — Grievance Officer</b><br>If unresolved within 7 days, write to our Grievance Redressal Officer <b>Lalit Kumar</b> at <b>grievance@dhanboost.com</b> or call ${BRAND.grievanceOfficer.phone}.</p>
-      <p style="margin:0"><b>Level 3 — External escalation</b><br>If your complaint is still unresolved, you may escalate to the Nodal Officer named in your Key Fact Statement and, thereafter, to the appropriate regulatory or consumer redressal authority.</p>
+      <p style="margin:0"><b>Level 3 — External escalation</b><br>If your complaint is still unresolved, you may escalate to the Nodal Officer named in your Key Fact Statement. If it is not resolved within 30 days, you may complain to the RBI Ombudsman through the <a href="https://cms.rbi.org.in" target="_blank" rel="noopener noreferrer">RBI Complaint Management System</a>.</p>
     </div>
     <h2>Grievance Officer</h2>
     <ul>
