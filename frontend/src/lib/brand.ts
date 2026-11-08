@@ -48,5 +48,5 @@ export const NBFC_PARTNER = {
   name: "MLB Securities Private Limited",
   cin: "U74899DL1995PTC067535",
   disclaimer:
-    "MLB Securities Private Limited is a registered NBFC with the Reserve Bank of India. Loan approval is subject to credit assessment and verification. Interest rates and charges are subject to change. Please read all terms and conditions carefully before applying.",
+    "MLB Securities Private Limited (RBI Registration No. 14.00526) is a registered NBFC with the Reserve Bank of India. The company is having a valid Certificate of Registration dated 12.03.2025 issued by Reserve Bank of India under section 45 IA of the Reserve Bank of India Act, 1934. However, the Reserve Bank of India does not accept any responsibility or guarantee about the present position as to the financial soundness of the company or for the correctness of any of the statements or representations made or opinions expressed by the company and for the repayment of deposits/discharge of liabilities by the company. Loan approval is subject to credit assessment and verification. Interest rates and charges are subject to change. Please read all terms and conditions carefully before applying.",
 } as const;

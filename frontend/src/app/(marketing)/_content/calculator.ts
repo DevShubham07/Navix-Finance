@@ -45,7 +45,7 @@ export const html = `<section class="page active" id="calculator">
           <div class="cr-line"><span>Tenure</span><b id="oTen">30 days</b></div>
           <div class="cr-line"><span>Interest rate</span><b id="oRate">1%</b></div>
           <div class="cr-line"><span>Interest payable</span><b id="oInt">₹3,000</b></div>
-          <div class="cr-line apr"><span>Representative APR</span><b id="oApr">365.0%</b></div>
+          <div class="cr-line apr"><span>Representative APR</span><b id="oApr">576.6%</b></div>
           <div class="cr-total"><span class="t-lbl">Total payable</span><span class="t-val" id="oTotal">₹13,000</span></div>
         </div>
         <div class="legend"><span><span class="sw" style="background:#3FBF89"></span> Principal</span><span><span class="sw" style="background:#2C6298"></span> Interest</span></div>
@@ -85,7 +85,7 @@ export const html = `<section class="page active" id="calculator">
           <div class="cr-line"><span>Tenure</span><b id="calOT">30 days</b></div>
           <div class="cr-line"><span>Interest rate</span><b id="calOR">1% / day</b></div>
           <div class="cr-line"><span>Interest payable</span><b id="calOI">₹3,000</b></div>
-          <div class="cr-line apr"><span>Representative APR</span><b id="calOApr">365.0%</b></div>
+          <div class="cr-line apr"><span>Representative APR</span><b id="calOApr">576.6%</b></div>
           <div class="cr-total"><span class="t-lbl">Total payable</span><span class="t-val" id="calOTotal">₹13,000</span></div>
         </div>
         <p class="cal-note">Interest is a fixed 1% per day across your selected tenure. Figures are indicative — your exact due date and APR are confirmed before you accept, with no pre-closure or prepayment charge.</p>
@@ -107,30 +107,30 @@ export const html = `<section class="page active" id="calculator">
       </div>
       <table class="rt"><thead><tr><th>Tenure</th><th>Interest @ 1%/day</th><th>Total payable</th><th>Interest share</th><th>Rep. APR</th></tr></thead><tbody>
         <!-- 5000 -->
-        <tr data-amt="5000" data-lo="7" data-hi="10" style="display:none"><td><b>7 days</b></td><td>₹350</td><td><b>₹5,350</b></td><td><span class="rt-bar"><i style="width:7%"></i></span></td><td>365%</td></tr>
-        <tr data-amt="5000" data-lo="11" data-hi="20" style="display:none"><td><b>15 days</b></td><td>₹750</td><td><b>₹5,750</b></td><td><span class="rt-bar"><i style="width:13%"></i></span></td><td>365%</td></tr>
-        <tr data-amt="5000" data-lo="21" data-hi="35" style="display:none"><td><b>30 days</b></td><td>₹1,500</td><td><b>₹6,500</b></td><td><span class="rt-bar"><i style="width:23%"></i></span></td><td>365%</td></tr>
-        <tr data-amt="5000" data-lo="36" data-hi="40" style="display:none"><td><b>40 days</b></td><td>₹2,000</td><td><b>₹7,000</b></td><td><span class="rt-bar"><i style="width:29%"></i></span></td><td>365%</td></tr>
+        <tr data-amt="5000" data-lo="7" data-hi="10" style="display:none"><td><b>7 days</b></td><td>₹350</td><td><b>₹5,350</b></td><td><span class="rt-bar"><i style="width:7%"></i></span></td><td>1111.4%</td></tr>
+        <tr data-amt="5000" data-lo="11" data-hi="20" style="display:none"><td><b>15 days</b></td><td>₹750</td><td><b>₹5,750</b></td><td><span class="rt-bar"><i style="width:13%"></i></span></td><td>739.4%</td></tr>
+        <tr data-amt="5000" data-lo="21" data-hi="35" style="display:none"><td><b>30 days</b></td><td>₹1,500</td><td><b>₹6,500</b></td><td><span class="rt-bar"><i style="width:23%"></i></span></td><td>576.6%</td></tr>
+        <tr data-amt="5000" data-lo="36" data-hi="40" style="display:none"><td><b>40 days</b></td><td>₹2,000</td><td><b>₹7,000</b></td><td><span class="rt-bar"><i style="width:29%"></i></span></td><td>535.9%</td></tr>
         <!-- 10000 -->
-        <tr data-amt="10000" data-lo="7" data-hi="10"><td><b>7 days</b></td><td>₹700</td><td><b>₹10,700</b></td><td><span class="rt-bar"><i style="width:7%"></i></span></td><td>365%</td></tr>
-        <tr data-amt="10000" data-lo="11" data-hi="20"><td><b>15 days</b></td><td>₹1,500</td><td><b>₹11,500</b></td><td><span class="rt-bar"><i style="width:13%"></i></span></td><td>365%</td></tr>
-        <tr data-amt="10000" data-lo="21" data-hi="35"><td><b>30 days</b></td><td>₹3,000</td><td><b>₹13,000</b></td><td><span class="rt-bar"><i style="width:23%"></i></span></td><td>365%</td></tr>
-        <tr data-amt="10000" data-lo="36" data-hi="40"><td><b>40 days</b></td><td>₹4,000</td><td><b>₹14,000</b></td><td><span class="rt-bar"><i style="width:29%"></i></span></td><td>365%</td></tr>
+        <tr data-amt="10000" data-lo="7" data-hi="10"><td><b>7 days</b></td><td>₹700</td><td><b>₹10,700</b></td><td><span class="rt-bar"><i style="width:7%"></i></span></td><td>1111.4%</td></tr>
+        <tr data-amt="10000" data-lo="11" data-hi="20"><td><b>15 days</b></td><td>₹1,500</td><td><b>₹11,500</b></td><td><span class="rt-bar"><i style="width:13%"></i></span></td><td>739.4%</td></tr>
+        <tr data-amt="10000" data-lo="21" data-hi="35"><td><b>30 days</b></td><td>₹3,000</td><td><b>₹13,000</b></td><td><span class="rt-bar"><i style="width:23%"></i></span></td><td>576.6%</td></tr>
+        <tr data-amt="10000" data-lo="36" data-hi="40"><td><b>40 days</b></td><td>₹4,000</td><td><b>₹14,000</b></td><td><span class="rt-bar"><i style="width:29%"></i></span></td><td>535.9%</td></tr>
         <!-- 25000 -->
-        <tr data-amt="25000" data-lo="7" data-hi="10" style="display:none"><td><b>7 days</b></td><td>₹1,750</td><td><b>₹26,750</b></td><td><span class="rt-bar"><i style="width:7%"></i></span></td><td>365%</td></tr>
-        <tr data-amt="25000" data-lo="11" data-hi="20" style="display:none"><td><b>15 days</b></td><td>₹3,750</td><td><b>₹28,750</b></td><td><span class="rt-bar"><i style="width:13%"></i></span></td><td>365%</td></tr>
-        <tr data-amt="25000" data-lo="21" data-hi="35" style="display:none"><td><b>30 days</b></td><td>₹7,500</td><td><b>₹32,500</b></td><td><span class="rt-bar"><i style="width:23%"></i></span></td><td>365%</td></tr>
-        <tr data-amt="25000" data-lo="36" data-hi="40" style="display:none"><td><b>40 days</b></td><td>₹10,000</td><td><b>₹35,000</b></td><td><span class="rt-bar"><i style="width:29%"></i></span></td><td>365%</td></tr>
+        <tr data-amt="25000" data-lo="7" data-hi="10" style="display:none"><td><b>7 days</b></td><td>₹1,750</td><td><b>₹26,750</b></td><td><span class="rt-bar"><i style="width:7%"></i></span></td><td>1111.4%</td></tr>
+        <tr data-amt="25000" data-lo="11" data-hi="20" style="display:none"><td><b>15 days</b></td><td>₹3,750</td><td><b>₹28,750</b></td><td><span class="rt-bar"><i style="width:13%"></i></span></td><td>739.4%</td></tr>
+        <tr data-amt="25000" data-lo="21" data-hi="35" style="display:none"><td><b>30 days</b></td><td>₹7,500</td><td><b>₹32,500</b></td><td><span class="rt-bar"><i style="width:23%"></i></span></td><td>576.6%</td></tr>
+        <tr data-amt="25000" data-lo="36" data-hi="40" style="display:none"><td><b>40 days</b></td><td>₹10,000</td><td><b>₹35,000</b></td><td><span class="rt-bar"><i style="width:29%"></i></span></td><td>535.9%</td></tr>
         <!-- 50000 -->
-        <tr data-amt="50000" data-lo="7" data-hi="10" style="display:none"><td><b>7 days</b></td><td>₹3,500</td><td><b>₹53,500</b></td><td><span class="rt-bar"><i style="width:7%"></i></span></td><td>365%</td></tr>
-        <tr data-amt="50000" data-lo="11" data-hi="20" style="display:none"><td><b>15 days</b></td><td>₹7,500</td><td><b>₹57,500</b></td><td><span class="rt-bar"><i style="width:13%"></i></span></td><td>365%</td></tr>
-        <tr data-amt="50000" data-lo="21" data-hi="35" style="display:none"><td><b>30 days</b></td><td>₹15,000</td><td><b>₹65,000</b></td><td><span class="rt-bar"><i style="width:23%"></i></span></td><td>365%</td></tr>
-        <tr data-amt="50000" data-lo="36" data-hi="40" style="display:none"><td><b>40 days</b></td><td>₹20,000</td><td><b>₹70,000</b></td><td><span class="rt-bar"><i style="width:29%"></i></span></td><td>365%</td></tr>
+        <tr data-amt="50000" data-lo="7" data-hi="10" style="display:none"><td><b>7 days</b></td><td>₹3,500</td><td><b>₹53,500</b></td><td><span class="rt-bar"><i style="width:7%"></i></span></td><td>1111.4%</td></tr>
+        <tr data-amt="50000" data-lo="11" data-hi="20" style="display:none"><td><b>15 days</b></td><td>₹7,500</td><td><b>₹57,500</b></td><td><span class="rt-bar"><i style="width:13%"></i></span></td><td>739.4%</td></tr>
+        <tr data-amt="50000" data-lo="21" data-hi="35" style="display:none"><td><b>30 days</b></td><td>₹15,000</td><td><b>₹65,000</b></td><td><span class="rt-bar"><i style="width:23%"></i></span></td><td>576.6%</td></tr>
+        <tr data-amt="50000" data-lo="36" data-hi="40" style="display:none"><td><b>40 days</b></td><td>₹20,000</td><td><b>₹70,000</b></td><td><span class="rt-bar"><i style="width:29%"></i></span></td><td>535.9%</td></tr>
         <!-- 1000000 -->
-        <tr data-amt="1000000" data-lo="7" data-hi="10" style="display:none"><td><b>7 days</b></td><td>₹70,000</td><td><b>₹10,70,000</b></td><td><span class="rt-bar"><i style="width:7%"></i></span></td><td>365%</td></tr>
-        <tr data-amt="1000000" data-lo="11" data-hi="20" style="display:none"><td><b>15 days</b></td><td>₹1,50,000</td><td><b>₹11,50,000</b></td><td><span class="rt-bar"><i style="width:13%"></i></span></td><td>365%</td></tr>
-        <tr data-amt="1000000" data-lo="21" data-hi="35" style="display:none"><td><b>30 days</b></td><td>₹3,00,000</td><td><b>₹13,00,000</b></td><td><span class="rt-bar"><i style="width:23%"></i></span></td><td>365%</td></tr>
-        <tr data-amt="1000000" data-lo="36" data-hi="40" style="display:none"><td><b>40 days</b></td><td>₹4,00,000</td><td><b>₹14,00,000</b></td><td><span class="rt-bar"><i style="width:29%"></i></span></td><td>365%</td></tr>
+        <tr data-amt="1000000" data-lo="7" data-hi="10" style="display:none"><td><b>7 days</b></td><td>₹70,000</td><td><b>₹10,70,000</b></td><td><span class="rt-bar"><i style="width:7%"></i></span></td><td>1111.4%</td></tr>
+        <tr data-amt="1000000" data-lo="11" data-hi="20" style="display:none"><td><b>15 days</b></td><td>₹1,50,000</td><td><b>₹11,50,000</b></td><td><span class="rt-bar"><i style="width:13%"></i></span></td><td>739.4%</td></tr>
+        <tr data-amt="1000000" data-lo="21" data-hi="35" style="display:none"><td><b>30 days</b></td><td>₹3,00,000</td><td><b>₹13,00,000</b></td><td><span class="rt-bar"><i style="width:23%"></i></span></td><td>576.6%</td></tr>
+        <tr data-amt="1000000" data-lo="36" data-hi="40" style="display:none"><td><b>40 days</b></td><td>₹4,00,000</td><td><b>₹14,00,000</b></td><td><span class="rt-bar"><i style="width:29%"></i></span></td><td>535.9%</td></tr>
       </tbody></table>
       <div class="rt-note">Illustrative figures at 1%/day. Actual rate, processing fee and APR are determined by the partner NBFC and disclosed in your Key Fact Statement before acceptance.</div>
     </div>
@@ -157,7 +157,7 @@ export const html = `<section class="page active" id="calculator">
           <div class="cr-line"><span>You borrow</span><b>₹10,000</b></div>
           <div class="cr-line"><span>For a tenure of</span><b>30 days</b></div>
           <div class="cr-line"><span>Daily interest @ 1%</span><b>₹3,000</b></div>
-          <div class="cr-line apr"><span>Representative APR</span><b>365.0%</b></div>
+          <div class="cr-line apr"><span>Representative APR</span><b>576.6%</b></div>
           <div class="cr-total"><span class="t-lbl">You repay</span><span class="t-val">₹13,000</span></div>
         </div>
         <a href="/signup/start" class="btn btn-gold btn-block" style="margin-top:22px" data-link="">Apply for this loan <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"></path></svg></a>

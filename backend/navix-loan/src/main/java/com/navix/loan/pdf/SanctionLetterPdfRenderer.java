@@ -16,6 +16,8 @@ import com.lowagie.text.pdf.draw.LineSeparator;
 import java.awt.Color;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.text.NumberFormat;
 import java.time.LocalDate;
 import java.time.Instant;
@@ -46,7 +48,7 @@ public class SanctionLetterPdfRenderer {
     private static final Color BAND = new Color(240, 244, 248);
 
     private static final Font WORDMARK = new Font(Font.HELVETICA, 17, Font.BOLD, NAVY);
-    private static final Font TITLE = new Font(Font.HELVETICA, 13, Font.BOLD, GREY);
+    private static final Font TITLE = new Font(Font.HELVETICA, 10, Font.BOLD, GREY);
     private static final Font NAME = new Font(Font.HELVETICA, 13, Font.BOLD, NAVY);
     private static final Font META = new Font(Font.HELVETICA, 8.5f, Font.NORMAL, GREY);
     private static final Font SECTION = new Font(Font.HELVETICA, 9.5f, Font.BOLD, NAVY);
@@ -97,7 +99,7 @@ public class SanctionLetterPdfRenderer {
     }
 
     private byte[] renderDocument(Facts f, byte[] signaturePng, String signerName, Instant signedAt) {
-        Document doc = new Document(PageSize.A4, 44, 44, 40, 40);
+        Document doc = new Document(PageSize.A4, 44, 44, 26, 22);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         try {
             PdfWriter.getInstance(doc, out);
@@ -114,13 +116,15 @@ public class SanctionLetterPdfRenderer {
 
             doc.add(hero(f));
 
-            doc.add(spaced(new Paragraph("Key Facts", SECTION), 12, 3));
+            doc.add(spaced(new Paragraph("Key Facts", SECTION), 8, 3));
             doc.add(kvTable(new String[][] {
+                    {"Lender", "MLB Securities Private Limited"},
                     {"Loan amount (principal)", rs(f.principalPaise())},
                     {"Processing fee (excluding GST)", rs(f.processingFeePaise())},
                     {"GST on processing fee (18%)", rs(f.gstPaise())},
                     {"Amount credited to your account", rs(f.netDisbursedPaise())},
                     {"Interest rate", "1% per day on the principal"},
+                    {"Annual Percentage Rate (APR)", apr(f)},
                     {"Tenure", f.tenureDays() + " days"},
                     {"Interest payable over the tenure", rs(f.interestPaise())},
                     {"Repayment date", date(f.repaymentDate())},
@@ -129,7 +133,7 @@ public class SanctionLetterPdfRenderer {
                     {"Credit account", safe(f.disbursalAccountMasked(), "As confirmed by you")},
             }));
 
-            doc.add(spaced(new Paragraph("Charges and terms", SECTION), 12, 3));
+            doc.add(spaced(new Paragraph("Charges and terms", SECTION), 8, 3));
             doc.add(bullets(new String[] {
                     "The processing fee and GST are deducted upfront from the sanctioned amount. "
                             + "You receive " + rs(f.netDisbursedPaise()) + "; you repay "
@@ -140,12 +144,15 @@ public class SanctionLetterPdfRenderer {
                             + "you pay, so repaying early reduces what you owe.",
                     "If the advance is not repaid by the repayment date, a late penalty of 2% per day on "
                             + "the principal applies from the day after the date shown above, capped at 30 days.",
+                    "Information about this loan, including any late payment or default, may be reported by "
+                            + "the lender to credit information companies. Late payment can lower your credit "
+                            + "score, which those companies calculate.",
                     "Repayment is a single instalment. There is no auto-debit mandate on this advance.",
                     "This sanction is subject to successful verification and to the funds being released; "
                             + "it does not itself create a debt until the amount is credited to you.",
             }));
 
-            doc.add(spaced(new Paragraph("Grievance redressal", SECTION), 12, 3));
+            doc.add(spaced(new Paragraph("Grievance redressal", SECTION), 8, 3));
             doc.add(new Paragraph(
                     "Grievance Redressal Officer: " + safe(f.grievanceOfficerName(), "—")
                             + "  ·  " + safe(f.grievanceOfficerPhone(), "—")
@@ -154,7 +161,7 @@ public class SanctionLetterPdfRenderer {
                             + "the RBI Ombudsman.", BODY));
 
             if (signaturePng != null) {
-                doc.add(spaced(new Paragraph("Borrower signature", SECTION), 12, 3));
+                doc.add(spaced(new Paragraph("Borrower signature", SECTION), 8, 3));
                 doc.add(signatureBlock(f.applicationId(), signaturePng,
                         safe(signerName, f.borrowerName()), signedAt));
             }
@@ -162,7 +169,9 @@ public class SanctionLetterPdfRenderer {
             doc.add(footerSpacer());
             doc.add(rule());
             Paragraph footer = new Paragraph(
-                    "NAVIX Finance Private Limited (CIN U64990HR2026PTC144926), operating as DhanBoost.  "
+                    "Lender: MLB Securities Private Limited (CIN U74899DL1995PTC067535, RBI Registration "
+                            + "No. 14.00526). DhanBoost is operated by NAVIX Finance Private Limited "
+                            + "(CIN U64990HR2026PTC144926) as technology service provider.  "
                             + "This Key Fact Statement forms part of your loan agreement and is signed "
                             + "electronically by you.", FOOTER);
             footer.setAlignment(Element.ALIGN_CENTER);
@@ -175,6 +184,18 @@ public class SanctionLetterPdfRenderer {
         }
     }
 
+    /** All-in cost on the money actually received: (total repaid - net received) / net, annualised. */
+    private static String apr(Facts f) {
+        if (f.netDisbursedPaise() <= 0 || f.tenureDays() <= 0) {
+            return "—";
+        }
+        BigDecimal percent = BigDecimal.valueOf(f.totalRepayablePaise() - f.netDisbursedPaise())
+                .multiply(BigDecimal.valueOf(36_500))
+                .divide(BigDecimal.valueOf(f.netDisbursedPaise()).multiply(BigDecimal.valueOf(f.tenureDays())),
+                        1, RoundingMode.HALF_UP);
+        return percent.toPlainString() + "% per year, including fee and GST";
+    }
+
     private PdfPTable signatureBlock(long applicationId, byte[] signaturePng,
                                      String signerName, Instant signedAt) throws DocumentException, IOException {
         PdfPTable table = new PdfPTable(2);
@@ -182,7 +203,7 @@ public class SanctionLetterPdfRenderer {
         table.setWidths(new float[] {1.1f, 1.4f});
 
         Image signature = Image.getInstance(signaturePng);
-        signature.scaleToFit(170, 55);
+        signature.scaleToFit(150, 40);
         PdfPCell imageCell = new PdfPCell(signature, false);
         imageCell.setBorder(Rectangle.BOX);
         imageCell.setBorderColor(LINE);
@@ -216,7 +237,7 @@ public class SanctionLetterPdfRenderer {
         PdfPTable t = new PdfPTable(2);
         t.setWidthPercentage(100);
         t.setWidths(new float[] {1f, 1f});
-        t.setSpacingBefore(12);
+        t.setSpacingBefore(6);
         t.addCell(heroCell("You will receive", rs(f.netDisbursedPaise())));
         t.addCell(heroCell("You will repay on " + date(f.repaymentDate()), rs(f.totalRepayablePaise())));
         return t;
@@ -250,8 +271,8 @@ public class SanctionLetterPdfRenderer {
         c.setBorder(Rectangle.BOTTOM);
         c.setBorderColor(LINE);
         c.setBorderWidth(0.4f);
-        c.setPaddingTop(4);
-        c.setPaddingBottom(4);
+        c.setPaddingTop(2);
+        c.setPaddingBottom(2);
         return c;
     }
 
@@ -259,7 +280,7 @@ public class SanctionLetterPdfRenderer {
         Paragraph block = new Paragraph();
         for (String line : lines) {
             Paragraph p = new Paragraph("•  " + line, BODY);
-            p.setSpacingAfter(4);
+            p.setSpacingAfter(2);
             p.setIndentationLeft(4);
             block.add(p);
         }
@@ -282,7 +303,7 @@ public class SanctionLetterPdfRenderer {
 
     private static Paragraph footerSpacer() {
         Paragraph p = new Paragraph(" ", FOOTER);
-        p.setSpacingBefore(10);
+        p.setSpacingBefore(2);
         return p;
     }
 

@@ -7,7 +7,7 @@ export const html = `<section class="page active" id="corporate-governance">
     ${POLICY_DRAFT_NOTICE}
     <h2>1. Who does what</h2>
     <ul>
-      <li><b>Lender:</b> ${NBFC_PARTNER.name} (CIN ${NBFC_PARTNER.cin}), an RBI-registered NBFC, sanctions and disburses every loan and remains responsible for it. RBI Certificate of Registration No.: [MLB to confirm].</li>
+      <li><b>Lender:</b> ${NBFC_PARTNER.name} (CIN ${NBFC_PARTNER.cin}), an RBI-registered NBFC, sanctions and disburses every loan and remains responsible for it. RBI Certificate of Registration No. 14.00526, dated 12 March 2025.</li>
       <li><b>Platform:</b> ${BRAND.legalName} (CIN ${BRAND.cin}) operates DhanBoost and provides the technology and services for the loan journey. It is not a lender.</li>
     </ul>
     <h2>2. Our principles</h2>

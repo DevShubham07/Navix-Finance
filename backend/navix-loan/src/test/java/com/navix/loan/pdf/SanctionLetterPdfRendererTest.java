@@ -38,6 +38,23 @@ class SanctionLetterPdfRendererTest {
     }
 
     @Test
+    void namesTheLenderAndStatesTheAllInApr() throws Exception {
+        // ₹15,000 over 30 days: net 13,230, total 19,500 → 6,270 / 13,230 × 365 / 30 = 576.6%.
+        SanctionLetterPdfRenderer.Facts f = new SanctionLetterPdfRenderer.Facts(
+                54L, "Asha Kumari", "AZKPQ3156X", "9811100948",
+                1_500_000L, 150_000L, 27_000L, 1_323_000L, 450_000L, 1_950_000L, 30,
+                LocalDate.of(2026, 8, 7), LocalDate.of(2026, 9, 6), "•••• 9012",
+                "Lalit Kumar", "9716760246", "grievance@dhanboost.com");
+
+        PdfReader reader = new PdfReader(renderer.render(f));
+        String text = new PdfTextExtractor(reader).getTextFromPage(1);
+        reader.close();
+
+        assertThat(text.replaceAll("\\s+", " ")).contains("MLB Securities Private Limited", "14.00526", "576.6% per year",
+                "credit information companies");
+    }
+
+    @Test
     void rendersWhenIdentityAndAccountAreNotYetKnown() {
         SanctionLetterPdfRenderer.Facts f = new SanctionLetterPdfRenderer.Facts(
                 1L, null, null, null,
@@ -67,6 +84,7 @@ class SanctionLetterPdfRendererTest {
 
         PdfReader reader = new PdfReader(pdf);
         String text = new PdfTextExtractor(reader).getTextFromPage(1);
+        assertThat(reader.getNumberOfPages()).isEqualTo(1);
         assertThat(text).contains("Borrower signature", "Signed by Asha Kumari",
                 "9 Aug 2026", "IST", "Application #54");
         assertThat(reader.getPageN(1).getAsDict(com.lowagie.text.pdf.PdfName.RESOURCES)
