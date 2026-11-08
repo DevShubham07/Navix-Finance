@@ -200,10 +200,11 @@ The BFF route handlers reach the backend via **`BACKEND_BASE_URL`** (server-only
   code **`123456`** always works (also shown as "Dev code"). Issues a real **borrower JWT** in the
   `navix_borrower` httpOnly cookie. Every "Apply now" CTA → `/signup/otp` starts the Phase-1 intake
   (§6).
-- **Staff/Admin:** `/staff/login` → **pick a role** → the BFF authenticates for real against
-  `POST /api/auth/staff/login` (role → seeded `*.navix.example` email + default password
-  **`Admin@12345`**, BCrypt) and stores a **staff JWT**. The role decides which live queues have data.
-  (Rotate the default password + set a strong `AUTH_SECRET` before any real exposure.)
+- **Staff/Admin:** `/staff/login` → email + password → the BFF authenticates for real against
+  `POST /api/auth/staff/login` and stores a **staff JWT**. V92 blanks the seeded `*.navix.example`
+  passwords everywhere; on the offline demo stack run `scripts/restore-demo-logins.sql`. The backend
+  refuses to boot with demo settings (built-in `AUTH_SECRET`, mock OTP/eSign, log email) unless
+  `NAVIX_ALLOW_DEV_DEFAULTS=true`, which is for local stacks only.
 
 ### 4.5 Tests
 ```bash
@@ -425,7 +426,7 @@ endpoints, different httpOnly cookies, never shared.** This was an explicit requ
 
 | | Borrower | Staff / Admin |
 |---|---|---|
-| Login route | mobile + OTP (`/borrower/otp/request` → `/borrower/login`) **or** password (`/borrower/password-login`); forgot/reset via link (§11) | `POST /api/auth/staff/login` (role → seeded email + `Admin@12345`, or email+password); forgot/reset via link (§11) |
+| Login route | mobile + OTP (`/borrower/otp/request` → `/borrower/login`) **or** password (`/borrower/password-login`); forgot/reset via link (§11) | `POST /api/auth/staff/login` (email+password); forgot/reset via link (§11) |
 | Token | **borrower JWT** (HS256, audience `borrower`, subject = customerId, **7-day TTL**) | **staff JWT** (audience `staff`, subject = staffId, role claim, 1-day TTL) |
 | Cookie | `navix_borrower` `{token, id, customerId, name, mobile}` (7-day; a KYC-verified returning borrower skips `/login`) | `navix_staff` `{token, id, name, role}` |
 | Logout / me | `/api/auth/borrower/{logout,me}` (me strips the token) | `/api/auth/staff/{logout,me}` |

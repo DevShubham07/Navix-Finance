@@ -416,8 +416,8 @@ the old role-picker demo is gone; the floating "Act as role" bar still uses the 
 Admins can mint more email+password staff via `POST /api/staff` (UI: `/staff/admin/staff` → "Create
 staff account"). Rotate `demo` before any real use.
 
-**Seeded demo personas** (kept for the maker-checker / SoD demo; all password **`Admin@12345`**, Flyway
-V17; emails from V10): `meera.krishnan@navix.example`=ADMIN · `ananya.rao`=KYC_APPROVER ·
+**Seeded demo personas** (passwords blanked by Flyway V92, so they cannot sign in on a deployed
+database; the offline demo restores them with `scripts/restore-demo-logins.sql`; emails from V10): `meera.krishnan@navix.example`=ADMIN · `ananya.rao`=KYC_APPROVER ·
 `priya.nair`=CREDIT_HEAD · `rahul.mehta`/`kabir.singh`/`neha.gupta`=CREDIT_EXECUTIVE ·
 `vikram.shah`=DISBURSEMENT_HEAD · `deepa.iyer`=ACCOUNTANT · `arjun.patel`=COLLECTION_HEAD ·
 `sana.khan`=COLLECTION_EXECUTIVE. Borrower demo: mobile any 10 digits, OTP

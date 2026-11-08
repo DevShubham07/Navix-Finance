@@ -5,6 +5,8 @@
 # - Sign inline instead of calling Signzy: a real Aadhaar eSign needs a human with an
 #   Aadhaar-linked handset, and every session is a billable, legally binding contract.
 navix:
+  security:
+    allow-dev-defaults: true
   esign:
     provider: mock
   # Digio mandates are real NPCI filings: never reach the provider from a test.

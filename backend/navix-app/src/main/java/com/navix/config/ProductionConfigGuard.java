@@ -10,7 +10,11 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 /**
- * Refuses to boot when {@code NAVIX_ENV=prod} is paired with a demo-only setting.
+ * Refuses to boot with a demo-only setting unless {@code NAVIX_ALLOW_DEV_DEFAULTS=true} says this is
+ * a throwaway local stack.
+ *
+ * <p>Deliberately not keyed on {@code NAVIX_ENV}: the live ECS task runs {@code NAVIX_ENV=dev} (it
+ * selects the SSM path), so a check gated on {@code prod} never fired where it mattered.
  *
  * <p>The demo features themselves stay — they are documented and load-bearing for the demo
  * (CLAUDE.md §4.4). What is missing is a tripwire: each one fails OPEN, silently, and the failure
@@ -24,6 +28,8 @@ import org.springframework.stereotype.Component;
  *   <li>{@code navix.sms.dev-echo} — returns the OTP in the HTTP response, same class of bypass.</li>
  *   <li>{@code navix.esign.provider=mock} — reports every loan agreement as signed without anyone
  *       signing anything, so the file reaches disbursement on a signature that does not exist.</li>
+ *   <li>{@code navix.email.provider=log} — password-reset links and email OTPs go to the log, so a
+ *       log reader can take over any account.</li>
  * </ul>
  *
  * <p>Thrown from {@code @PostConstruct}, so it fires during bean initialisation — before the web
@@ -46,8 +52,9 @@ public class ProductionConfigGuard {
     private final SmsProperties sms;
     private final FeatureFlagService featureFlags;
 
-    @Value("${NAVIX_ENV:dev}")
-    private String env;
+    /** Fail closed: absent means "treat this as real". Only local stacks and tests set it. */
+    @Value("${navix.security.allow-dev-defaults:${NAVIX_ALLOW_DEV_DEFAULTS:false}}")
+    private boolean allowDevDefaults;
 
     // The literal is shared with the constant above (a compile-time constant expression), so the
     // check can never drift from the default it is checking for.
@@ -60,33 +67,42 @@ public class ProductionConfigGuard {
     @Value("${navix.digio.provider:digio}")
     private String digioProvider;
 
+    @Value("${navix.email.provider:log}")
+    private String emailProvider;
+
+    @Value("${navix.email.enabled:true}")
+    private boolean emailEnabled;
+
     @PostConstruct
     void check() {
-        if (!"prod".equalsIgnoreCase(env)) {
+        if (allowDevDefaults) {
             return;
         }
         if (DEFAULT_SECRET.equals(secret) || secret == null || secret.length() < MIN_SECRET_LENGTH) {
             // Length matters independently of the equality check: the key is a single unsalted
             // SHA-256 of this string, so AUTH_SECRET=changeme yields a "valid" 256-bit key with
             // eight characters of entropy behind it.
-            throw new IllegalStateException("NAVIX_ENV=prod with the built-in or too-short "
-                    + "navix.auth.secret — set AUTH_SECRET to at least " + MIN_SECRET_LENGTH
-                    + " random characters (openssl rand -base64 48).");
+            throw new IllegalStateException("Built-in or too-short navix.auth.secret — set AUTH_SECRET "
+                    + "to at least " + MIN_SECRET_LENGTH + " random characters (openssl rand -base64 48), "
+                    + "or NAVIX_ALLOW_DEV_DEFAULTS=true on a throwaway local stack.");
         }
         if (sms.mock()) {
-            throw new IllegalStateException("NAVIX_ENV=prod with navix.sms.mock=true — the fixed mock "
-                    + "OTP verifies for ANY mobile. Unset NAVIX_SMS_MOCK.");
+            throw new IllegalStateException("navix.sms.mock=true — the fixed mock OTP verifies for ANY "
+                    + "mobile. Unset NAVIX_SMS_MOCK.");
         }
         if (sms.devEcho()) {
-            throw new IllegalStateException("NAVIX_ENV=prod with navix.sms.dev-echo=true — the OTP is "
-                    + "returned in the HTTP response. Unset NAVIX_SMS_DEV_ECHO.");
+            throw new IllegalStateException("navix.sms.dev-echo=true — the OTP is returned in the HTTP "
+                    + "response. Unset NAVIX_SMS_DEV_ECHO.");
         }
         if ("mock".equalsIgnoreCase(esignProvider)) {
             // Worse than a bypass: the borrower's file reaches disbursement carrying a PASS on the one
             // check that is a legal act, with no signature behind it and nothing to enforce later.
-            throw new IllegalStateException("NAVIX_ENV=prod with navix.esign.provider=mock — every loan "
-                    + "agreement would be recorded as signed without a real Aadhaar e-signature. "
-                    + "Unset NAVIX_ESIGN_PROVIDER.");
+            throw new IllegalStateException("navix.esign.provider=mock — every loan agreement would be "
+                    + "recorded as signed without a real Aadhaar e-signature. Unset NAVIX_ESIGN_PROVIDER.");
+        }
+        if (emailEnabled && "log".equalsIgnoreCase(emailProvider)) {
+            throw new IllegalStateException("navix.email.provider=log — password-reset links and email "
+                    + "OTPs would be written to the log and no mail sent. Set NAVIX_EMAIL_PROVIDER.");
         }
     }
 
@@ -103,11 +119,11 @@ public class ProductionConfigGuard {
      */
     @EventListener(ApplicationReadyEvent.class)
     void checkDigio() {
-        if (!"prod".equalsIgnoreCase(env) || !"mock".equalsIgnoreCase(digioProvider)) {
+        if (allowDevDefaults || !"mock".equalsIgnoreCase(digioProvider)) {
             return;
         }
         if (featureFlags.isEnabled("digio-mandate", false)) {
-            throw new IllegalStateException("NAVIX_ENV=prod with navix.digio.provider=mock while the "
+            throw new IllegalStateException("navix.digio.provider=mock while the "
                     + "digio-mandate flag is ON — every eMandate would be recorded as registered without a "
                     + "real NPCI filing. Set NAVIX_DIGIO_PROVIDER=digio (and the NAVIX_DIGIO_* "
                     + "credentials), or turn the flag off.");

@@ -150,7 +150,7 @@ logins and seed data are in §4. Remaining go-live work is in §13 / `PRODUCTION
   gateway also still rejects the SSM demo credentials for sender `NAVIXF`. `NAVIX_SMS_MOCK=true` →
   `123456` remains the local/demo path (it is **off** in prod as of 2026-07-30).
 - 🟡 Staff **emailed invites** + ADMIN-gated invite create; middleware **JWT-signature verify** (still a
-  presence check). Rotate the seeded `Admin@12345` + set a strong `AUTH_SECRET` for prod.
+  presence check).
 - 🔴 **Recalibrate the bureau score floor against CRIF's own distribution** and re-enable the
   `bureau-auto-reject` flag (V64 suspended it; `MIN_BUREAU_SCORE = 550` is an Experian number, and on
   the live CRIF distribution the median sits at 510). Until then every bureau result goes to a human.
