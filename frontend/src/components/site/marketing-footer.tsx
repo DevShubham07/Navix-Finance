@@ -46,7 +46,6 @@ export function MarketingFooter() {
             <Link href="/kyc-aml-policy">KYC &amp; AML Policy</Link>
             <Link href="/risk-management">Risk Management</Link>
             <Link href="/corporate-governance">Corporate Governance</Link>
-            <a href="https://cms.rbi.org.in" target="_blank" rel="noopener noreferrer">RBI Complaints (CMS)</a>
             <a href="https://sachet.rbi.org.in" target="_blank" rel="noopener noreferrer">RBI Sachet Portal</a>
             <Link href="/faq">FAQs</Link>
           </div>
