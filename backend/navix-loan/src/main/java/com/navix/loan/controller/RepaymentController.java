@@ -29,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class RepaymentController {
 
     private final RepaymentService repaymentService;
+    private final com.navix.loan.service.CustomerService customerService;
 
     /**
      * Record a repayment (full, partial or prepayment) against the loan. Borrower (own loan only —
@@ -75,7 +76,10 @@ public class RepaymentController {
     /** List repayments recorded against the loan. Owner-or-staff: a borrower sees only their own. */
     @GetMapping
     public ApiResponse<List<PaymentView>> list(@PathVariable Long loanId) {
-        repaymentService.requireReadableLoan(loanId);
+        var loan = repaymentService.requireReadableLoan(loanId);
+        if (!"BORROWER".equals(ActorContext.get().role())) {
+            customerService.assertVisible(loan.getCustomerId());
+        }
         return ApiResponse.ok(repaymentService.listPayments(loanId).stream()
                 .map(repaymentService::view)
                 .toList());

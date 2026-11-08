@@ -50,7 +50,8 @@ class ApplicationQueueScopeTest {
             mock(AdminApplicationService.class), mock(JourneyService.class), mock(OfferService.class),
             mock(MandateService.class), mock(StaffDirectory.class), actors, cases,
             mock(LoanRepository.class), mock(ApplicationEventRepository.class),
-            mock(EligibilityService.class), mock(CustomerTrustSignalsService.class));
+            mock(EligibilityService.class), mock(CustomerTrustSignalsService.class),
+            mock(com.navix.loan.service.CustomerService.class));
 
     @BeforeEach
     void threeActiveLoans() {

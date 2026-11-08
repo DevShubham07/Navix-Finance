@@ -45,7 +45,7 @@ public class OfferController {
     public ApiResponse<ApplicationView> chooseAmount(@PathVariable Long id,
                                                      @Valid @RequestBody ChooseAmountRequest req) {
         authorize(id);
-        return ApiResponse.ok(ApplicationView.of(offer.chooseAmount(id, req.amountPaise())));
+        return ApiResponse.ok(ApplicationView.of(offer.chooseAmount(id, req.amountPaise())).forReader());
     }
 
     @GetMapping("/references")
@@ -121,7 +121,7 @@ public class OfferController {
     public ApiResponse<ApplicationView> confirmDisbursalAccount(
             @PathVariable Long id, @Valid @RequestBody DisbursalAccountRequest req) {
         authorize(id);
-        return ApiResponse.ok(ApplicationView.of(offer.confirmDisbursalAccount(id, req)));
+        return ApiResponse.ok(ApplicationView.of(offer.confirmDisbursalAccount(id, req)).forReader());
     }
 
     /** Borrower-only + ownership: a BORROWER may act only on their own application; ADMIN on any. */

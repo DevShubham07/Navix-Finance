@@ -77,7 +77,11 @@ public class OnboardingWaitlistService {
     public record PausedStatus(boolean paused, String updatedBy, Instant updatedAt) {
     }
 
-    public record SubmitRequest(String fullName, String email, String mobile, String pan, String aadhaar) {
+    public record SubmitRequest(@jakarta.validation.constraints.Size(max = 200) String fullName,
+                                @jakarta.validation.constraints.Size(max = 254) String email,
+                                @jakarta.validation.constraints.Size(max = 20) String mobile,
+                                @jakarta.validation.constraints.Size(max = 20) String pan,
+                                @jakarta.validation.constraints.Size(max = 20) String aadhaar) {
     }
 
     /** The one flag read the logged-out signup screen needs — nothing else leaks out anonymously. */

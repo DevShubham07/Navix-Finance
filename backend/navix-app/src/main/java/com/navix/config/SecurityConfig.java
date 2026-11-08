@@ -3,6 +3,7 @@ package com.navix.config;
 import com.navix.common.security.JwtService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -51,6 +52,11 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable())
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
+                    // Legacy modules nothing calls any more: the KYC case API and the borrower-by-id read
+                    // (the live borrower flows run through /api/applications and /api/auth/borrower; the
+                    // frontend's own /api/borrower/* paths are BFF routes that never reach here).
+                    .requestMatchers("/api/kyc", "/api/kyc/**").denyAll()
+                    .requestMatchers(HttpMethod.GET, "/api/borrower/*").denyAll()
                     .requestMatchers(
                             "/api/auth/**",
                             "/api/contact",

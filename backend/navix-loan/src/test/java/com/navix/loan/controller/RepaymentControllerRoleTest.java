@@ -23,7 +23,8 @@ import org.junit.jupiter.api.Test;
  */
 class RepaymentControllerRoleTest {
 
-    private final RepaymentController controller = new RepaymentController(mock(RepaymentService.class));
+    private final RepaymentController controller = new RepaymentController(mock(RepaymentService.class),
+            mock(com.navix.loan.service.CustomerService.class));
 
     private static final RepaymentRequest REQUEST =
             new RepaymentRequest(500_000L, PaymentMethod.UPI, "TXN-1", null, LocalDate.now());

@@ -22,6 +22,7 @@ import com.navix.loan.service.ApplicationFlowService;
 import com.navix.loan.service.ApplicationVerificationService;
 import com.navix.loan.service.ApplicationVerificationService.PresignedUpload;
 import com.navix.loan.service.ApplicationVerificationService.StepResult;
+import com.navix.loan.service.PennyDropGuard;
 import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -45,17 +46,20 @@ public class ApplicationVerificationController {
 
     private final ApplicationVerificationService verification;
     private final ApplicationFlowService flow;
+    private final PennyDropGuard pennyDropGuard;
 
     @PostMapping("/pan")
     public ApiResponse<StepResult> pan(@PathVariable Long id, @Valid @RequestBody PanVerifyRequest req) {
         authorize(id);
-        return ApiResponse.ok(verification.verifyPan(id, req.pan()));
+        // Only the PAN on the caller's own profile is checked (the body value is ignored): otherwise
+        // this is a billable PAN-to-identity lookup for anyone's PAN.
+        return ApiResponse.ok(forReader(verification.verifyPan(id, verification.ownPan(id))));
     }
 
     @PostMapping("/email")
     public ApiResponse<StepResult> email(@PathVariable Long id, @Valid @RequestBody EmailVerifyRequest req) {
         authorize(id);
-        return ApiResponse.ok(verification.verifyEmail(id, req.officialEmail()));
+        return ApiResponse.ok(forReader(verification.verifyEmail(id, req.officialEmail())));
     }
 
     /** Sends the personal-email OTP — additive to (and separate from) the official-email check above. */
@@ -120,7 +124,7 @@ public class ApplicationVerificationController {
     public ApiResponse<StepResult> bureau(@PathVariable Long id,
                                           @RequestBody(required = false) BureauPullRequest req) {
         authorize(id);
-        return ApiResponse.ok(verification.pullBureau(id, req == null ? null : req.otp()));
+        return ApiResponse.ok(forReader(verification.pullBureau(id, req == null ? null : req.otp())));
     }
 
     /**
@@ -132,7 +136,7 @@ public class ApplicationVerificationController {
     public ApiResponse<StepResult> bureauChallengeAnswer(
             @PathVariable Long id, @Valid @RequestBody BureauChallengeAnswerRequest req) {
         authorize(id);
-        return ApiResponse.ok(verification.answerBureauChallenge(id, req.answer()));
+        return ApiResponse.ok(forReader(verification.answerBureauChallenge(id, req.answer())));
     }
 
     /**
@@ -142,14 +146,14 @@ public class ApplicationVerificationController {
     @PostMapping("/bureau/challenge/refresh")
     public ApiResponse<StepResult> bureauChallengeRefresh(@PathVariable Long id) {
         authorize(id);
-        return ApiResponse.ok(verification.refreshBureauChallenge(id));
+        return ApiResponse.ok(forReader(verification.refreshBureauChallenge(id)));
     }
 
     /** The borrower cannot answer - flag it for the credit team and let them continue. */
     @PostMapping("/bureau/challenge/skip")
     public ApiResponse<StepResult> bureauChallengeSkip(@PathVariable Long id) {
         authorize(id);
-        return ApiResponse.ok(verification.skipBureauChallenge(id));
+        return ApiResponse.ok(forReader(verification.skipBureauChallenge(id)));
     }
 
     @PostMapping("/salary")
@@ -172,7 +176,18 @@ public class ApplicationVerificationController {
     @PostMapping("/penny-drop")
     public ApiResponse<StepResult> pennyDrop(@PathVariable Long id, @Valid @RequestBody PennyDropVerifyRequest req) {
         authorize(id);
-        return ApiResponse.ok(verification.verifyPennyDrop(id, req.accountNumber(), req.ifsc()));
+        // Same 3-strikes / 12-hour lock the offer journey's account check runs under: each call is a
+        // billable provider penny drop that names the account holder.
+        Long customerId = flow.customerIdOf(id);
+        if (pennyDropGuard.lockedUntil(customerId).isPresent()) {
+            throw new BusinessException("PENNY_DROP_LOCKED", "Too many failed attempts. Please try again after "
+                    + PennyDropGuard.LOCK.toHours() + " hours.");
+        }
+        StepResult result = verification.verifyPennyDrop(id, req.accountNumber(), req.ifsc());
+        pennyDropGuard.record(customerId, id, req.accountNumber(), req.ifsc(),
+                ApplicationVerificationService.PASS.equals(result.status()),
+                ApplicationVerificationService.PASS.equals(result.status()) ? null : result.message());
+        return ApiResponse.ok(forReader(result));
     }
 
     @PostMapping("/selfie")
@@ -250,6 +265,11 @@ public class ApplicationVerificationController {
         authorize(id);
         verification.saveUploadedDocuments(id, req.docType(), req.objectKeys(), req.filePassword());
         return ApiResponse.ok(null);
+    }
+
+    /** A borrower reads a provider result without the staff-only fields (identity record, score, holder name). */
+    private static StepResult forReader(StepResult step) {
+        return ApplicationVerificationService.withoutStaffOnlyFields(step);
     }
 
     /** Borrower-only + ownership: a BORROWER may act only on their own application; ADMIN on any. */

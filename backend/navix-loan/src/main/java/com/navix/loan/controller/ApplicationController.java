@@ -86,10 +86,11 @@ public class ApplicationController {
     private final ApplicationEventRepository eventRepository;
     private final EligibilityService eligibilityService;
     private final com.navix.loan.service.CustomerTrustSignalsService trustSignals;
+    private final com.navix.loan.service.CustomerService customerService;
 
     @PostMapping
     public ApiResponse<ApplicationView> create(@Valid @RequestBody CreateApplicationRequest request) {
-        return ApiResponse.ok(ApplicationView.of(flow.createDraft(request.customerId())));
+        return ApiResponse.ok(ApplicationView.of(flow.createDraft(request.customerId())).forReader());
     }
 
     /**
@@ -98,7 +99,7 @@ public class ApplicationController {
      */
     @PostMapping("/reborrow")
     public ApiResponse<ApplicationView> reborrow() {
-        return ApiResponse.ok(ApplicationView.of(flow.reborrow()));
+        return ApiResponse.ok(ApplicationView.of(flow.reborrow()).forReader());
     }
 
     /** Stage queue, e.g. ?status=KYC_PENDING / DISBURSEMENT_PENDING / ACCOUNTANT_PENDING. Staff-only:
@@ -209,7 +210,7 @@ public class ApplicationController {
         Long available = mine.isEmpty() ? null
                 : eligibilityService.overrideOf(mine.get(0).getCustomerId()).orElse(null);
         return ApiResponse.ok(mine.stream()
-                .map(a -> ApplicationView.of(a).withAvailableLimit(available))
+                .map(a -> ApplicationView.of(a).withAvailableLimit(available).forReader())
                 .toList());
     }
 
@@ -268,13 +269,19 @@ public class ApplicationController {
             view = view.withAssignment(resolveExecutiveName(app.getAssignedExecutiveId()),
                     latestEventAt(id));
         }
-        return ApiResponse.ok(view);
+        return ApiResponse.ok(view.forReader());
     }
 
     @GetMapping("/{id}/events")
     public ApiResponse<List<EventView>> events(@PathVariable Long id) {
         requireBorrowerOwnsOrStaff(id);
-        return ApiResponse.ok(flow.eventViews(id));
+        var events = flow.eventViews(id);
+        if ("BORROWER".equals(ActorContext.get().role())) {
+            // The audit trail carries staff remarks (reject/pending reasons, fraud-rule detail) and
+            // staff identities; the borrower's timeline needs only the transitions.
+            events = events.stream().map(EventView::forBorrower).toList();
+        }
+        return ApiResponse.ok(events);
     }
 
     /**
@@ -347,6 +354,7 @@ public class ApplicationController {
     @GetMapping("/{id}/credit-brief")
     public ApiResponse<CreditBriefView> creditBrief(@PathVariable Long id) {
         requireStaff();
+        customerService.assertVisible(flow.customerIdOf(id));
         return ApiResponse.ok(creditBrief.view(id));
     }
 
@@ -371,7 +379,7 @@ public class ApplicationController {
         // Rejected (permanently, with the earlier case referenced in the register) instead of submitted.
         LoanApplication duplicateRejected = verification.rejectIfAadhaarDuplicate(id);
         if (duplicateRejected != null) {
-            return ApiResponse.ok(ApplicationView.of(duplicateRejected));
+            return ApiResponse.ok(ApplicationView.of(duplicateRejected).forReader());
         }
         // Credit-side check that rides along with submission; never blocks it (a miss is REVIEW, and an
         // outage is recorded by the service), so a stray exception here must not strand the borrower.
@@ -380,7 +388,7 @@ public class ApplicationController {
         } catch (RuntimeException e) {
             log.warn("PAN-Aadhaar link check failed application={} exception={}", id, e.getClass().getSimpleName());
         }
-        return ApiResponse.ok(ApplicationView.of(flow.submitKyc(id)));
+        return ApiResponse.ok(ApplicationView.of(flow.submitKyc(id)).forReader());
     }
 
     /** Where this application is in the onboarding journey — the server answer that makes a second
@@ -419,7 +427,7 @@ public class ApplicationController {
         requireBorrowerOwnsOrStaff(id);
         return ApiResponse.ok(ApplicationView.of(flow.autoReject(id,
                 ApplicationRejection.SELF_EMPLOYED, "Declared self-employed at intake",
-                ApplicationFlowService.SELF_EMPLOYED_BLOCK_DAYS)));
+                ApplicationFlowService.SELF_EMPLOYED_BLOCK_DAYS)).forReader());
     }
 
     @PostMapping("/{id}/kyc-decision")
@@ -432,7 +440,7 @@ public class ApplicationController {
         requireBorrowerOwnsOrStaff(id);
         return ApiResponse.ok(ApplicationView.of(
                 flow.apply(id, req.amountPaise(), req.purpose(), req.eligibleLimitPaise(),
-                        req.salaryCreditDay())));
+                        req.salaryCreditDay())).forReader());
     }
 
     @PostMapping("/{id}/assign")
@@ -464,7 +472,7 @@ public class ApplicationController {
     public ApiResponse<ApplicationView> acceptOffer(@PathVariable Long id, @RequestBody(required = false) ApplyRequest req) {
         requireBorrowerOwnsOrStaff(id);
         return ApiResponse.ok(ApplicationView.of(
-                flow.acceptOffer(id, req == null || req.amountPaise() == 0 ? null : req.amountPaise())));
+                flow.acceptOffer(id, req == null || req.amountPaise() == 0 ? null : req.amountPaise())).forReader());
     }
 
     @PostMapping("/{id}/disbursement-decision")
@@ -661,7 +669,7 @@ public class ApplicationController {
     @PutMapping("/{id}/profile")
     public ApiResponse<ProfileView> saveProfile(@PathVariable Long id, @RequestBody ProfileRequest req) {
         requireBorrowerOwnsOrStaff(id);
-        return ApiResponse.ok(ProfileView.of(review.saveProfile(id, req)));
+        return ApiResponse.ok(forReader(ProfileView.of(review.saveProfile(id, req))));
     }
 
     /** Borrower self-edits their own profile (non-identity fields). Verification-linked edits reset the
@@ -669,7 +677,7 @@ public class ApplicationController {
     @PutMapping("/{id}/profile/self")
     public ApiResponse<ProfileView> editOwnProfile(@PathVariable Long id, @RequestBody EditProfileRequest req) {
         requireBorrowerOwnsOrStaff(id);
-        return ApiResponse.ok(ProfileView.of(review.editOwnProfile(id, req)));
+        return ApiResponse.ok(forReader(ProfileView.of(review.editOwnProfile(id, req))));
     }
 
     /** Any reviewing role reads the customer's KYC details (PAN masked). The staff-only credit
@@ -677,11 +685,7 @@ public class ApplicationController {
     @GetMapping("/{id}/profile")
     public ApiResponse<ProfileView> getProfile(@PathVariable Long id) {
         requireBorrowerOwnsOrStaff(id);
-        ProfileView v = ProfileView.of(review.getProfile(id));
-        if ("BORROWER".equals(ActorContext.get().role())) {
-            v = v.withoutCredit();
-        }
-        return ApiResponse.ok(v);
+        return ApiResponse.ok(forReader(ProfileView.of(review.getProfile(id))));
     }
 
     /** Borrower uploads a supporting document (base64 body so it rides the JSON BFF proxy). */
@@ -834,7 +838,7 @@ public class ApplicationController {
 
     /**
      * Ownership guard for the by-id reads: a BORROWER may only read their OWN application (its
-     * {@code customer_id} must equal the JWT subject); any staff role may read any application.
+     * {@code customer_id} must equal the JWT subject); staff read only applications inside their customer book.
      * Closes an IDOR — without this a borrower could fetch another customer's application, audit
      * trail, KYC profile or documents by guessing the id. (Anonymous/unauthenticated callers never
      * reach a controller method: {@code SecurityConfig} requires auth on {@code /api/**}.)
@@ -847,6 +851,15 @@ public class ApplicationController {
             if (owner == null || !owner.toString().equals(actor.id())) {
                 throw new BusinessException("FORBIDDEN", "Not your application");
             }
+        } else {
+            // Staff are held to the same customer book as /api/customers: a scoped role (Credit
+            // Executive, Accountant, Collection Executive, Telecaller) gets a 404 outside it.
+            customerService.assertVisible(flow.customerIdOf(id));
         }
+    }
+
+    /** The staff-only credit headline (score + rating) never reaches a borrower reading their own profile. */
+    private static ProfileView forReader(ProfileView v) {
+        return "BORROWER".equals(ActorContext.get().role()) ? v.withoutCredit() : v;
     }
 }

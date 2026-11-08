@@ -35,11 +35,12 @@ public class LoanController {
 
     private final RepaymentService repaymentService;
     private final TransactionService transactionService;
+    private final com.navix.loan.service.CustomerService customerService;
 
     @GetMapping("/{loanId}")
     public ApiResponse<LoanView> getLoan(@PathVariable Long loanId) {
         // Owner-or-staff: a borrower may only read their own loan (see requireReadableLoan).
-        var loan = repaymentService.requireReadableLoan(loanId);
+        var loan = readableLoan(loanId);
         // Single source of truth for "amount owed": the penalty/prepayment-aware balance, and an
         // effective status so a past-due ACTIVE loan reads as OVERDUE (matches the repay page).
         long owed = repaymentService.outstandingBreakdownAsOf(loan, null).outstandingPaise();
@@ -140,12 +141,21 @@ public class LoanController {
         throw new BusinessException("FORBIDDEN_ROLE", "This action requires role " + String.join(" or ", allowed));
     }
 
+    /** The loan, if the caller owns it (borrower) or its customer is inside their staff book (else 404). */
+    private Loan readableLoan(Long loanId) {
+        Loan loan = repaymentService.requireReadableLoan(loanId);
+        if (!"BORROWER".equals(ActorContext.get().role())) {
+            customerService.assertVisible(loan.getCustomerId());
+        }
+        return loan;
+    }
+
     /** Authoritative compute-on-read balance (prepayment + penalty aware). Owner-or-staff. */
     @GetMapping("/{loanId}/outstanding")
     public ApiResponse<OutstandingView> outstanding(
             @PathVariable Long loanId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf) {
-        Loan loan = repaymentService.requireReadableLoan(loanId);
+        Loan loan = readableLoan(loanId);
         return ApiResponse.ok(view(loanId, asOf != null ? asOf : LocalDate.now(),
                 repaymentService.outstandingBreakdownAsOf(loan, asOf)));
     }
@@ -166,7 +176,7 @@ public class LoanController {
     public ApiResponse<OutstandingScheduleView> outstandingSchedule(
             @PathVariable Long loanId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf) {
-        Loan loan = repaymentService.requireReadableLoan(loanId);
+        Loan loan = readableLoan(loanId);
         LocalDate due = loan.getDueDate();
         // The loan's last penalty-free day after the salary day; null when the loan carries no grace
         // (loans disbursed after the grace was withdrawn) — the repay page then shows no such column.

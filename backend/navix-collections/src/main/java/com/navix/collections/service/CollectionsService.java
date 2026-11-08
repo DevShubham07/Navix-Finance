@@ -105,6 +105,14 @@ public class CollectionsService {
                 .orElseThrow(() -> new ResourceNotFoundException("Loan", String.valueOf(loanId)));
         Optional<CollectionCase> existing = caseRepository.findByLoanId(loanId);
         existing.ifPresent(this::requireCaseOwnership);
+        if (existing.isEmpty()) {
+            // Starting a case on a loan nobody holds is the Head's call (an executive only works cases
+            // assigned to them), and only a live loan can be collected on.
+            requireManager();
+            if (loan.status() != null && TERMINAL_LOAN_STATUSES.contains(loan.status())) {
+                throw new BusinessException("LOAN_NOT_COLLECTIBLE", "This loan is already settled");
+            }
+        }
         CollectionCase c = existing.orElseGet(() -> {
             CollectionCase nc = new CollectionCase();
             nc.setLoanId(loanId);
@@ -176,6 +184,23 @@ public class CollectionsService {
         }
         if ("DSA".equals(role)) {
             throw new BusinessException("FORBIDDEN_ROLE", "DSAs cannot view collections cases");
+        }
+        requireReaderRole(role);
+    }
+
+    /**
+     * The roles that may read collections data at all: the collections desk, plus the roles whose
+     * screens show it (the Accountant validates collections payments; the Heads see every customer).
+     * A CREDIT_EXECUTIVE or TELECALLER is scoped to their own book elsewhere, so the collections book
+     * is not theirs to enumerate. SYSTEM is the unbound actor of internal jobs, never a request.
+     */
+    private static final Set<String> READER_ROLES = Set.of("ADMIN", "COLLECTION_HEAD", "COLLECTION_EXECUTIVE",
+            "ACCOUNTANT", "DISBURSEMENT_HEAD", "CREDIT_HEAD", "SYSTEM");
+
+    /** For sibling services (the payments readers): throws FORBIDDEN_ROLE outside {@link #READER_ROLES}. */
+    public static void requireReaderRole(String role) {
+        if (!READER_ROLES.contains(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE", "Your role cannot view collections data");
         }
     }
 
@@ -509,9 +534,9 @@ public class CollectionsService {
     /** Loans eligible to open a case against (ACTIVE/OVERDUE, due on or before {@code asOf}). */
     @Transactional(readOnly = true)
     public List<LoanSummary> collectibleLoans(LocalDate asOf) {
-        // Name, PAN, mobile, employer and salary for the whole live book. No screen calls this any
-        // more; the collections desk (and the demo seed, as ADMIN) are the only legitimate readers.
-        requireCollectionsDesk();
+        // Name, PAN, mobile, employer and salary for the whole live book, unscoped. No screen calls
+        // this any more; only the Head (and the demo seed, as ADMIN) may read it.
+        requireManager();
         return loanDirectory.listCollectible(asOf);
     }
 
@@ -608,6 +633,7 @@ public class CollectionsService {
     @Transactional
     public InteractionLog logInteraction(UUID caseId, String type, String outcome,
                                          LocalDate promiseToPayDate, String proofRef) {
+        requireCollectionsDesk();
         CollectionCase c = getCase(caseId);
         requireCaseOwnership(c);
         if (PAID_OUTCOME.equalsIgnoreCase(outcome) && (proofRef == null || proofRef.isBlank())) {
@@ -727,6 +753,13 @@ public class CollectionsService {
         }
     }
 
+    private void requireManager() {
+        String role = ActorContext.get().role();
+        if (!"COLLECTION_HEAD".equals(role) && !"ADMIN".equals(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE", "This action requires role COLLECTION_HEAD or ADMIN");
+        }
+    }
+
     private void requireCollectionsStaff() {
         String role = ActorContext.get().role();
         if (role == null || "BORROWER".equals(role) || "ANONYMOUS".equals(role)) {
@@ -735,6 +768,7 @@ public class CollectionsService {
         if ("DSA".equals(role)) {
             throw new BusinessException("FORBIDDEN_ROLE", "DSAs cannot view customer data");
         }
+        requireReaderRole(role);
     }
 
     private int dpd(LoanSummary loan) {

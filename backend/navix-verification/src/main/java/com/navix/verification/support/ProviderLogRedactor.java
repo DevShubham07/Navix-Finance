@@ -59,7 +59,9 @@ final class ProviderLogRedactor {
     private static final Set<String> CREDENTIAL_KEYS = Set.of(
             "authtoken", "token", "accesstoken", "refreshtoken", "idtoken", "bearer",
             "password", "filepassword", "passcode", "secret", "clientsecret", "apikey", "apisecret",
-            "fileurl", "signedurl", "presignedurl", "downloadurl", "authorization");
+            "fileurl", "signedurl", "presignedurl", "downloadurl", "authorization",
+            // Signzy eSign: the webhook shared secret and the presigned KFS URL (see SignzyEsignAdapter).
+            "callbackurlauthorizationheader", "pdf");
 
     private static final Pattern PAN = Pattern.compile("(?i)\\b[A-Z]{5}[0-9]{4}[A-Z]\\b");
     private static final Pattern MOBILE = Pattern.compile("(?<![0-9])(?:\\+?91[- ]?)?[6-9][0-9]{9}(?![0-9])");
@@ -203,7 +205,14 @@ final class ProviderLogRedactor {
         }
     }
 
+    /** Longest value the regex passes will scan: the EMAIL pattern is quadratic on a borrower-controlled string. */
+    private static final int MAX_REDACT_CHARS = 2000;
+
     static String redactText(String text) {
+        // Logged text is for diagnosis, not a record: cap it before the regexes so a huge value costs nothing.
+        if (text.length() > MAX_REDACT_CHARS) {
+            text = text.substring(0, MAX_REDACT_CHARS) + "...[truncated]";
+        }
         String out = PAN.matcher(text).replaceAll(MASK);
         out = MOBILE.matcher(out).replaceAll(MASK);
         out = EMAIL.matcher(out).replaceAll(MASK);

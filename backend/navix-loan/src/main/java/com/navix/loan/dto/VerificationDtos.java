@@ -23,7 +23,7 @@ public final class VerificationDtos {
     public record AddressVerifyRequest(Double latitude, Double longitude, String manualAddress) {
     }
 
-    public record DigilockerInitRequest(@NotBlank String redirectUrl) {
+    public record DigilockerInitRequest(@NotBlank @jakarta.validation.constraints.Size(max = 2048) String redirectUrl) {
     }
 
     public record PanVerifyRequest(@NotBlank String pan) {

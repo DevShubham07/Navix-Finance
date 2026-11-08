@@ -72,8 +72,31 @@ public class DocumentStorageService {
         return "applications/" + applicationId + "/" + type + "/" + Instant.now().toEpochMilli() + "." + suffix;
     }
 
+    /**
+     * Content types an upload may be signed with: documents, images, lead-list spreadsheets, and the
+     * opaque {@code application/octet-stream} browsers send when they cannot name a type. HTML, SVG and
+     * XML are absent on purpose: the type is signed into the PUT and S3 serves it back verbatim, so one
+     * of those on the bucket origin would run script for whoever opens the link.
+     */
+    private static final java.util.Set<String> UPLOAD_CONTENT_TYPES = java.util.Set.of(
+            "application/pdf", "image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif",
+            "image/heic", "image/heif", "text/csv", "application/csv", "application/vnd.ms-excel",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/octet-stream");
+
+    /** What a download may be served as inline, by key extension; anything else is forced to a download. */
+    private static final java.util.Map<String, String> INLINE_TYPES = java.util.Map.of(
+            "pdf", "application/pdf", "jpg", "image/jpeg", "jpeg", "image/jpeg", "png", "image/png",
+            "webp", "image/webp", "gif", "image/gif", "heic", "image/heic", "heif", "image/heif");
+
     /** Presigned URL for a direct browser PUT upload to the given key. */
     public String presignUpload(String key, String contentType) {
+        if (StringUtils.hasText(contentType)) {
+            String base = contentType.split(";", 2)[0].trim().toLowerCase(java.util.Locale.ROOT);
+            if (!UPLOAD_CONTENT_TYPES.contains(base)) {
+                throw new com.navix.common.exception.BusinessException("UNSUPPORTED_CONTENT_TYPE",
+                        "That file type is not accepted. Upload a PDF, an image or a spreadsheet.");
+            }
+        }
         PutObjectRequest objectRequest = PutObjectRequest.builder()
                 .bucket(props.bucket())
                 .key(key)
@@ -88,10 +111,17 @@ public class DocumentStorageService {
 
     /** Presigned URL for a direct GET download of the given key. */
     public String presignDownload(String key) {
-        GetObjectRequest objectRequest = GetObjectRequest.builder()
-                .bucket(props.bucket())
-                .key(key)
-                .build();
+        // Serve by the key's extension, not by whatever type the uploader signed: a safe type renders
+        // inline (the consoles preview documents), everything else is an attachment that never executes.
+        int dot = key.lastIndexOf('.');
+        String inline = dot < 0 ? null : INLINE_TYPES.get(key.substring(dot + 1).toLowerCase(java.util.Locale.ROOT));
+        GetObjectRequest.Builder download = GetObjectRequest.builder().bucket(props.bucket()).key(key);
+        if (inline != null) {
+            download.responseContentType(inline);
+        } else {
+            download.responseContentType("application/octet-stream").responseContentDisposition("attachment");
+        }
+        GetObjectRequest objectRequest = download.build();
         GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
                 .signatureDuration(ttl())
                 .getObjectRequest(objectRequest)

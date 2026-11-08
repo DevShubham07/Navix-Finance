@@ -1032,6 +1032,12 @@ public class ApplicationFlowService {
         return app;
     }
 
+    /** The customer behind an application, with no assignment check — for callers applying the customer-book scope instead. */
+    @Transactional(readOnly = true)
+    public Long customerIdOf(Long appId) {
+        return require(appId).getCustomerId();
+    }
+
     private static final java.time.ZoneId IST = java.time.ZoneId.of("Asia/Kolkata");
 
     /** Same "dd MMM yyyy" shape the notification templates use, so both tell the borrower one date. */

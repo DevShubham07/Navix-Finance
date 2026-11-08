@@ -29,6 +29,33 @@ class ProviderLogRedactorTest {
                 .contains("\"statementPeriod\":\"6m\"");
     }
 
+    /** Signzy eSign initiate: the webhook shared secret and the presigned KFS URL ride in the request. */
+    private static final String ESIGN_REQUEST = """
+            {"pdf":"https://bucket.s3.amazonaws.com/applications/9/sanction_letter/1.pdf?X-Amz-Signature=cafe01",
+             "callbackUrl":"https://api.example/api/webhooks/signzy/contract",
+             "callbackUrlAuthorizationHeader":"whsec_topsecret","signMode":"aadhaar"}
+            """;
+
+    @Test
+    void masksTheEsignWebhookSecretAndPresignedPdfInBothTheLogAndTheStoredRow() {
+        for (String out : new String[] {ProviderLogRedactor.redact(ESIGN_REQUEST),
+                ProviderLogRedactor.redactCredentials(ESIGN_REQUEST)}) {
+            assertThat(out).doesNotContain("whsec_topsecret").doesNotContain("X-Amz-Signature");
+            assertThat(out).contains("callbackUrlAuthorizationHeader").contains("aadhaar");
+        }
+    }
+
+    @Test
+    void aHugeValueIsCappedBeforeTheQuadraticEmailPatternRuns() {
+        String huge = "a.".repeat(500_000); // ~1 MB of alternating word / non-word characters
+
+        long start = System.nanoTime();
+        String out = ProviderLogRedactor.redactText(huge);
+
+        assertThat(out.length()).isLessThan(3_000);
+        assertThat((System.nanoTime() - start) / 1_000_000).isLessThan(2_000);
+    }
+
     @Test
     void storedAuditRowDropsCredentialsButKeepsIdentifiers() {
         String out = ProviderLogRedactor.redactCredentials(BSA_REQUEST);

@@ -20,7 +20,8 @@ import org.junit.jupiter.api.Test;
 class LoanControllerRoleTest {
 
     private final RepaymentService repaymentService = mock(RepaymentService.class);
-    private final LoanController controller = new LoanController(repaymentService, mock(TransactionService.class));
+    private final LoanController controller = new LoanController(repaymentService, mock(TransactionService.class),
+            mock(com.navix.loan.service.CustomerService.class));
 
     @AfterEach
     void clearActor() {

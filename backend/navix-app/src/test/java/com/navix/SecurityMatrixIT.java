@@ -237,6 +237,25 @@ class SecurityMatrixIT {
 
     // ---- helpers -------------------------------------------------------------------
 
+    /**
+     * Legacy routes nothing calls any more: the KYC case API and the borrower-by-id read are closed
+     * at the URL for everyone, ADMIN included. The live borrower flows (/api/applications/**,
+     * /api/auth/borrower/**) must still be reachable — the matcher is {@code /api/borrower/*} on GET only.
+     */
+    @Test
+    void legacyKycAndBorrowerByIdRoutes_areDenied() throws Exception {
+        mvc.perform(get("/api/kyc/case/1").header("Authorization", bearer("1", "ADMIN")))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/borrower/1").header("Authorization", bearer("1", "ADMIN")))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/borrower/1").header("Authorization", bearer("21", "BORROWER")))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/kyc/case/1")).andExpect(status().isUnauthorized());
+        // Positive control: the live borrower namespace is untouched.
+        mvc.perform(get("/api/applications/mine").header("Authorization", bearer("21", "BORROWER")))
+                .andExpect(result -> assertThat(result.getResponse().getStatus()).isNotIn(401, 403));
+    }
+
     private String bearer(String id, String role) {
         String audience = "BORROWER".equals(role) ? JwtService.AUDIENCE_BORROWER : JwtService.AUDIENCE_STAFF;
         return "Bearer " + jwt.issue(id, "Actor " + id, role, audience);

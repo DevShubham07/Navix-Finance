@@ -306,11 +306,30 @@ class CustomerReviewServiceTest {
         when(applicationRepository.existsById(APP_ID)).thenReturn(true);
         when(documentRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
-        for (CurrentActor actor : new CurrentActor[] {CREDIT_EXECUTIVE, CREDIT_HEAD, BORROWER}) {
+        for (CurrentActor actor : new CurrentActor[] {CREDIT_EXECUTIVE, CREDIT_HEAD}) {
             ActorContext.set(actor);
             ApplicationDocument saved = service.addDocument(APP_ID, payslip());
             assertThat(saved.getApplicationId()).isEqualTo(APP_ID);
             assertThat(saved.getDocType()).isEqualTo("PAYSLIP");
+        }
+    }
+
+    @Test
+    void aBorrowerMayUploadOnlyAllowListedDocTypes() {
+        when(applicationRepository.existsById(APP_ID)).thenReturn(true);
+        when(documentRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        ActorContext.set(BORROWER);
+
+        ApplicationDocument saved = service.addDocument(APP_ID, new DocumentRequest("bank_statement", "s.pdf",
+                "application/pdf", Base64.getEncoder().encodeToString("x".getBytes()), null));
+        assertThat(saved.getDocType()).isEqualTo("BANK_STATEMENT");
+
+        // System- and credit-team-owned types are never a borrower's to file.
+        for (String reserved : new String[] {"CREDIT_BRIEF", "BUREAU_REPORT", "SIGNED_AGREEMENT", "SANCTION_LETTER"}) {
+            assertThatThrownBy(() -> service.addDocument(APP_ID, new DocumentRequest(reserved, "x.pdf",
+                    "application/pdf", Base64.getEncoder().encodeToString("x".getBytes()), null)))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("Unsupported document type");
         }
     }
 

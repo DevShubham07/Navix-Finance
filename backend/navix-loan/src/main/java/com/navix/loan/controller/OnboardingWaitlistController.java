@@ -40,7 +40,7 @@ public class OnboardingWaitlistController {
     }
 
     @PostMapping("/api/onboarding-waitlist")
-    public ApiResponse<SubmissionView> submit(@RequestBody SubmitRequest req) {
+    public ApiResponse<SubmissionView> submit(@jakarta.validation.Valid @RequestBody SubmitRequest req) {
         return ApiResponse.ok(service.submit(req));
     }
 

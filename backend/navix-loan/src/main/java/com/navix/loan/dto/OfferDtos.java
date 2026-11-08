@@ -53,8 +53,8 @@ public final class OfferDtos {
      * convention DigiLocker uses) and carry a per-attempt nonce, so the provider cannot re-serve a stale
      * signing session.
      */
-    public record EsignInitRequest(@NotBlank String successRedirectUrl,
-                                   @NotBlank String failureRedirectUrl) {
+    public record EsignInitRequest(@NotBlank @jakarta.validation.constraints.Size(max = 2048) String successRedirectUrl,
+                                   @NotBlank @jakarta.validation.constraints.Size(max = 2048) String failureRedirectUrl) {
     }
 
     /** Screen 9, fallback: a signature the borrower drew in the app. */

@@ -473,6 +473,15 @@ public class CustomerReviewService {
     public ApplicationDocument addDocument(Long appId, DocumentRequest req) {
         requireAnyRole(DOCUMENT_UPLOAD_ROLES);
         requireApplication(appId);
+        String docType = req.docType();
+        if (isBorrower()) {
+            // A borrower may not file evidence under a type the system or the credit team owns
+            // (CREDIT_BRIEF, BUREAU_REPORT, SIGNED_AGREEMENT, SANCTION_LETTER, ...). Staff pick any category.
+            docType = docType == null ? "" : docType.trim().toUpperCase(java.util.Locale.ROOT);
+            if (!ApplicationVerificationService.UPLOADABLE_DOC_TYPES.contains(docType)) {
+                throw new BusinessException("UNSUPPORTED_DOC_TYPE", "Unsupported document type: " + req.docType());
+            }
+        }
         byte[] bytes;
         try {
             bytes = Base64.getDecoder().decode(req.dataBase64());
@@ -487,7 +496,7 @@ public class CustomerReviewService {
         }
         ApplicationDocument d = new ApplicationDocument();
         d.setApplicationId(appId);
-        d.setDocType(req.docType());
+        d.setDocType(docType);
         d.setFileName(req.fileName());
         d.setContentType(safeContentType(req.contentType()));
         d.setSizeBytes((long) bytes.length);

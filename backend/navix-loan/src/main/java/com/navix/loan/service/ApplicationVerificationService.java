@@ -676,7 +676,7 @@ public class ApplicationVerificationService {
     /** docTypes a borrower may persist via {@link #saveUploadedDocuments}. SALARY_SLIP is deliberately
      *  excluded — that persistence stays inside {@link #verifySalary}, which also records the declared
      *  monthly salary; this generic path is for documents with no accompanying verification step. */
-    private static final java.util.Set<String> UPLOADABLE_DOC_TYPES =
+    static final java.util.Set<String> UPLOADABLE_DOC_TYPES =
             java.util.Set.of("BANK_STATEMENT", BANK_PROOF, AADHAAR_FRONT, AADHAAR_BACK,
                     AADHAAR_CARD_FRONT, AADHAAR_CARD_BACK, PAN_CARD_FRONT, PAN_CARD_BACK);
 
@@ -727,8 +727,19 @@ public class ApplicationVerificationService {
             if (!key.startsWith(ownFolder) || key.contains("..")) {
                 throw new BusinessException("INVALID_DOCUMENT_KEY", "That upload does not belong to this application");
             }
+            // Folders the system writes (the credit brief, the bureau report, the sanction letter and the
+            // signed agreement) are staff or generated evidence: never re-registerable as borrower uploads.
+            String folder = key.substring(ownFolder.length());
+            int slash = folder.indexOf('/');
+            if (RESERVED_KEY_FOLDERS.contains(slash < 0 ? folder : folder.substring(0, slash))) {
+                throw new BusinessException("INVALID_DOCUMENT_KEY", "That upload does not belong to this application");
+            }
         }
     }
+
+    /** Lower-case key folders written by the system (see {@code buildApplicationKey} and the PDF generators). */
+    private static final Set<String> RESERVED_KEY_FOLDERS =
+            Set.of("credit_brief", "bureau_report", "sanction_letter", "signed_agreement");
 
     /**
      * Normalize a borrower-supplied document password (V56): trim, blank becomes null, and cap at the
@@ -2968,6 +2979,11 @@ public class ApplicationVerificationService {
         }
         Optional<ApplicationVerification> done = passed(appId, ESIGN);
         if (done.isPresent()) {
+            // A provider (Aadhaar/DSC) signature already stands: the drawn fallback must not overwrite
+            // that signed agreement. Only a repeat of the drawn signature itself stays idempotent.
+            if (!"MANUAL".equals(done.get().getProvider())) {
+                throw new BusinessException("ESIGN_ALREADY_COMPLETED", "This agreement is already signed");
+            }
             return view(done.get());
         }
         String key = "applications/" + appId + "/signed_agreement/signature.png";
@@ -3436,20 +3452,50 @@ public class ApplicationVerificationService {
      * Strip fields the borrower must not see from a step result. No-op for every other audience —
      * ADMIN reads through the same endpoint and keeps the full view.
      */
-    private static StepResult withoutStaffOnlyFields(StepResult step) {
+    public static StepResult withoutStaffOnlyFields(StepResult step) {
         CurrentActor actor = ActorContext.get();
         if (actor == null || !"BORROWER".equals(actor.role())) {
             return step;
         }
-        if (!EMPLOYMENT.equals(step.checkType()) || step.derived() == null
-                || !step.derived().containsKey("uan")) {
-            return step;
+        String type = step.checkType();
+        Map<String, Object> safe = step.derived() == null ? null : new LinkedHashMap<>(step.derived());
+        Double nameMatch = step.nameMatch();
+        Long score = step.score();
+        if (safe != null) {
+            if (EMPLOYMENT.equals(type)) {
+                safe.remove("uan");
+            } else if (PAN.equals(type)) {
+                // The provider's PAN record (name, DOB, masked Aadhaar, state/PIN) is identity data the
+                // borrower must not read back; the UI only needs the reject flag.
+                safe.keySet().retainAll(Set.of("applicationRejected", "panNotFound"));
+            } else if (PENNY_DROP.equals(type)) {
+                safe.keySet().removeAll(Set.of("fullName", "beneficiaryName", "bankRrn", "providerNameMatch", "nameMatch"));
+            } else if (EMAIL.equals(type)) {
+                safe.keySet().removeAll(Set.of("personName", "companyName", "matchedEstablishment"));
+            } else if (BUREAU.equals(type)) {
+                // The credit score and tradeline aggregates are staff-only; only the KBA question state is theirs.
+                safe.keySet().removeIf(k -> !k.startsWith("bureauChallenge"));
+            }
         }
-        Map<String, Object> safe = new LinkedHashMap<>(step.derived());
-        safe.remove("uan");
-        return new StepResult(step.checkType(), step.status(), step.message(), safe,
+        if (PENNY_DROP.equals(type)) {
+            nameMatch = null;
+        }
+        if (BUREAU.equals(type)) {
+            score = null;
+        }
+        return new StepResult(type, step.status(), step.message(), safe,
                 step.provider(), step.providerTxnId(), step.clientRefNum(),
-                step.nameMatch(), step.score(), step.checkedAt());
+                nameMatch, score, step.checkedAt(), step.reopenedAt());
+    }
+
+    /** The PAN saved on this application's own profile — the only one a borrower may have verified. */
+    @Transactional(readOnly = true)
+    public String ownPan(Long appId) {
+        String pan = profile(appId).getPan();
+        if (pan == null || pan.isBlank()) {
+            throw new BusinessException("PAN_REQUIRED", "Save your PAN before verifying it");
+        }
+        return pan.trim().toUpperCase(java.util.Locale.ROOT);
     }
 
     /**
@@ -3559,6 +3605,8 @@ public class ApplicationVerificationService {
         if (!KNOWN_CHECKS.contains(type)) {
             throw new BusinessException("UNKNOWN_CHECK", "Unknown verification check: " + checkType);
         }
+        // An Executive may only rule on a file assigned to them (CREDIT_FILE_NOT_ASSIGNED otherwise).
+        flow.get(appId);
         LoanApplication app = requireApplication(appId);
         String actor = ActorContext.get().name();
         String trimmed = notes != null ? notes.trim() : "";
