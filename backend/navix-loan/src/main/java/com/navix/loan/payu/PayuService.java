@@ -87,7 +87,7 @@ public class PayuService {
         this.reviews = reviews;
         this.flags = flags;
         this.tx = tx;
-        this.cardFee = new PayuCardFee(props.cardFeeBps(), props.cardFeeGstBps());
+        this.cardFee = new PayuCardFee(props.cardFeeBps());
     }
 
     // ---- views ----------------------------------------------------------------------------------------

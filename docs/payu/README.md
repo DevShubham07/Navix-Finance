@@ -538,7 +538,7 @@ verify says captured and amount matches
 
 ### Credit card fee charged to the borrower
 
-**Decision (2026-11-09):** a borrower who pays by credit card also pays the card cost, on top of the repayment.
+**Decision (2026-11-09):** a borrower who pays by credit card pays a flat **2.36% of the repayment** on top, on every credit card type. UPI, net banking and debit cards have no added fee.
 
 **How to do it.** Send `additional_charges` on the `_payment` request. PayU shows the fee only when that payment method is chosen. The sandbox displayed ₹100 + ₹2.36 "Internet Handling Fee" = ₹102.36 once a credit card was entered.
 
@@ -552,11 +552,11 @@ sha512(key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5||||
 
 **PayU's published rates** ([payu.in/pricing](https://payu.in/pricing/), checked 2026-11-09). GST is extra at 18%. Your signed rates may differ.
 
-| Payment type | PayU's rate | With 18% GST | Fee to add on a ₹10,000 repayment |
+| Payment type | PayU's rate | With 18% GST | Borrower pays on top |
 |---|---|---|---|
-| Visa, Mastercard | 2% | 2.36% | ₹241.71 |
-| **American Express** | **3%** | **3.54%** | **₹367.00** |
-| Diners | 3% | 3.54% | ₹367.00 |
+| Visa, Mastercard | 2% | 2.36% | 2.36% |
+| **American Express** | **3%** | **3.54%** | **2.36%, so DhanBoost absorbs the difference** |
+| Diners | 3% | 3.54% | 2.36%, so DhanBoost absorbs the difference |
 | EMI, international | 3% | 3.54% | n/a |
 | Net banking, wallets, BNPL | 2% | 2.36% | not charged to the borrower |
 | UPI | Varies by business and volume | n/a | not charged to the borrower |
@@ -564,17 +564,14 @@ sha512(key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5||||
 
 The test account can't show these: `get_additional_charge` returned null and `get_checkout_details` returned 0.0 for every method, including AMEX, because no fee is configured on it. PayU did recognise a test AMEX BIN correctly.
 
-**Working out the fee.** Values are rupee amounts per method, so the server calculates them for each order from the real rate. PayU charged its fee on the total including our fee (₹2.05 on ₹102.36 in the sandbox), so a straight percentage leaves us slightly short:
+**Working out the fee.** `fee = repayment × 2.36%`, rounded up to the paisa, set by `NAVIX_PAYU_CARD_FEE_BPS` (`236` = 2.36%, per card type).
 
-```
-effective rate = PayU card rate × 1.18 (if GST applies on top)
-fee = repayment × effective rate / (1 − effective rate), rounded up to the paisa
-```
+PayU charges its percentage on the total including the fee (₹2.05 on ₹102.36 in the sandbox), so a flat 2.36% doesn't fully cover it:
 
-| Example at a placeholder 2% + 18% GST, ₹10,000 repayment | Fee | What we keep |
-|---|---|---|
-| Straight 2.36% | ₹236.00 | ₹9,994.43, which is ₹5.57 short |
-| Formula above | ₹241.71 | ₹10,000.01 |
+| ₹10,000 repayment by card | Borrower fee | PayU's cost on the total | DhanBoost's shortfall |
+|---|---|---|---|
+| Visa, Mastercard (2% + GST) | ₹236.00 | ₹241.57 | ₹5.57 |
+| AMEX, Diners (3% + GST) | ₹236.00 | ₹362.35 | ₹126.35 |
 
 **Rules for the build**
 

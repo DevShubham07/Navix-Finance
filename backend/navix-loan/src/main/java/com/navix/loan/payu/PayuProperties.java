@@ -10,8 +10,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param checkoutUrl   where the browser posts the checkout form ({@code _payment})
  * @param commandUrl    the {@code verify_payment} endpoint
  * @param returnUrl     surl/furl/curl: where PayU posts the browser back
- * @param cardFeeBps    PLACEHOLDER per-mode card fee, {@code MODE:bps} comma-separated; blank = no card fee
- * @param cardFeeGstBps GST on that fee, in basis points (1800 = 18%)
+ * @param cardFeeBps    per-mode card fee, {@code MODE:bps} comma-separated (236 = 2.36%); blank = no card fee
  * @param allowSandbox  whether test.payu.in may be used. Off in production: a sandbox "payment" verifies as
  *                      captured with no money moved, so it would clear a real loan
  */
@@ -23,7 +22,6 @@ public record PayuProperties(
         String commandUrl,
         String returnUrl,
         String cardFeeBps,
-        int cardFeeGstBps,
         boolean allowSandbox
 ) {
     public boolean credentialsSet() {

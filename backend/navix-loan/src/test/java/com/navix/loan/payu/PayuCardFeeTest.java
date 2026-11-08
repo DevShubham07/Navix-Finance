@@ -7,29 +7,29 @@ import org.junit.jupiter.api.Test;
 class PayuCardFeeTest {
 
     @Test
-    void grossedUpFee_forTenThousandRupees_is24171Paise() {
-        assertThat(PayuCardFee.fee(1_000_000, 200, 1800)).isEqualTo(24_171);
+    void fee_isAFlatPercentageOfTheRepayment() {
+        assertThat(PayuCardFee.fee(1_000_000, 236)).isEqualTo(23_600); // 2.36% of Rs 10,000
     }
 
     @Test
-    void feeRoundsUp() {
-        // 100 paise: 100 * 2_360_000 / 97_640_000 = 2.417 -> 3
-        assertThat(PayuCardFee.fee(100, 200, 1800)).isEqualTo(3);
-        assertThat(PayuCardFee.fee(1, 200, 1800)).isEqualTo(1);
+    void feeRoundsUpToThePaisa() {
+        assertThat(PayuCardFee.fee(100, 236)).isEqualTo(3); // 2.36 -> 3
+        assertThat(PayuCardFee.fee(1, 236)).isEqualTo(1);
+        assertThat(PayuCardFee.fee(10_000, 236)).isEqualTo(236); // exact: not bumped
     }
 
     @Test
     void additionalCharges_hasTheShapeTheSandboxAccepted() {
-        PayuCardFee f = new PayuCardFee("CC:200,AMEX:200,RUPAYCC:200,DINR:200", 1800);
+        PayuCardFee f = new PayuCardFee("CC:236,AMEX:236,RUPAYCC:236,DINR:236");
         assertThat(f.additionalCharges(1_000_000))
-                .isEqualTo("CC:241.71,AMEX:241.71,RUPAYCC:241.71,DINR:241.71,DC:0,NB:0");
-        assertThat(f.displayFeePaise(1_000_000)).isEqualTo(24_171L);
+                .isEqualTo("CC:236.00,AMEX:236.00,RUPAYCC:236.00,DINR:236.00,DC:0,NB:0");
+        assertThat(f.displayFeePaise(1_000_000)).isEqualTo(23_600L);
     }
 
     @Test
     void blankConfig_sendsNoChargesAtAll() {
         for (String cfg : new String[] {null, "", "  "}) {
-            PayuCardFee f = new PayuCardFee(cfg, 1800);
+            PayuCardFee f = new PayuCardFee(cfg);
             assertThat(f.configured()).isFalse();
             assertThat(f.additionalCharges(1_000_000)).isNull();
             assertThat(f.displayFeePaise(1_000_000)).isNull();

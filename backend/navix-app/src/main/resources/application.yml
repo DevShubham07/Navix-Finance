@@ -130,10 +130,8 @@ navix:
     return-url: ${NAVIX_PAYU_RETURN_URL:${navix.app.frontend-base-url}/api/payu/return}
     # test.payu.in may only be used where this is true: a sandbox payment verifies as captured with no money.
     allow-sandbox: ${NAVIX_PAYU_ALLOW_SANDBOX:${NAVIX_ALLOW_DEV_DEFAULTS:false}}
-    # PayU's published list rates (mode:bps, payu.in/pricing 2026-11-09); RuPay credit is unpublished, so a
-    # placeholder. Replace with the signed contract rates. Blank = no card fee is added.
-    card-fee-bps: ${NAVIX_PAYU_CARD_FEE_BPS:CC:200,AMEX:300,RUPAYCC:200,DINR:300}
-    card-fee-gst-bps: ${NAVIX_PAYU_CARD_FEE_GST_BPS:1800}
+    # Card fee added on top of the repayment, mode:bps of the repayment (236 = 2.36%). Blank = no fee.
+    card-fee-bps: ${NAVIX_PAYU_CARD_FEE_BPS:CC:236,AMEX:236,RUPAYCC:236,DINR:236}
     # Reconcile sweep for orders whose webhook never arrived (PayuReconcileScheduler), every 5 minutes.
     reconcile-cron: ${NAVIX_PAYU_RECONCILE_CRON:0 */5 * * * *}
   digitap:

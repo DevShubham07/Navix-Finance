@@ -77,7 +77,7 @@ class PayuServiceTest {
 
         PayuProperties props = new PayuProperties(KEY, SALT, "https://test.payu.in/_payment",
                 "https://test.payu.in/merchant/postservice.php?form=2", "https://app.test/api/payu/return",
-                "CC:200", 1800, true);
+                "CC:236", true);
         service = new PayuService(props, client, orders, payments, repayments, reviews, flags,
                 new TransactionTemplate(mock(PlatformTransactionManager.class)));
 
@@ -426,7 +426,7 @@ class PayuServiceTest {
         assertThat(f.get("firstname")).isEqualTo("Asha K Rao");
         assertThat(f.get("phone")).isEqualTo("9876543210");
         assertThat(f.get("surl")).isEqualTo("https://app.test/api/payu/return");
-        assertThat(f.get("additional_charges")).isEqualTo("CC:24.18,DC:0,NB:0");
+        assertThat(f.get("additional_charges")).isEqualTo("CC:23.60,DC:0,NB:0");
         assertThat(f).doesNotContainKey("salt");
         assertThat(f.get("hash")).isEqualTo(PayuHash.request(KEY, f.get("txnid"), "1000.00",
                 "DhanBoost loan repayment", "Asha K Rao", "asha@example.com", "7", "", "", "", "", SALT,
@@ -568,7 +568,7 @@ class PayuServiceTest {
 
     @Test
     void enabled_needsTheFlagAndCredentials() {
-        PayuService noCreds = new PayuService(new PayuProperties("", "", "u", "c", "r", "", 1800, true), client, orders,
+        PayuService noCreds = new PayuService(new PayuProperties("", "", "u", "c", "r", "", true), client, orders,
                 payments, repayments, reviews, flags, new TransactionTemplate(mock(PlatformTransactionManager.class)));
         assertThat(noCreds.enabled()).isFalse();
         assertThat(service.enabled()).isTrue();
@@ -578,13 +578,13 @@ class PayuServiceTest {
     @Test
     void enabled_refusesTheSandboxUnlessExplicitlyAllowed() {
         PayuService prod = new PayuService(new PayuProperties(KEY, SALT, "https://test.payu.in/_payment",
-                "https://info.payu.in/merchant/postservice.php?form=2", "r", "", 1800, false), client, orders,
+                "https://info.payu.in/merchant/postservice.php?form=2", "r", "", false), client, orders,
                 payments, repayments, reviews, flags, new TransactionTemplate(mock(PlatformTransactionManager.class)));
         assertThat(prod.enabled()).isFalse();
         assertThat(prod.manualAllowed(LOAN)).isTrue(); // falls back to manual, never a dead end
 
         PayuService live = new PayuService(new PayuProperties(KEY, SALT, "https://secure.payu.in/_payment",
-                "https://info.payu.in/merchant/postservice.php?form=2", "r", "", 1800, false), client, orders,
+                "https://info.payu.in/merchant/postservice.php?form=2", "r", "", false), client, orders,
                 payments, repayments, reviews, flags, new TransactionTemplate(mock(PlatformTransactionManager.class)));
         assertThat(live.enabled()).isTrue();
     }
@@ -595,7 +595,7 @@ class PayuServiceTest {
         PayuService.State s = service.state(LOAN, 1_000_000L);
         assertThat(s.enabled()).isTrue();
         assertThat(s.manualAllowed()).isTrue();
-        assertThat(s.creditCardFeePaise()).isEqualTo(24_171L);
+        assertThat(s.creditCardFeePaise()).isEqualTo(23_600L);
         assertThat(s.openOrder()).isNull();
         assertThat(s.lastOrder().status()).isEqualTo("FAILED");
         assertThat(service.state(LOAN, null).creditCardFeePaise()).isNull();
