@@ -28,6 +28,8 @@ import { useRegisterQuery } from "@/lib/staff/register-query";
 import { useServerRegister } from "@/lib/staff/use-server-register";
 import { PaginationBar } from "@/components/staff/pipeline/pagination";
 import { formatDateTime } from "@/lib/utils";
+import { SendMessageDialog } from "@/components/staff/send-message-dialog";
+import { useQueueSelection } from "@/components/staff/pipeline/bulk-actions";
 import { StageSignal } from "@/components/staff/stage-signal";
 import { retryUnlessClientError, type CompletenessFilter } from "@/lib/staff/admin-all-applications";
 
@@ -220,6 +222,15 @@ function AllApplicationsRegister({ staffId }: { staffId: string }) {
   const th = thBag(rq, cr, FILTER_COLUMNS, COLUMN_LABEL, cr.requestFacet);
   const filtered = filter !== "ALL" || rq.activeCount > 0;
 
+  // Multi-select for "Send message" (one application per recipient). Scoped to the page on screen.
+  const can = useCan();
+  const canMessage = can("message:send");
+  const sel = useQueueSelection(React.useMemo(() => pageRows.map((a) => a.id), [pageRows]));
+  const [messaging, setMessaging] = React.useState(false);
+  const messageTargets = pageRows
+    .filter((a) => sel.selected.has(a.id))
+    .map((a) => ({ applicationId: a.id, label: `${a.fullName || "Customer"} (#${a.id})` }));
+
   // "Download all" — every row the filters match, fetched page by page through the same endpoint (the
   // server caps a page) with the same view params as the table, so the export cannot drift from it.
   const getAllRows = async () => {
@@ -276,6 +287,14 @@ function AllApplicationsRegister({ staffId }: { staffId: string }) {
       </PageHeader>
 
       <div ref={toolbarRef} className="mb-4 flex flex-wrap items-end gap-2">
+        {canMessage && sel.selected.size > 0 && (
+          <div className="mb-1 flex items-center gap-2">
+            <span className="text-xs font-semibold text-navy">{sel.selected.size} selected</span>
+            <button type="button" onClick={() => setMessaging(true)} className="btn btn-sm btn-navy">
+              Send message
+            </button>
+          </div>
+        )}
         <SearchBar
           key={searchKey}
           initialValue={rq.state.q}
@@ -332,6 +351,16 @@ function AllApplicationsRegister({ staffId }: { staffId: string }) {
               <thead>
                 <tr>
                   <th scope="col">S.No.</th>
+                  {canMessage && (
+                    <th scope="col">
+                      <input
+                        type="checkbox"
+                        checked={pageRows.length > 0 && sel.selected.size === pageRows.length}
+                        onChange={sel.toggleAll}
+                        aria-label="Select all"
+                      />
+                    </th>
+                  )}
                   <th scope="col" className="whitespace-nowrap">App</th>
                   <Th th={th} col="name" />
                   <th scope="col">Signals</th>
@@ -353,6 +382,16 @@ function AllApplicationsRegister({ staffId }: { staffId: string }) {
                 {pageRows.map((a, i) => (
                   <tr key={a.id} className="hover:bg-grey-50">
                     <td className="text-muted">{(page - 1) * pageSize + i + 1}</td>
+                    {canMessage && (
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={sel.selected.has(a.id)}
+                          onChange={() => sel.toggle(a.id)}
+                          aria-label={`Select ${a.fullName || `application #${a.id}`}`}
+                        />
+                      </td>
+                    )}
                     <td className="whitespace-nowrap font-mono text-muted">#{a.id}</td>
                     <td>
                       <span className="block max-w-[14rem] truncate font-semibold text-ink" title={a.fullName ?? ""}>{a.fullName || "—"}</span>
@@ -412,7 +451,7 @@ function AllApplicationsRegister({ staffId }: { staffId: string }) {
                   </tr>
                 ))}
                 {pageRows.length === 0 && (
-                  <EmptyState title="No applications match." inTable={14} />
+                  <EmptyState title="No applications match." inTable={canMessage ? 15 : 14} />
                 )}
               </tbody>
             </table>
@@ -422,6 +461,7 @@ function AllApplicationsRegister({ staffId }: { staffId: string }) {
       )}
 
       <ApplicationDetailDialog applicationId={openId} onClose={() => setOpenId(null)} />
+      <SendMessageDialog open={messaging} onClose={() => setMessaging(false)} targets={messageTargets} />
     </div>
   );
 }

@@ -72,6 +72,10 @@ public class Loan extends BaseAuditEntity {
     @Column(name = "grace_days", nullable = false)
     private int graceDays = 1;
 
+    /** Repayment discount taken off the processing fee at disbursal (V95); 0 when none. Informational. */
+    @Column(name = "fee_discount_paise", nullable = false)
+    private long feeDiscountPaise = 0L;
+
     /** Total amount repayable on the due date (principal + interest), in paise. */
     @Column(name = "total_repayable")
     private Long totalRepayable;

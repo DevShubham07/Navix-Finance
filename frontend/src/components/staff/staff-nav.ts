@@ -23,6 +23,7 @@ import {
   Landmark,
   Repeat,
   FileBarChart,
+  MessageSquare,
 } from "lucide-react";
 import { can, type Permission, type StaffRole } from "@/lib/auth/rbac";
 import type { FeatureFlags } from "@/lib/api/applications";
@@ -145,6 +146,7 @@ export const NAV: NavGroup[] = [
       { label: "Rejections", href: "/staff/admin/rejections", Icon: Ban, perm: "staff:manage" },
       { label: "Onboarding waitlist", href: "/staff/admin/waitlist", Icon: Users, perm: "waitlist:view" },
       { label: "Blocklist", href: "/staff/admin/blocklist", Icon: Ban, perm: "staff:manage" },
+      { label: "Customer messages", href: "/staff/admin/messages", Icon: MessageSquare, perm: "message:send" },
     ],
   },
   {

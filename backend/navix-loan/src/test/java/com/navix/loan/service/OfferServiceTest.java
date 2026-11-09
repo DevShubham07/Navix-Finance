@@ -72,7 +72,8 @@ class OfferServiceTest {
     @BeforeEach
     void setUp() {
         offer = new OfferService(applicationRepo, profileRepo, referenceRepo, pennyDropGuard,
-                documentRepo, verification, flow, journey, changeLogger, letterRenderer, storage, new LoanMath(), mandateService);
+                documentRepo, verification, flow, journey, changeLogger, letterRenderer, storage, new LoanMath(), mandateService,
+                org.mockito.Mockito.mock(com.navix.common.featureflag.FeatureFlagService.class));
 
         app = new LoanApplication();
         app.setId(APP);

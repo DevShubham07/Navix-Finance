@@ -71,6 +71,7 @@ public class OfferService {
     private final DocumentStoragePort storage;
     private final LoanMath loanMath;
     private final MandateService mandateService;
+    private final com.navix.common.featureflag.FeatureFlagService featureFlags;
 
     @Value("${navix.grievance.officer-name:Lalit Kumar}")
     private String grievanceOfficerName;
@@ -109,8 +110,7 @@ public class OfferService {
     @Transactional(readOnly = true)
     public List<ReferenceView> references(Long appId) {
         return referenceRepo.findByApplicationIdOrderBySlotAsc(appId).stream()
-                .map(r -> new ReferenceView(r.getSlot().intValue(), r.getFullName(), r.getMobile(),
-                        r.getRelation()))
+                .map(ReferenceView::of)
                 .toList();
     }
 
@@ -153,6 +153,15 @@ public class OfferService {
             mobiles.add(mobile);
         }
 
+        boolean otp = !admin && featureFlags.isEnabled(ReferenceOtpService.FLAG, false);
+        if (otp) {
+            for (ReferenceInput in : inputs) {
+                // With the OTP on this name goes to a stranger under our brand: letters only, so no links.
+                if (!in.fullName().trim().matches("[\\p{L} .'-]{2,60}")) {
+                    throw new BusinessException("REFERENCE_INVALID", "Enter the reference's real name, using letters only");
+                }
+            }
+        }
         for (int i = 0; i < inputs.size(); i++) {
             ReferenceInput in = inputs.get(i);
             short slot = (short) (i + 1);
@@ -168,6 +177,19 @@ public class OfferService {
             row.setFullName(in.fullName().trim());
             row.setMobile(mobiles.get(i));
             row.setRelation(in.relation());
+            boolean numberChanged = !mobiles.get(i).equals(oldMobile);
+            if (numberChanged) {
+                row.clearOtp();
+            }
+            // Only a new number is asked to confirm, so a Back-and-resubmit holds nobody. An admin
+            // correction vouches for the number, and the flag going off releases a held borrower.
+            if (admin || !otp) {
+                if (!admin || numberChanged) {
+                    row.setOtpRequired(false);
+                }
+            } else if (numberChanged) {
+                row.setOtpRequired(true);
+            }
             referenceRepo.save(row);
 
             if (admin) {
@@ -178,7 +200,13 @@ public class OfferService {
             }
         }
         // Only the borrower walking the journey moves the pointer; an admin edit must not rewind it.
-        if (!admin) {
+        // With the OTP on, ReferenceOtpService moves the pointer once both have confirmed.
+        boolean waiting = otp && referenceRepo.findByApplicationIdOrderBySlotAsc(appId).stream()
+                .anyMatch(ApplicationReference::isOtpPending);
+        if (waiting) {
+            // A number changed after passing this screen: the stored pointer must not carry them past it.
+            journey.rewind(appId, JourneyService.OfferStep.OFFER_REFERENCES);
+        } else if (!admin) {
             journey.advance(appId, JourneyService.OfferStep.OFFER_SUMMARY);
         }
         return references(appId);
@@ -197,13 +225,17 @@ public class OfferService {
         long principal = drawdownOf(app);
         LocalDate repaymentDate = app.getApprovedRepaymentDate();
         int tenure = tenureDays(app);
-        long fee = loanMath.processingFeePaise(principal);
-        long gst = loanMath.gstPaise(principal);
-        long net = loanMath.netDisbursedPaise(principal);
+        // The discount pinned at reborrow comes off the fee here, in the Key Fact Statement and at
+        // disbursal alike — all three read the same application column.
+        int discount = app.feeDiscountPercentOrZero();
+        long fee = loanMath.processingFeePaise(principal, discount);
+        long gst = loanMath.gstPaise(principal, discount);
+        long net = loanMath.netDisbursedPaise(principal, discount);
         long interest = loanMath.interestPaise(principal, tenure);
         return new OfferSummaryView(appId, ceilingOf(app), principal, fee, gst, net, interest,
                 loanMath.totalRepayablePaise(principal, tenure), tenure, repaymentDate,
-                expectedDisbursalDate(ZonedDateTime.now(IST)));
+                expectedDisbursalDate(ZonedDateTime.now(IST)),
+                loanMath.feeDiscountPaise(principal, discount), discount);
     }
 
     /**
@@ -570,15 +602,16 @@ public class OfferService {
             LoanApplication app, CustomerProfile profile) {
         long principal = drawdownOf(app);
         int tenure = tenureDays(app);
+        int discount = app.feeDiscountPercentOrZero();
         return new SanctionLetterPdfRenderer.Facts(
                 app.getId(),
                 profile != null ? profile.getFullName() : null,
                 profile != null ? profile.getPan() : null,
                 profile != null ? profile.getMobile() : null,
                 principal,
-                loanMath.processingFeePaise(principal),
-                loanMath.gstPaise(principal),
-                loanMath.netDisbursedPaise(principal),
+                loanMath.processingFeePaise(principal, discount),
+                loanMath.gstPaise(principal, discount),
+                loanMath.netDisbursedPaise(principal, discount),
                 loanMath.interestPaise(principal, tenure),
                 loanMath.totalRepayablePaise(principal, tenure),
                 tenure,
@@ -587,7 +620,8 @@ public class OfferService {
                 app.getApprovedRepaymentDate(),
                 maskAccount(firstNonBlank(app.getDisbursalAccountNumber(),
                         profile != null ? profile.getSalaryAccountNumber() : null)),
-                grievanceOfficerName, grievanceOfficerPhone, grievanceOfficerEmail);
+                grievanceOfficerName, grievanceOfficerPhone, grievanceOfficerEmail,
+                loanMath.feeDiscountPaise(principal, discount));
     }
 
     private static String maskAccount(String account) {

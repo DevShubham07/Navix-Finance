@@ -85,6 +85,10 @@ class ApplicationFlowServiceTest {
     private com.navix.common.featureflag.FeatureFlagService featureFlags;
     @Mock
     private MandateService mandateService;
+    @Mock
+    private com.navix.loan.repository.ReapplyAllowanceRepository allowanceRepository;
+    @Mock
+    private com.navix.loan.repository.RepaymentDiscountOfferRepository offerRepository;
 
     private ApplicationFlowService flow;
     private final List<ApplicationEvent> events = new ArrayList<>();
@@ -96,7 +100,9 @@ class ApplicationFlowServiceTest {
                 loanService, staffDirectory,
                 loanRepository, paymentRepository, profileRepository, rejectionRepository,
                 documentRepository, verificationRepository, referenceRepository, new LoanMath(),
-                event -> {}, referralService, dsaCommissionService, featureFlags, mandateService);
+                event -> {}, referralService, dsaCommissionService, featureFlags, mandateService,
+                new RepaymentDiscountOffers(offerRepository, loanRepository, paymentRepository),
+                allowanceRepository);
         // Applications are open unless a test closes them (strict stubs reject a bare other-flag stub).
         lenient().when(featureFlags.isEnabled(IntakeSwitchService.FLAG, false)).thenReturn(false);
         // Default: assignee passes activation gating; negative case overrides below.
@@ -1015,6 +1021,100 @@ class ApplicationFlowServiceTest {
                 loanAt(50L, LoanStatus.IN_COLLECTIONS, LocalDate.now().minusDays(3))));
 
         assertThat(flow.reborrow().getStatus()).isEqualTo(ApplicationStatus.REJECTED);
+    }
+
+    /** Late beyond tolerance, with NO allowance: still auto-rejected and never pinned a discount. */
+    @Test
+    void reborrowDisqualifiedWithoutAllowanceIsRejectedAndNotPinned() {
+        actor("7", "BORROWER");
+        Loan closed = lateClosedLoanSetup();
+        com.navix.loan.entity.RepaymentDiscountOffer offer = unlockedOffer(closed);
+        lenient().when(offerRepository.findByCustomerIdAndUsedApplicationIdIsNull(7L)).thenReturn(List.of(offer));
+
+        LoanApplication out = flow.reborrow();
+
+        assertThat(out.getStatus()).isEqualTo(ApplicationStatus.REJECTED);
+        assertThat(out.getFeeDiscountOfferId()).isNull();
+        assertThat(out.getFeeDiscountPercent()).isNull();
+    }
+
+    /** With an allowance the file goes to the credit queue: KYC_PENDING, allowance consumed, never PRE_APPROVED. */
+    @Test
+    void reborrowDisqualifiedWithAllowanceGoesToCreditReviewAndConsumesIt() {
+        actor("7", "BORROWER");
+        lateClosedLoanSetup();
+        com.navix.loan.entity.ReapplyAllowance allowance = new com.navix.loan.entity.ReapplyAllowance();
+        allowance.setId(3L);
+        when(allowanceRepository.findFirstByCustomerIdAndUsedApplicationIdIsNullOrderByIdAsc(7L))
+                .thenReturn(Optional.of(allowance));
+        when(allowanceRepository.consume(eq(3L), any(), any())).thenReturn(1);
+
+        LoanApplication out = flow.reborrow();
+
+        assertThat(out.getStatus()).isEqualTo(ApplicationStatus.KYC_PENDING);
+        assertThat(out.getSanctionedAmountPaise()).isNull();
+        assertThat(events).anyMatch(e -> "REBORROW_ALLOWED".equals(e.getAction()));
+        verify(allowanceRepository).consume(eq(3L), any(), any());
+    }
+
+    /** A lost race on the allowance (consume matches no row) falls back to the auto-reject. */
+    @Test
+    void reborrowAllowanceAlreadyConsumedIsRejected() {
+        actor("7", "BORROWER");
+        lateClosedLoanSetup();
+        com.navix.loan.entity.ReapplyAllowance allowance = new com.navix.loan.entity.ReapplyAllowance();
+        allowance.setId(3L);
+        when(allowanceRepository.findFirstByCustomerIdAndUsedApplicationIdIsNullOrderByIdAsc(7L))
+                .thenReturn(Optional.of(allowance));
+        when(allowanceRepository.consume(eq(3L), any(), any())).thenReturn(0);
+
+        assertThat(flow.reborrow().getStatus()).isEqualTo(ApplicationStatus.REJECTED);
+    }
+
+    /** Clean history: the best unlocked offer is pinned (highest percent wins). */
+    @Test
+    void reborrowCleanHistoryPinsTheBestUnlockedOffer() {
+        actor("7", "BORROWER");
+        LoanApplication prior = priorApp();
+        when(applicationRepository.findByCustomerId(7L)).thenReturn(List.of(prior));
+        when(profileRepository.findByApplicationId(10L)).thenReturn(Optional.of(priorProfile()));
+        Loan closed = loanAt(50L, LoanStatus.CLOSED, LocalDate.now().minusDays(5));
+        when(loanRepository.findByCustomerId(7L)).thenReturn(List.of(closed));
+        when(loanRepository.findById(50L)).thenReturn(Optional.of(closed));
+        when(paymentRepository.findByLoanId(50L)).thenReturn(List.of(paidOn(50L, closed.getDueDate())));
+        com.navix.loan.entity.RepaymentDiscountOffer low = unlockedOffer(closed);
+        low.setId(1L);
+        low.setPercent((short) 3);
+        com.navix.loan.entity.RepaymentDiscountOffer high = unlockedOffer(closed);
+        high.setId(2L);
+        high.setPercent((short) 6);
+        when(offerRepository.findByCustomerIdAndUsedApplicationIdIsNull(7L)).thenReturn(List.of(low, high));
+
+        LoanApplication out = flow.reborrow();
+
+        assertThat(out.getFeeDiscountPercent()).isEqualTo((short) 6);
+        assertThat(out.getFeeDiscountOfferId()).isEqualTo(2L);
+    }
+
+    private Loan lateClosedLoanSetup() {
+        when(applicationRepository.findByCustomerId(7L)).thenReturn(List.of(priorApp()));
+        when(profileRepository.findByApplicationId(10L)).thenReturn(Optional.of(priorProfile()));
+        Loan closed = loanAt(50L, LoanStatus.CLOSED, LocalDate.now().minusDays(20));
+        when(loanRepository.findByCustomerId(7L)).thenReturn(List.of(closed));
+        lenient().when(loanRepository.findById(50L)).thenReturn(Optional.of(closed));
+        when(paymentRepository.findByLoanId(50L)).thenReturn(List.of(
+                paidOn(50L, closed.getDueDate().plusDays(ApplicationFlowService.LATE_REPAYMENT_TOLERANCE_DAYS + 1))));
+        return closed;
+    }
+
+    private static com.navix.loan.entity.RepaymentDiscountOffer unlockedOffer(Loan loan) {
+        com.navix.loan.entity.RepaymentDiscountOffer o = new com.navix.loan.entity.RepaymentDiscountOffer();
+        o.setId(1L);
+        o.setCustomerId(7L);
+        o.setLoanId(loan.getId());
+        o.setPercent((short) 5);
+        o.setRepayBy(loan.getDueDate().plusDays(30));
+        return o;
     }
 
     private static Payment paidOn(Long loanId, LocalDate on) {

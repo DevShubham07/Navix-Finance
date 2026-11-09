@@ -55,6 +55,24 @@ class SanctionLetterPdfRendererTest {
     }
 
     @Test
+    void discountRowAppearsOnlyWhenADiscountApplies() throws Exception {
+        // 5% of Rs 10,000: discount 500, fee 500, GST 90, net 9,410.
+        SanctionLetterPdfRenderer.Facts with = new SanctionLetterPdfRenderer.Facts(
+                54L, "Asha Kumari", null, null, 1_000_000L, 50_000L, 9_000L, 941_000L, 270_000L, 1_270_000L, 27,
+                LocalDate.of(2026, 8, 7), LocalDate.of(2026, 9, 3), null, null, null, null, 50_000L);
+        SanctionLetterPdfRenderer.Facts without = new SanctionLetterPdfRenderer.Facts(
+                54L, "Asha Kumari", null, null, 1_000_000L, 100_000L, 18_000L, 882_000L, 270_000L, 1_270_000L, 27,
+                LocalDate.of(2026, 8, 7), LocalDate.of(2026, 9, 3), null, null, null, null);
+
+        PdfReader a = new PdfReader(renderer.render(with));
+        PdfReader b = new PdfReader(renderer.render(without));
+        assertThat(new PdfTextExtractor(a).getTextFromPage(1)).contains("Repayment discount applied");
+        assertThat(new PdfTextExtractor(b).getTextFromPage(1)).doesNotContain("Repayment discount applied");
+        a.close();
+        b.close();
+    }
+
+    @Test
     void rendersWhenIdentityAndAccountAreNotYetKnown() {
         SanctionLetterPdfRenderer.Facts f = new SanctionLetterPdfRenderer.Facts(
                 1L, null, null, null,

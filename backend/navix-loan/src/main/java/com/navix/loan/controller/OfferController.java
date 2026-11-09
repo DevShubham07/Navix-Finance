@@ -9,6 +9,7 @@ import com.navix.loan.dto.OfferDtos.DisbursalAccountRequest;
 import com.navix.loan.dto.OfferDtos.DisbursalAccountView;
 import com.navix.loan.dto.OfferDtos.EsignInitRequest;
 import com.navix.loan.dto.OfferDtos.OfferSummaryView;
+import com.navix.loan.dto.OfferDtos.ReferenceOtpRequest;
 import com.navix.loan.dto.OfferDtos.ReferenceView;
 import com.navix.loan.dto.OfferDtos.ReferencesRequest;
 import com.navix.loan.dto.OfferDtos.SanctionLetterView;
@@ -40,6 +41,7 @@ public class OfferController {
 
     private final OfferService offer;
     private final ApplicationFlowService flow;
+    private final com.navix.loan.service.ReferenceOtpService referenceOtp;
 
     @PostMapping("/amount")
     public ApiResponse<ApplicationView> chooseAmount(@PathVariable Long id,
@@ -59,6 +61,20 @@ public class OfferController {
                                                            @RequestBody ReferencesRequest req) {
         authorize(id);
         return ApiResponse.ok(offer.saveReferences(id, req.references()));
+    }
+
+    @PostMapping("/references/{slot}/otp")
+    public ApiResponse<Void> sendReferenceOtp(@PathVariable Long id, @PathVariable int slot) {
+        authorize(id);
+        referenceOtp.send(id, slot);
+        return ApiResponse.ok(null);
+    }
+
+    @PostMapping("/references/{slot}/otp/verify")
+    public ApiResponse<List<ReferenceView>> verifyReferenceOtp(@PathVariable Long id, @PathVariable int slot,
+                                                               @Valid @RequestBody ReferenceOtpRequest req) {
+        authorize(id);
+        return ApiResponse.ok(referenceOtp.verify(id, slot, req.otp()));
     }
 
     @GetMapping("/summary")

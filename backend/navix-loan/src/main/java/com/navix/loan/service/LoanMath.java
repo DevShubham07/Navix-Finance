@@ -72,17 +72,44 @@ public class LoanMath {
 
     /** Up-front processing fee = round(principal × 10%). */
     public long processingFeePaise(long principalPaise) {
-        return roundPaise(BigDecimal.valueOf(principalPaise).multiply(PROCESSING_FEE_RATE));
+        return processingFeePaise(principalPaise, 0);
+    }
+
+    /** Fee after the repayment discount: max(0, base fee − discount). 0 percent = no discount. */
+    public long processingFeePaise(long principalPaise, int feeDiscountPercent) {
+        long base = roundPaise(BigDecimal.valueOf(principalPaise).multiply(PROCESSING_FEE_RATE));
+        return Math.max(0L, base - feeDiscountPaise(principalPaise, feeDiscountPercent));
+    }
+
+    /** Repayment discount taken off the fee = round(principal × percent / 100). Never interest/penalty. */
+    public long feeDiscountPaise(long principalPaise, int feeDiscountPercent) {
+        if (feeDiscountPercent <= 0) {
+            return 0L;
+        }
+        return roundPaise(BigDecimal.valueOf(principalPaise)
+                .multiply(BigDecimal.valueOf(feeDiscountPercent))
+                .divide(BigDecimal.valueOf(100)));
     }
 
     /** GST on the processing fee = round(fee × 18%). */
     public long gstPaise(long principalPaise) {
-        return roundPaise(BigDecimal.valueOf(processingFeePaise(principalPaise)).multiply(GST_RATE));
+        return gstPaise(principalPaise, 0);
+    }
+
+    /** GST recomputed on the discounted fee. */
+    public long gstPaise(long principalPaise, int feeDiscountPercent) {
+        return roundPaise(BigDecimal.valueOf(processingFeePaise(principalPaise, feeDiscountPercent))
+                .multiply(GST_RATE));
     }
 
     /** Net amount credited to the borrower = principal − fee − GST. */
     public long netDisbursedPaise(long principalPaise) {
-        return principalPaise - processingFeePaise(principalPaise) - gstPaise(principalPaise);
+        return netDisbursedPaise(principalPaise, 0);
+    }
+
+    public long netDisbursedPaise(long principalPaise, int feeDiscountPercent) {
+        return principalPaise - processingFeePaise(principalPaise, feeDiscountPercent)
+                - gstPaise(principalPaise, feeDiscountPercent);
     }
 
     /** Interest accrued over {@code days} = round(principal × 1%/day × days). Negative days clamp to 0. */

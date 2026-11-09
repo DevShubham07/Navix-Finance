@@ -11,12 +11,15 @@ import { PageHeader } from "@/components/staff/staff-ui";
 import {
   PermissionGate,
   NoAccessNotice,
+  useCan,
   errMessage,
   AdminForceDisbursementAction,
   SanctionedRejectAction,
 } from "@/components/staff/live-pipeline";
 import { CUSTOMER_TABS, CustomerTabBody } from "@/components/staff/customer-tabs";
 import { CustomerExportMenu } from "@/components/staff/customer-export-menu";
+import { SendMessageDialog } from "@/components/staff/send-message-dialog";
+import { ReapplyAllowanceCard } from "@/components/staff/reapply-allowance-card";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
 import { CreditScoreGauge } from "@/components/staff/credit-score-gauge";
 import { LimitBasisBadge } from "@/components/staff/detail-parts";
@@ -46,6 +49,8 @@ export default function CustomerDetailPage() {
   const id = Number(customerId);
   const qc = useQueryClient();
   const [tab, setTab] = React.useState("customer");
+  const canMessage = useCan()("message:send");
+  const [messaging, setMessaging] = React.useState(false);
   /** An application opened from the Loan applications tab — carries its own Journey. */
   const [selectedAppId, setSelectedAppId] = React.useState<number | null>(null);
   const q = useQuery({ queryKey: ["customer", id], queryFn: () => customersApi.get(id), enabled: Number.isFinite(id) });
@@ -76,6 +81,11 @@ export default function CustomerDetailPage() {
         </button>
         {/* ADMIN-only full-profile export (CSV / PDF) — renders nothing for every other working role. */}
         <CustomerExportMenu customerId={id} detail={c} />
+        {canMessage && (
+          <button type="button" onClick={() => setMessaging(true)} className="btn btn-sm btn-navy">
+            Send message
+          </button>
+        )}
       </PageHeader>
 
       <PermissionGate permission="customer:view" fallback={<NoAccessNotice />}>
@@ -117,6 +127,7 @@ export default function CustomerDetailPage() {
                 />
               </Card>
               <PermissionGate permission="customer:manage">
+                <ReapplyAllowanceCard customerId={id} latestApplicationId={c.applications[0]?.id ?? null} />
                 {sanctionedApp && (
                   <Card title="Force to disbursement (admin)" icon={<Send size={16} />}>
                     <div className="flex flex-wrap items-start gap-2">
@@ -156,6 +167,12 @@ export default function CustomerDetailPage() {
           </div>
         )}
       </PermissionGate>
+
+      <SendMessageDialog
+        open={messaging}
+        onClose={() => setMessaging(false)}
+        targets={[{ customerId: id, label: c?.profile?.fullName ?? `Customer #${id}` }]}
+      />
 
       {/* Opened from the Loan applications tab — the only route to an older application's Journey,
           since queues are status-filtered and a closed reborrow predecessor appears in none. */}

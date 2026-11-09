@@ -94,6 +94,10 @@ public class ApplicationFlowService {
     private final DsaCommissionService dsaCommissionService;
     private final FeatureFlagService featureFlags;
     private final MandateService mandateService;
+    // Repay-now fee discount (V95): resolved + pinned in reborrow, the one site that mints a returning application.
+    private final RepaymentDiscountOffers discountOffers;
+    // ADMIN one-use "allow re-application" (V95): lets a disqualified customer reach credit review.
+    private final com.navix.loan.repository.ReapplyAllowanceRepository allowanceRepository;
 
     /** Loan statuses that mean money is still owed past the due date — never fully repaid. */
     private static final Set<LoanStatus> DELINQUENT_LOAN_STATUSES =
@@ -261,7 +265,8 @@ public class ApplicationFlowService {
         // finds nothing bad — so it used to come back PRE_APPROVED and skip KYC + credit (Sep 2026,
         // #10737 after a fake-salary-slip reject). No repaid loan → NO_PRIOR_LOAN, which the /reloan
         // page turns into a fresh signup. A delinquent history still takes the auto-reject below.
-        if (!hasRepaidLoan(customerId) && !isDisqualifiedByHistory(customerId)) {
+        boolean disqualified = isDisqualifiedByHistory(customerId);
+        if (!hasRepaidLoan(customerId) && !disqualified) {
             throw new BusinessException("NO_PRIOR_LOAN", "No repaid advance found to borrow against");
         }
         Long salaryPaise = prior.getMonthlySalaryPaise();
@@ -281,7 +286,25 @@ public class ApplicationFlowService {
 
         // Action is "REBORROW" for both forks — the notification listener (NotificationEventListener
         // .mapAction) keys on the action + toStatus to pick the right template.
-        if (isDisqualifiedByHistory(customerId)) {
+        if (disqualified) {
+            // An ADMIN allowance (V95) is one use and buys exactly one thing: a place in the normal credit
+            // queue. Never PRE_APPROVED, never sanctioned here - a credit executive still decides.
+            Optional<com.navix.loan.entity.ReapplyAllowance> allowance =
+                    allowanceRepository.findFirstByCustomerIdAndUsedApplicationIdIsNullOrderByIdAsc(customerId);
+            if (allowance.isPresent()
+                    && allowanceRepository.consume(allowance.get().getId(), app.getId(), Instant.now()) == 1) {
+                discountOffers.pin(app);
+                LoanApplication allowedSource = latestSanctionedApplication(customerId).orElse(null);
+                if (allowedSource != null) {
+                    // The same person-level evidence a clean reborrow carries (identity, selfie, address,
+                    // references), so the reviewer sees it. No sanction is carried.
+                    copyCarriedVerifications(allowedSource.getId(), app.getId());
+                    copyReferences(allowedSource, app);
+                }
+                transition(app, ApplicationStatus.KYC_PENDING, "REBORROW_ALLOWED",
+                        "Re-application allowed by admin (allowance " + allowance.get().getId() + ")");
+                return applicationRepository.save(app);
+            }
             recordRejection(app, ApplicationRejection.PAST_DELINQUENCY,
                     "Repaid more than " + LATE_REPAYMENT_TOLERANCE_DAYS
                             + " days late, or a prior advance was never fully repaid",
@@ -290,6 +313,8 @@ public class ApplicationFlowService {
             return applicationRepository.save(app);
         }
 
+        // Clean path: pin the best unlocked repay-now discount (the rejected path above never gets one).
+        discountOffers.pin(app);
         transition(app, ApplicationStatus.PRE_APPROVED, "REBORROW", "Pre-approved returning borrower");
         LoanApplication source = latestSanctionedApplication(customerId).orElse(null);
         if (source == null) {
@@ -810,6 +835,10 @@ public class ApplicationFlowService {
                 .filter(v -> ApplicationVerificationService.PASS.equals(v.getStatus()))
                 .isEmpty()) {
             throw new BusinessException("ESIGN_REQUIRED", "Sign your sanction letter before continuing");
+        }
+        if (referenceRepository.findByApplicationIdOrderBySlotAsc(appId).stream()
+                .anyMatch(ApplicationReference::isOtpPending)) {
+            throw new BusinessException("REFERENCE_OTP_PENDING", "Both references must confirm their code first");
         }
         // UMRN present => may proceed. Flag off => the eMandate step does not exist.
         requireMandate(app);
@@ -1447,6 +1476,11 @@ public class ApplicationFlowService {
     private boolean hasRepaidLoan(Long customerId) {
         return loanRepository.findByCustomerId(customerId).stream()
                 .anyMatch(l -> l.getStatus() == LoanStatus.CLOSED);
+    }
+
+    /** Whether the repayment-history rule currently turns this customer away (ADMIN allow-re-application gate). */
+    public boolean isDisqualified(Long customerId) {
+        return isDisqualifiedByHistory(customerId);
     }
 
     private boolean isDisqualifiedByHistory(Long customerId) {

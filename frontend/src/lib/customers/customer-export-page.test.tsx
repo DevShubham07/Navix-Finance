@@ -22,6 +22,7 @@ vi.mock("@/components/staff/live-pipeline", () => ({
   errMessage: (e: unknown) => String(e),
   AdminForceDisbursementAction: () => null,
   SanctionedRejectAction: () => null,
+  useCan: () => () => false,
 }));
 vi.mock("@/components/staff/pipeline/hooks", async (orig) => ({
   ...(await orig<Record<string, unknown>>()),

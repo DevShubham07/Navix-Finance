@@ -83,7 +83,20 @@ public class SanctionLetterPdfRenderer {
             String disbursalAccountMasked,
             String grievanceOfficerName,
             String grievanceOfficerPhone,
-            String grievanceOfficerEmail) {
+            String grievanceOfficerEmail,
+            long feeDiscountPaise) {
+
+        /** Pre-discount shape: no repayment discount. */
+        public Facts(long applicationId, String borrowerName, String pan, String mobile, long principalPaise,
+                     long processingFeePaise, long gstPaise, long netDisbursedPaise, long interestPaise,
+                     long totalRepayablePaise, int tenureDays, LocalDate sanctionedOn, LocalDate repaymentDate,
+                     String disbursalAccountMasked, String grievanceOfficerName, String grievanceOfficerPhone,
+                     String grievanceOfficerEmail) {
+            this(applicationId, borrowerName, pan, mobile, principalPaise, processingFeePaise, gstPaise,
+                    netDisbursedPaise, interestPaise, totalRepayablePaise, tenureDays, sanctionedOn,
+                    repaymentDate, disbursalAccountMasked, grievanceOfficerName, grievanceOfficerPhone,
+                    grievanceOfficerEmail, 0L);
+        }
     }
 
     public byte[] render(Facts f) {
@@ -120,6 +133,8 @@ public class SanctionLetterPdfRenderer {
             doc.add(kvTable(new String[][] {
                     {"Lender", "MLB Securities Private Limited"},
                     {"Loan amount (principal)", rs(f.principalPaise())},
+                    f.feeDiscountPaise() > 0
+                            ? new String[] {"Repayment discount applied", rs(f.feeDiscountPaise())} : null,
                     {"Processing fee (excluding GST)", rs(f.processingFeePaise())},
                     {"GST on processing fee (18%)", rs(f.gstPaise())},
                     {"Amount credited to your account", rs(f.netDisbursedPaise())},
@@ -261,6 +276,9 @@ public class SanctionLetterPdfRenderer {
         t.setWidthPercentage(100);
         t.setWidths(new float[] {1.6f, 1f});
         for (String[] row : rows) {
+            if (row == null) {
+                continue; // optional row (e.g. the repayment discount) not applicable
+            }
             t.addCell(kvCell(new Phrase(row[0], LABEL)));
             t.addCell(kvCell(new Phrase(safe(row[1], "—"), VALUE)));
         }

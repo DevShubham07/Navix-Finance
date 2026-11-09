@@ -61,7 +61,7 @@ class MandateJourneyTest {
     void setUp() {
         offer = new OfferService(applicationRepo, profileRepo, referenceRepo, pennyDropGuard, documentRepo,
                 verification, flow, journeyMock, changeLogger, letterRenderer, storage, new LoanMath(),
-                mandateService);
+                mandateService, org.mockito.Mockito.mock(com.navix.common.featureflag.FeatureFlagService.class));
         journey = new JourneyService(applicationRepo, profileRepo, verificationRepo, referenceRepo,
                 documentRepo, mandateService);
 

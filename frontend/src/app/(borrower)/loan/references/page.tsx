@@ -6,7 +6,13 @@ import { Gift, Phone, User } from "lucide-react";
 import { Input, Select } from "@/components/ui";
 import { WizardActions } from "@/components/borrower/wizard-actions";
 import { Reassurance } from "@/components/borrower/reassurance";
-import { offerApi, REFERENCE_RELATIONS, type ReferenceInput } from "@/lib/api/applications";
+import {
+  ApplicationApiError,
+  offerApi,
+  REFERENCE_RELATIONS,
+  type ReferenceInput,
+  type ReferenceView,
+} from "@/lib/api/applications";
 import { useOffer, completeOfferStep, nextOfferRoute, prevOfferRoute } from "@/lib/offer";
 import { formatApiError } from "@/lib/api/errors";
 import { normalizeMobile } from "@/lib/utils";
@@ -40,6 +46,40 @@ export default function LoanReferencesPage() {
   const [touched, setTouched] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string>();
+  // References still to confirm their code (only with the reference-otp flag on); null shows the form.
+  const [waiting, setWaiting] = React.useState<ReferenceView[] | null>(null);
+  const [codes, setCodes] = React.useState<Record<number, string>>({});
+
+  const sendCode = (slot: number) => {
+    if (appId == null) return;
+    offerApi.sendReferenceOtp(appId, slot).catch((err) => {
+      // Coming back to this screen inside the resend wait: the earlier code is still good.
+      if (err instanceof ApplicationApiError && err.code === "REFERENCE_OTP_COOLDOWN") return;
+      setError(formatApiError(err, "Could not send the code — please try again."));
+    });
+  };
+
+  const finish = (rows: ReferenceView[]) => {
+    const left = rows.filter((r) => r.otpRequired && !r.verified);
+    if (left.length > 0) return left;
+    return completeOfferStep(appId as number, "OFFER_REFERENCES", router, nextOfferRoute("references")).then(() => null);
+  };
+
+  const confirmCode = async (slot: number) => {
+    if (appId == null) return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      const left = await finish(await offerApi.verifyReferenceOtp(appId, slot, (codes[slot] ?? "").trim()));
+      if (left) {
+        setWaiting(left);
+        setBusy(false);
+      }
+    } catch (err) {
+      setError(formatApiError(err, "Could not confirm the code — please try again."));
+      setBusy(false);
+    }
+  };
 
   // Hydrate anything already saved, so coming back doesn't mean retyping (revamp.md decision 26).
   React.useEffect(() => {
@@ -56,6 +96,9 @@ export default function LoanReferencesPage() {
           }
         });
         setRefs(next);
+        // Back on this screen with codes still owed: show code entry, without spending another send.
+        const left = saved.filter((r) => r.otpRequired && !r.verified);
+        if (left.length > 0) setWaiting(left);
       })
       .catch(() => {});
     return () => { live = false; };
@@ -80,13 +123,56 @@ export default function LoanReferencesPage() {
     setBusy(true);
     setError(undefined);
     try {
-      await offerApi.saveReferences(appId, [refs[0], refs[1]]);
-      await completeOfferStep(appId, "OFFER_REFERENCES", router, nextOfferRoute("references"));
+      const left = await finish(await offerApi.saveReferences(appId, [refs[0], refs[1]]));
+      if (left) {
+        setWaiting(left);
+        setBusy(false);
+        left.forEach((r) => sendCode(r.slot));
+      }
     } catch (err) {
       setError(formatApiError(err, "Could not save your references — please try again."));
       setBusy(false);
     }
   };
+
+  if (waiting) {
+    return (
+      <div className="form-card">
+        <p className="font-semibold text-navy">Ask your references for their codes</p>
+        <p className="mb-4 text-sm text-muted">
+          We sent each person a 6-digit code. They should share it with you only if they agree to be your reference.
+        </p>
+        {waiting.map((r) => (
+          <div key={r.slot} className="mb-5">
+            <Input
+              label={`Code from ${r.fullName} (••••••${r.mobile.slice(-4)})`}
+              inputMode="numeric"
+              maxLength={6}
+              value={codes[r.slot] ?? ""}
+              onChange={(e) => setCodes((c) => ({ ...c, [r.slot]: e.target.value.replace(/\D/g, "") }))}
+            />
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                className="btn btn-navy btn-sm"
+                disabled={busy || (codes[r.slot] ?? "").length !== 6}
+                onClick={() => confirmCode(r.slot)}
+              >
+                Confirm
+              </button>
+              <button type="button" className="btn btn-outline btn-sm" disabled={busy} onClick={() => sendCode(r.slot)}>
+                Send again
+              </button>
+            </div>
+          </div>
+        ))}
+        {error ? <p className="mt-3 text-sm text-error-600">{error}</p> : null}
+        <button type="button" className="btn btn-outline btn-sm mt-2" onClick={() => { setError(undefined); setWaiting(null); }}>
+          Change my references
+        </button>
+      </div>
+    );
+  }
 
   return (
     <form onSubmit={submit} noValidate>

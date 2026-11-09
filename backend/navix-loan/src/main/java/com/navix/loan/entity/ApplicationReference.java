@@ -44,4 +44,40 @@ public class ApplicationReference extends BaseAuditEntity {
 
     @Column(name = "relation", nullable = false, length = 32)
     private String relation;
+
+    /** Set when the borrower saved this row with the {@code reference-otp} flag on. */
+    @Column(name = "otp_required", nullable = false)
+    private boolean otpRequired;
+
+    @Column(name = "otp_hash", length = 64)
+    private String otpHash;
+
+    @Column(name = "otp_expires_at")
+    private java.time.Instant otpExpiresAt;
+
+    @Column(name = "otp_attempts", nullable = false)
+    private int otpAttempts;
+
+    /** Never reset, so changing the number cannot be used to message strangers without limit. */
+    @Column(name = "otp_send_count", nullable = false)
+    private int otpSendCount;
+
+    @Column(name = "otp_last_sent_at")
+    private java.time.Instant otpLastSentAt;
+
+    @Column(name = "verified_at")
+    private java.time.Instant verifiedAt;
+
+    public boolean isOtpPending() {
+        return otpRequired && verifiedAt == null;
+    }
+
+    /** A different number is a different person: nothing confirmed for the old one carries over. */
+    public void clearOtp() {
+        otpHash = null;
+        otpExpiresAt = null;
+        otpAttempts = 0;
+        otpLastSentAt = null;
+        verifiedAt = null;
+    }
 }

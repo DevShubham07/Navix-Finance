@@ -23,6 +23,7 @@ import {
   type RejectMode,
 } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
+import { SendMessageDialog } from "@/components/staff/send-message-dialog";
 import { type FilterColumn } from "@/components/staff/column-filter";
 import { FilterBar } from "@/components/staff/filter-bar";
 import { Th, thBag, describeRegister } from "@/lib/staff/register-th";
@@ -407,7 +408,19 @@ function CustomersPageInner() {
 
   const [pendingReject, setPendingReject] = React.useState<{ ids: number[]; mode: RejectMode } | null>(null);
   const [pendingAssign, setPendingAssign] = React.useState<number[] | null>(null);
-  const showBulkColumn = canBulkReject || canBulkAssign;
+  // "Send message" (ADMIN working role, `message:send`) has its own selection keyed on CUSTOMER id and
+  // open to every row on the page — unlike the bulk reject/assign selection above it is not limited to
+  // actionable rows.
+  const canMessage = can("message:send");
+  const msgSel = useQueueSelection(React.useMemo(() => pageRows.map((c) => c.customerId), [pageRows]));
+  const [messaging, setMessaging] = React.useState(false);
+  const messageTargets = pageRows
+    .filter((c) => msgSel.selected.has(c.customerId))
+    .map((c) => ({ customerId: c.customerId, label: `${c.name ?? "Customer"} (#${c.customerId})` }));
+  // Admin also holds bulk assign/reject on this column, so choosing who to message is an explicit mode.
+  const [messageSelect, setMessageSelect] = React.useState(false);
+  const messageMode = canMessage && (messageSelect || !(canBulkReject || canBulkAssign));
+  const showBulkColumn = canBulkReject || canBulkAssign || canMessage;
   // +1 for the Failure column. The date-group header rows span the whole table with this.
   const colCount = showBulkColumn ? 24 : 23;
 
@@ -519,7 +532,20 @@ function CustomersPageInner() {
               My customers
             </span>
           )}
-          {showBulkColumn && sel.selected.size > 0 && (
+          {canMessage && (canBulkReject || canBulkAssign) && (
+            <button type="button" className="btn btn-outline btn-sm" onClick={() => setMessageSelect((m) => !m)}>
+              {messageSelect ? "Back to bulk actions" : "Select customers to message"}
+            </button>
+          )}
+          {messageMode && msgSel.selected.size > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-navy">{msgSel.selected.size} selected</span>
+              <button type="button" onClick={() => setMessaging(true)} className="btn btn-sm btn-navy">
+                Send message
+              </button>
+            </div>
+          )}
+          {!messageMode && showBulkColumn && sel.selected.size > 0 && (
             <BulkActionBar
               count={sel.selected.size}
               onAssign={canBulkAssign ? () => setPendingAssign(selectedIds) : undefined}
@@ -583,8 +609,12 @@ function CustomersPageInner() {
                     <th scope="col" className="staff-sticky-identity">
                       <input
                         type="checkbox"
-                        checked={actionableIds.length > 0 && sel.selected.size === actionableIds.length}
-                        onChange={sel.toggleAll}
+                        checked={
+                          messageMode
+                            ? pageRows.length > 0 && msgSel.selected.size === pageRows.length
+                            : actionableIds.length > 0 && sel.selected.size === actionableIds.length
+                        }
+                        onChange={messageMode ? msgSel.toggleAll : sel.toggleAll}
                         aria-label="Select all"
                       />
                     </th>
@@ -645,7 +675,14 @@ function CustomersPageInner() {
                     <td className="text-muted">{sno}</td>
                     {showBulkColumn && (
                       <td className="staff-sticky-identity">
-                        {(() => {
+                        {messageMode ? (
+                          <input
+                            type="checkbox"
+                            checked={msgSel.selected.has(c.customerId)}
+                            onChange={() => msgSel.toggle(c.customerId)}
+                            aria-label={`Select ${c.name ?? `customer #${c.customerId}`}`}
+                          />
+                        ) : (() => {
                           const reason = notActionableReason(c);
                           return (
                             <input
@@ -845,6 +882,7 @@ function CustomersPageInner() {
       {editCustomerId != null && (
         <CustomerEditDialog customerId={editCustomerId} onClose={() => setEditCustomerId(null)} />
       )}
+      <SendMessageDialog open={messaging} onClose={() => setMessaging(false)} targets={messageTargets} />
       {pendingReject && (
         <RejectDialog
           ids={pendingReject.ids}

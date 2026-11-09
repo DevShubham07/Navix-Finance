@@ -349,7 +349,8 @@ public class JourneyService {
         if (!checks.contains(ApplicationVerificationService.AADHAAR)) {
             return OfferStep.OFFER_DIGILOCKER;
         }
-        if (referenceRepository.findByApplicationIdOrderBySlotAsc(app.getId()).size() < 2) {
+        var references = referenceRepository.findByApplicationIdOrderBySlotAsc(app.getId());
+        if (references.size() < 2 || references.stream().anyMatch(r -> r.isOtpPending())) {
             return OfferStep.OFFER_REFERENCES;
         }
         if (!checks.contains(ApplicationVerificationService.SELFIE)) {

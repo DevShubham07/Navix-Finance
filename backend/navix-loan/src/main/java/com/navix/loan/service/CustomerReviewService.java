@@ -559,7 +559,8 @@ public class CustomerReviewService {
      * are hidden from a BORROWER here — absent from the list, not-found by id. Staff reads unchanged.
      */
     static final Set<String> STAFF_ONLY_DOC_TYPES =
-            Set.of(CreditBriefService.DOC_TYPE, ApplicationVerificationService.BUREAU_REPORT);
+            Set.of(CreditBriefService.DOC_TYPE, ApplicationVerificationService.BUREAU_REPORT,
+                    "REAPPLY_SUPPORT");
 
     private static boolean isBorrower() {
         return "BORROWER".equals(ActorContext.get().role());

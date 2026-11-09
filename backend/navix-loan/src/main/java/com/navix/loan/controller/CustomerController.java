@@ -57,6 +57,7 @@ public class CustomerController {
 
     private final CustomerService customerService;
     private final BorrowerAnalyzerService analyzerService;
+    private final com.navix.loan.service.ReapplyAllowanceService reapplyAllowanceService;
 
     /**
      * One page of the customer book — a search {@code q} (name / PAN / mobile / customer id) and an
@@ -251,6 +252,23 @@ public class CustomerController {
     public ApiResponse<AnalyzerView> analyzer(@PathVariable Long customerId) {
         requireStaff();
         return ApiResponse.ok(analyzerService.analyze(customerId));
+    }
+
+    /** ADMIN — whether the customer is currently disqualified and any unused re-application allowance (V95). */
+    @GetMapping("/{customerId}/reapply-allowance")
+    public ApiResponse<com.navix.loan.dto.MessagingDtos.ReapplyAllowanceStatus> reapplyAllowance(
+            @PathVariable Long customerId) {
+        requireStaff();
+        return ApiResponse.ok(reapplyAllowanceService.status(customerId));
+    }
+
+    /** ADMIN — one-use "Allow re-application" with a required reason and supporting document (V95). */
+    @PostMapping("/{customerId}/reapply-allowance")
+    public ApiResponse<com.navix.loan.dto.MessagingDtos.AllowanceView> grantReapplyAllowance(
+            @PathVariable Long customerId,
+            @Valid @RequestBody com.navix.loan.dto.MessagingDtos.ReapplyAllowanceRequest req) {
+        requireStaff();
+        return ApiResponse.ok(reapplyAllowanceService.grant(customerId, req.reason(), req.documentId()));
     }
 
     /** Every document across ALL of this customer's applications, grouped by application (newest

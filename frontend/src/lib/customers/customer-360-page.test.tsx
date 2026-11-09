@@ -34,6 +34,7 @@ vi.mock("@/components/staff/live-pipeline", () => ({
   errMessage: (e: unknown) => String(e),
   AdminForceDisbursementAction: () => null,
   SanctionedRejectAction: () => null,
+  useCan: () => () => false,
 }));
 vi.mock("@/components/staff/customer-tabs", () => ({ CUSTOMER_TABS: [], CustomerTabBody: () => null }));
 vi.mock("@/components/staff/application-detail-dialog", () => ({ ApplicationDetailDialog: () => null }));

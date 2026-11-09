@@ -1865,6 +1865,8 @@ export interface ReferenceView {
   fullName: string;
   mobile: string;
   relation: string;
+  otpRequired?: boolean;
+  verified?: boolean;
 }
 
 export interface ReferenceInput {
@@ -1889,6 +1891,10 @@ export interface OfferSummaryView {
   repaymentDate: string | null;
   /** Calendar days, 18:00 IST cut-off — no weekend or holiday roll. */
   expectedDisbursalDate: string;
+  /** Repayment discount taken off the processing fee, in paise; 0/absent when none. */
+  feeDiscountPaise?: number;
+  /** The percent of principal that discount represents (1..7); null/absent when none. */
+  feeDiscountPercent?: number | null;
 }
 
 export interface SanctionLetterView {
@@ -1901,7 +1907,7 @@ export interface DisbursalAccountView {
   ifsc: string | null;
   holderName: string | null;
   bank: string | null;
-  verified: boolean;
+  verified?: boolean;
   pennyDropRequired: boolean;
   /** Non-null: the borrower burnt their penny-drop attempts and must wait this out. */
   lockedUntil: string | null;
@@ -1920,6 +1926,11 @@ export const offerApi = {
   /** Both references at once — the backend rejects anything but two distinct, non-self contacts. */
   saveReferences: (id: number, references: ReferenceInput[]) =>
     bff<ReferenceView[]>(`${OFFER(id)}/references`, "POST", { references }),
+
+  sendReferenceOtp: (id: number, slot: number) => bff<void>(`${OFFER(id)}/references/${slot}/otp`, "POST"),
+
+  verifyReferenceOtp: (id: number, slot: number, otp: string) =>
+    bff<ReferenceView[]>(`${OFFER(id)}/references/${slot}/otp/verify`, "POST", { otp }),
 
   summary: (id: number) => bff<OfferSummaryView>(`${OFFER(id)}/summary`, "GET"),
 
@@ -2791,7 +2802,28 @@ export const customersApi = {
   /** Documents across every one of this customer's applications, newest application first. */
   documents: (customerId: number) =>
     bff<ApplicationDocumentGroup[]>(`${CUSTOMERS_BASE}/${customerId}/documents`, "GET"),
+
+  /** ADMIN — whether the customer is barred from re-applying, and any unused manual allowance. */
+  reapplyAllowance: (customerId: number) =>
+    bff<ReapplyAllowanceStatus>(`${CUSTOMERS_BASE}/${customerId}/reapply-allowance`, "GET"),
+
+  /** ADMIN — let a disqualified customer re-apply once (into the normal credit queue). */
+  allowReapplication: (customerId: number, body: { reason: string; documentId: number }) =>
+    bff<ReapplyAllowance>(`${CUSTOMERS_BASE}/${customerId}/reapply-allowance`, "POST", body),
 };
+
+export interface ReapplyAllowance {
+  id: number;
+  customerId: number;
+  reason: string;
+  documentId: number;
+  grantedByName: string | null;
+  grantedAt: string;
+}
+export interface ReapplyAllowanceStatus {
+  disqualified: boolean;
+  allowance: ReapplyAllowance | null;
+}
 
 // ---------------------------------------------------------------------------
 // Loans register (WP4) — routes under /api/staff/loans/*
@@ -4853,6 +4885,78 @@ export interface MandateDebitFilters {
   to?: string;
   page?: number;
 }
+
+// ---------------------------------------------------------------------------
+// Admin customer messaging — routes under /api/staff/customer-messages/* (ADMIN only)
+// ---------------------------------------------------------------------------
+
+const MESSAGES_BASE = "/api/staff/customer-messages";
+
+export type MessageChannel = "SMS" | "WHATSAPP";
+export type MessageInputType = "TEXT" | "DATE" | "PERCENT";
+export interface MessageTemplate {
+  key: string;
+  label: string;
+  category: "SERVICE" | "MARKETING";
+  channels: MessageChannel[];
+  inputs: { name: string; label: string; type: MessageInputType }[];
+  singleOnly: boolean;
+  /** Non-null: the sender must tick "confirmed" with this wording. */
+  confirmText: string | null;
+}
+/** Exactly one of the two ids. */
+export type MessageTarget = { applicationId: number } | { customerId: number };
+export interface MessagePreview {
+  customerId: number;
+  recipientName: string | null;
+  maskedMobile: string | null;
+  channels: { channel: MessageChannel; providerTemplate: string; params: string[]; skipReason: string | null }[];
+}
+export interface MessageSendResult {
+  customerId: number;
+  results: { channel: MessageChannel; status: "SENT" | "FAILED" | "SKIPPED"; reason: string | null; messageId: number | null }[];
+}
+export interface MessageLogRow {
+  id: number;
+  customerId: number;
+  customerName?: string | null;
+  applicationId?: number | null;
+  loanId?: number | null;
+  templateKey: string;
+  channel: MessageChannel;
+  /** Last 4 digits only. */
+  mobile: string | null;
+  status: "SENT" | "FAILED" | "SKIPPED";
+  reason: string | null;
+  discountPercent: number | null;
+  repayBy: string | null;
+  sentByName: string | null;
+  createdAt: string;
+}
+export interface MessageLogFilters {
+  page?: number;
+  size?: number;
+  customerId?: number;
+  templateKey?: string;
+  channel?: string;
+  status?: string;
+  from?: string;
+  to?: string;
+}
+export interface MessageSendRequest {
+  target: MessageTarget;
+  templateKey: string;
+  channels: MessageChannel[];
+  inputs: Record<string, string>;
+}
+
+export const customerMessagesApi = {
+  templates: () => bff<MessageTemplate[]>(`${MESSAGES_BASE}/templates`, "GET"),
+  preview: (b: MessageSendRequest) => bff<MessagePreview>(`${MESSAGES_BASE}/preview`, "POST", b),
+  send: (b: MessageSendRequest & { confirmed: boolean }) => bff<MessageSendResult>(`${MESSAGES_BASE}/send`, "POST", b),
+  log: (f: MessageLogFilters) =>
+    bff<{ rows: MessageLogRow[]; total: number; page: number; size: number }>(`${MESSAGES_BASE}/log${qs({ ...f })}`, "GET"),
+};
 
 const MANDATES_BASE = "/api/staff/mandates";
 

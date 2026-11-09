@@ -110,7 +110,10 @@ export type Permission =
   | "loan:register"
   // Read-only all-DPD-buckets overview. COLLECTION_HEAD + ADMIN (also as working-role Admin, which
   // otherwise holds no collections:* token).
-  | "collections:overview";
+  | "collections:overview"
+  // Send approved SMS / WhatsApp templates to customers and read the send log. ADMIN only (backend
+  // CustomerMessageController is requireRole("ADMIN")); shown only in the Admin working role.
+  | "message:send";
 
 /** Static role -> permission mapping. TODO: confirm against backend authz. */
 const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
@@ -193,6 +196,7 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
     // "DSA required". ADMIN oversight goes through dsa:manage → /staff/admin/dsa.
     "dsa:manage",
     "leads:import",
+    "message:send",
   ],
 };
 
@@ -246,6 +250,7 @@ const ADMIN_ROLE_PERMISSIONS: Permission[] = [
   "collections:overview",
   "document:upload",
   "leads:import",
+  "message:send",
   // The Mandate tab's actions (cancel a mandate or debit, invite, re-check, the BANK_UNSUPPORTED override,
   // debit now). Used nowhere else, and the backend already allows ADMIN all of them; without these the
   // Admin view showed the tab with every button missing, including on the Mandates & debits console.

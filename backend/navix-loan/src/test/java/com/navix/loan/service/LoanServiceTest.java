@@ -1,8 +1,15 @@
 package com.navix.loan.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+
+import com.navix.common.exception.BusinessException;
+import com.navix.loan.repository.PaymentRepository;
+import com.navix.loan.repository.RepaymentDiscountOfferRepository;
 
 import com.navix.loan.domain.LoanStatus;
 import com.navix.loan.entity.Loan;
@@ -21,11 +28,66 @@ class LoanServiceTest {
     @Mock
     private LoanRepository loanRepository;
 
+    @Mock
+    private RepaymentDiscountOfferRepository offerRepository;
+
+    @Mock
+    private PaymentRepository paymentRepository;
+
     private LoanService loanService;
 
     @BeforeEach
     void setUp() {
-        loanService = new LoanService(loanRepository, new LoanMath());
+        loanService = new LoanService(loanRepository, new LoanMath(),
+                new RepaymentDiscountOffers(offerRepository, loanRepository, paymentRepository));
+    }
+
+    @Test
+    void disbursePinnedDiscountLowersFeeAndGstAndClaimsTheOfferOnce() {
+        LoanApplication app = new LoanApplication();
+        app.setId(55L);
+        app.setCustomerId(7L);
+        app.setAmountRequested(1_000_000L);
+        app.setSalaryCreditDay(30);
+        app.setFeeDiscountPercent((short) 5);
+        app.setFeeDiscountOfferId(9L);
+        when(loanRepository.save(any())).thenAnswer(i -> {
+            Loan l = i.getArgument(0);
+            l.setId(77L);
+            return l;
+        });
+        when(offerRepository.claim(eq(9L), eq(55L), eq(77L), any())).thenReturn(1);
+
+        Loan loan = loanService.disburse(app, LocalDate.of(2026, 6, 3), "UTR1");
+
+        assertThat(loan.getProcessingFee()).isEqualTo(50_000L);
+        assertThat(loan.getGst()).isEqualTo(9_000L);
+        assertThat(loan.getNetDisbursed()).isEqualTo(941_000L);
+        assertThat(loan.getFeeDiscountPaise()).isEqualTo(50_000L);
+        // interest and total repayable are untouched by the discount
+        assertThat(loan.getTotalRepayable()).isEqualTo(1_270_000L);
+        verify(offerRepository).claim(eq(9L), eq(55L), eq(77L), any());
+    }
+
+    @Test
+    void disburseRefusesWhenThePinnedOfferWasAlreadyConsumed() {
+        LoanApplication app = new LoanApplication();
+        app.setId(56L);
+        app.setCustomerId(7L);
+        app.setAmountRequested(1_000_000L);
+        app.setSalaryCreditDay(30);
+        app.setFeeDiscountPercent((short) 5);
+        app.setFeeDiscountOfferId(9L);
+        when(loanRepository.save(any())).thenAnswer(i -> {
+            Loan l = i.getArgument(0);
+            l.setId(78L);
+            return l;
+        });
+        when(offerRepository.claim(eq(9L), eq(56L), eq(78L), any())).thenReturn(0);
+
+        assertThatThrownBy(() -> loanService.disburse(app, LocalDate.of(2026, 6, 3), "UTR2"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("already used");
     }
 
     @Test
