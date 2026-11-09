@@ -13,6 +13,7 @@ import { can, STAFF_ROLE_LABELS, type StaffRole } from "@/lib/auth/rbac";
 import { collectionsApi, featureFlagsApi, type FeatureFlags } from "@/lib/api/applications";
 import { useStaffSession, signOutStaff } from "@/lib/auth/staff-session";
 import { RoleSwitcher } from "@/components/staff/role-switcher";
+import { SimulationBanner } from "@/components/staff/simulation-banner";
 import { clearWorkingRole } from "@/lib/auth/working-role";
 import { clearRecent } from "@/lib/staff/search-recents";
 import { clearAllRegisterViews } from "@/lib/staff/register-view-store";
@@ -402,6 +403,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
       {/* The one mount point for `toast.*` across the console. Without it every toast call is a
           silent no-op — the store queues the message and nothing renders it. It portals to
           document.body itself, so its position in this tree does not matter. */}
+      {session.sim && <SimulationBanner />}
       <Toaster />
     </div>
   );

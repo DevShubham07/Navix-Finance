@@ -21,6 +21,8 @@ export interface StaffSession {
   role: StaffRole;
   /** The role on the session cookie. */
   realRole: StaffRole;
+  /** True only for the designated simulation account. */
+  sim?: boolean;
 }
 
 const STAFF_SESSION_EVENT = "navix-staff-session";
