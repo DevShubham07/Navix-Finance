@@ -28,6 +28,8 @@ import com.navix.loan.dto.CustomerDtos.RequestMobileChangeRequest;
 import com.navix.loan.dto.CustomerDtos.SalaryDayRequest;
 import com.navix.loan.dto.CustomerDtos.UpdateCustomerRequest;
 import com.navix.loan.dto.ReviewDtos.ProfileView;
+import com.navix.loan.dto.AnalyzerDtos.AnalyzerView;
+import com.navix.loan.service.BorrowerAnalyzerService;
 import com.navix.loan.service.CustomerService;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -54,6 +56,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class CustomerController {
 
     private final CustomerService customerService;
+    private final BorrowerAnalyzerService analyzerService;
 
     /**
      * One page of the customer book — a search {@code q} (name / PAN / mobile / customer id) and an
@@ -241,6 +244,13 @@ public class CustomerController {
             @PathVariable Long customerId, @Valid @RequestBody LimitOverrideRequest req) {
         requireStaff();
         return ApiResponse.ok(customerService.setLimitOverride(customerId, req.limitPaise(), req.note()));
+    }
+
+    /** Staff-only AI Analyzer: a rule-based, advisory summary of comparable past loans. Never blocks a loan. */
+    @GetMapping("/{customerId}/analyzer")
+    public ApiResponse<AnalyzerView> analyzer(@PathVariable Long customerId) {
+        requireStaff();
+        return ApiResponse.ok(analyzerService.analyze(customerId));
     }
 
     /** Every document across ALL of this customer's applications, grouped by application (newest

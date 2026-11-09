@@ -2542,6 +2542,80 @@ function customerQuery(
   return s ? `?${s}` : "";
 }
 
+/** Staff-only AI Analyzer (GET /api/customers/{id}/analyzer): rule-based, advisory, never blocks a loan. */
+export interface AnalyzerPointer {
+  key: string;
+  /** CONCERN / OK / UNKNOWN for first-loan pointers; YES / NO / UNKNOWN for informational; null in benchmarks. */
+  state: string | null;
+  value: number | null;
+  withLoans: number;
+  withBad: number;
+  withoutLoans: number;
+  withoutBad: number;
+}
+export interface AnalyzerFacts {
+  salaryPaise: number | null;
+  totalAccounts: number | null;
+  employedAtDeclared: boolean | null;
+  score: number | null;
+  stars: number | null;
+  recommendation: string | null;
+  riskCategory: string | null;
+}
+export interface AnalyzerOwnRecord {
+  loansTaken: number;
+  resolved: number;
+  good: number;
+  bad: number;
+  onTime: number;
+  late1to5: number;
+  openLoans: number;
+  maxOpenDpd: number | null;
+  zeroPaidBad: number;
+  lastClosedDaysEarly: number | null;
+  totalPrincipalPaise: number;
+  totalCollectedPaise: number;
+}
+export interface AnalyzerGroup {
+  key: string;
+  loans: number;
+  customers: number;
+  bad: number;
+  principalPaise: number;
+  badPrincipalPaise: number;
+  paidOutPaise: number;
+  collectedPaise: number;
+  zeroPaidBad: number;
+}
+export interface AnalyzerBenchmarks {
+  recentStart: string;
+  all: AnalyzerGroup;
+  earlyFirst: AnalyzerGroup;
+  recentFirst: AnalyzerGroup;
+  repeat: AnalyzerGroup;
+  breakEvenBps: number | null;
+  patterns: { pattern: string; customers: number }[];
+  concerns: AnalyzerPointer[];
+  informational: AnalyzerPointer[];
+  pointTable: { points: number; loans: number; bad: number; zeroPaid: number }[];
+  bands: { band: string; loans: number; bad: number }[];
+  incomeUncorroborated: { loans: number; bad: number; zeroPaid: number };
+  repeatEarlyPayer: { earlyLoans: number; earlyBad: number; otherLoans: number; otherBad: number };
+}
+export interface AnalyzerView {
+  asOf: string;
+  mode: "OWN_RECORD" | "FIRST_LOAN" | "NO_DATA";
+  band: "LOWER" | "WATCH" | "HIGH" | null;
+  concernCount: number;
+  unknownCount: number;
+  pointers: AnalyzerPointer[];
+  informational: AnalyzerPointer[];
+  facts: AnalyzerFacts;
+  ownRecord: AnalyzerOwnRecord | null;
+  incomeUncorroborated: boolean;
+  benchmarks: AnalyzerBenchmarks;
+}
+
 export const customersApi = {
   /**
    * Full rows for exactly these customers, in the order asked for. Scoped server-side, capped at
@@ -2651,6 +2725,10 @@ export const customersApi = {
    *  it — behind the Customers page's Failure column. Staff-wide, not ADMIN-only. */
   caseFailure: (customerId: number) =>
     bff<CaseFailureDetail>(`${CUSTOMERS_BASE}/${customerId}/failure`, "GET"),
+
+  /** Staff-only AI Analyzer: rule-based summary of comparable past loans. Advisory; never blocks a loan. */
+  analyzer: (customerId: number) =>
+    bff<AnalyzerView>(`${CUSTOMERS_BASE}/${customerId}/analyzer`, "GET"),
 
   /**
    * Chase ONE borrower whose credit report is sitting behind an unanswered bureau security

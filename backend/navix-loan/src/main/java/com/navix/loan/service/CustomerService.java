@@ -311,7 +311,7 @@ public class CustomerService {
     }
 
     /** Throws 404 (never 403 — that would confirm the customer exists) when out of the caller's scope. */
-    private void requireVisible(Long customerId) {
+    void requireVisible(Long customerId) {
         CustomerScope scope = scope();
         if (scope != null && !scope.permits(customerId) && !onTelecallerQueue(customerId)) {
             throw new ResourceNotFoundException("Customer", String.valueOf(customerId));
