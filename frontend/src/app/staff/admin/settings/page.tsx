@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage, useStaffMe, useCan, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { PaymentSettingsForm } from "@/components/staff/payment-settings-form";
 import { adminApi } from "@/lib/api/applications";
+import { intakeSwitchApi } from "@/lib/api/intake-switch";
 import { formatDateTime } from "@/lib/utils";
 
 /** Admin · Settings — the onboarding switch and the company payment block. ADMIN only. */
@@ -25,6 +26,17 @@ export default function AdminSettingsPage() {
       qc.setQueryData(["onboarding-status"], s);
       void qc.invalidateQueries({ queryKey: ["feature-flags"] });
       toast.success(s.paused ? "New-customer onboarding paused" : "New-customer onboarding resumed");
+    },
+  });
+
+  const intake = useQuery({ queryKey: ["intake-switch"], queryFn: intakeSwitchApi.status });
+  const [confirmClose, setConfirmClose] = React.useState(false);
+  const setClosed = useMutation({
+    mutationFn: (closed: boolean) => intakeSwitchApi.setClosed(closed),
+    onSuccess: (s) => {
+      setConfirmClose(false);
+      qc.setQueryData(["intake-switch"], s);
+      toast.success(s.closed ? "New applications and reloans closed" : "Applications reopened");
     },
   });
 
@@ -75,6 +87,56 @@ export default function AdminSettingsPage() {
             {s.updatedBy && s.updatedAt && (
               <p className="mt-3 text-xs text-muted">
                 Last changed by {s.updatedBy} · {formatDateTime(s.updatedAt)}
+              </p>
+            )}
+          </>
+        ) : null}
+      </section>
+
+      <section className="mb-8 max-w-2xl rounded border border-line bg-white p-5 shadow-sm">
+        <div className="mb-1 text-sm font-semibold text-navy">Applications</div>
+        <p className="mb-3 text-xs text-muted">
+          Closing stops every new application and reloan. Applications already in progress and active loans carry on.
+        </p>
+        {intake.isLoading ? (
+          <Skeleton variant="line" rows={2} />
+        ) : intake.error ? (
+          <ErrorState error={intake.error} onRetry={() => void intake.refetch()} />
+        ) : intake.data ? (
+          <>
+            <ToggleRow
+              label="Accept applications, including reloans"
+              description={
+                intake.data.closed
+                  ? "Closed. No new applications or reloans are being accepted."
+                  : "On. Anyone eligible can start an application or a reloan."
+              }
+              on={!intake.data.closed}
+              disabled={setClosed.isPending}
+              onChange={(accept) => (accept ? setClosed.mutate(false) : setConfirmClose(true))}
+            />
+            {confirmClose && (
+              <div role="alertdialog" aria-label="Close all applications" className="mt-3 rounded border border-warning-500 bg-warning-50 p-3 text-sm">
+                <p className="font-semibold text-ink">Close all new applications and reloans?</p>
+                <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-muted">
+                  <li>Nobody can start a new application or a reloan until you turn this back on.</li>
+                  <li>Applications already in progress and active loans carry on as normal.</li>
+                  <li>Nothing is cancelled and no messages are sent.</li>
+                </ul>
+                <div className="mt-3 flex gap-2">
+                  <button className="btn btn-navy" disabled={setClosed.isPending} onClick={() => setClosed.mutate(true)}>
+                    Yes, close applications
+                  </button>
+                  <button className="btn" disabled={setClosed.isPending} onClick={() => setConfirmClose(false)}>
+                    Keep open
+                  </button>
+                </div>
+              </div>
+            )}
+            {setClosed.error && <p className="mt-2 text-sm text-error-700">{errMessage(setClosed.error)}</p>}
+            {intake.data.updatedBy && intake.data.updatedAt && (
+              <p className="mt-3 text-xs text-muted">
+                Last changed by {intake.data.updatedBy} · {formatDateTime(intake.data.updatedAt)}
               </p>
             )}
           </>

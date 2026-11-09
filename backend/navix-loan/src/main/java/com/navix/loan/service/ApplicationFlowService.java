@@ -1417,6 +1417,10 @@ public class ApplicationFlowService {
         if (apps.stream().anyMatch(a -> !a.getStatus().isTerminal() && !LIVE_LOAN_STATUSES.contains(a.getStatus()))) {
             throw new BusinessException("ACTIVE_APPLICATION", "Finish your in-progress application before starting a new one");
         }
+        // Last on purpose: a borrower with a file in flight still gets ACTIVE_APPLICATION above and carries on.
+        if (featureFlags.isEnabled(IntakeSwitchService.FLAG, false)) {
+            throw new BusinessException("APPLICATIONS_CLOSED", "We are not accepting new applications right now");
+        }
     }
 
     /**

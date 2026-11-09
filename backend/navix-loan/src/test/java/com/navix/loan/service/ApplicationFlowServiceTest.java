@@ -97,6 +97,8 @@ class ApplicationFlowServiceTest {
                 loanRepository, paymentRepository, profileRepository, rejectionRepository,
                 documentRepository, verificationRepository, referenceRepository, new LoanMath(),
                 event -> {}, referralService, dsaCommissionService, featureFlags, mandateService);
+        // Applications are open unless a test closes them (strict stubs reject a bare other-flag stub).
+        lenient().when(featureFlags.isEnabled(IntakeSwitchService.FLAG, false)).thenReturn(false);
         // Default: assignee passes activation gating; negative case overrides below.
         lenient().when(staffDirectory.isActiveWithRole(any(), any())).thenReturn(true);
         lenient().when(applicationRepository.save(any())).thenAnswer(i -> i.getArgument(0));
@@ -755,6 +757,40 @@ class ApplicationFlowServiceTest {
                 .thenReturn(List.of(loanAt(50L, LoanStatus.CLOSED, LocalDate.now().minusDays(5))));
         when(paymentRepository.findByLoanId(50L)).thenReturn(List.of());
         assertThat(flow.reborrow().getStatus()).isEqualTo(ApplicationStatus.PRE_APPROVED);
+    }
+
+    /** Close switch: no new DRAFT and no reborrow while applications are closed. */
+    @Test
+    void createDraftAndReborrow_refuseWhileApplicationsAreClosed() {
+        when(featureFlags.isEnabled(IntakeSwitchService.FLAG, false)).thenReturn(true);
+        actor("7", "BORROWER");
+
+        assertThatThrownBy(() -> flow.createDraft(7L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "APPLICATIONS_CLOSED");
+        assertThatThrownBy(() -> flow.reborrow())
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "APPLICATIONS_CLOSED");
+        verify(applicationRepository, never()).save(any());
+    }
+
+    /** Close switch is the last check: a borrower with a file in flight is still routed to it. */
+    @Test
+    void closedSwitch_doesNotMaskActiveApplication() {
+        lenient().when(featureFlags.isEnabled(IntakeSwitchService.FLAG, false)).thenReturn(true);
+        actor("7", "BORROWER");
+        LoanApplication pending = new LoanApplication();
+        pending.setId(10L);
+        pending.setCustomerId(7L);
+        pending.setStatus(ApplicationStatus.KYC_PENDING);
+        when(applicationRepository.findByCustomerId(7L)).thenReturn(List.of(pending));
+
+        assertThatThrownBy(() -> flow.createDraft(7L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "ACTIVE_APPLICATION");
+        assertThatThrownBy(() -> flow.reborrow())
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "ACTIVE_APPLICATION");
     }
 
     @Test
