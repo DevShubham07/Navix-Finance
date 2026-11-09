@@ -79,11 +79,14 @@ secrets() {
 }
 
 images() {
-  # Docker's Windows credential store rejects ECR's long token, so log in through a throwaway config.
+  # Docker's Windows credential store rejects ECR's long token, so skip `docker login` and hand the
+  # token to a throwaway config that is removed on exit.
   DOCKER_CONFIG=$(cygpath -m "$(mktemp -d)"); export DOCKER_CONFIG
   trap 'rm -rf "$DOCKER_CONFIG"' EXIT
-  aws ecr get-login-password | docker login --username AWS --password-stdin "$ACCOUNT.dkr.ecr.$AWS_REGION.amazonaws.com"
-  (cd "$ROOT/backend" && ./mvnw -q -pl navix-app -am package -DskipTests)
+  printf '{"auths":{"%s":{"auth":"%s"}}}' "$ACCOUNT.dkr.ecr.$AWS_REGION.amazonaws.com" \
+    "$(printf 'AWS:%s' "$(aws ecr get-login-password)" | base64 -w0)" > "$DOCKER_CONFIG/config.json"
+  # mvnw builds its classpath with POSIX paths, which need Git Bash's translation.
+  (cd "$ROOT/backend" && unset MSYS_NO_PATHCONV && ./mvnw -q -pl navix-app -am package -DskipTests)
   local tag; tag=$(git -C "$ROOT" rev-parse --short HEAD)
   docker build -f "$ROOT/Dockerfile.backend.runtime" -t "$REPO:backend-$tag" -t "$REPO:backend" "$ROOT"
   docker build -t "$REPO:tools" "$ROOT/scripts/sim"
