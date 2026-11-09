@@ -21,4 +21,7 @@ public interface MailPort {
 
     /** Send caller-built HTML as-is (with {@code textBody} as the plain-text alternative). */
     boolean sendHtml(String to, String subject, String textBody, String html);
+
+    /** Whether this address bounced or complained and must not be mailed. */
+    boolean isSuppressed(String email);
 }

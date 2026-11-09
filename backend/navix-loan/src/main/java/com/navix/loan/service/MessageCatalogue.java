@@ -28,8 +28,8 @@ public final class MessageCatalogue {
     public static final String SERVICE = "SERVICE";
     public static final String MARKETING = "MARKETING";
 
-    /** Which loans a template makes sense for (every template also needs a live loan). */
-    public enum Rule { LIVE, OVERDUE, WINDOW_1_5 }
+    /** Which loans a template makes sense for (every template but {@code ANY} also needs a live loan). */
+    public enum Rule { LIVE, OVERDUE, WINDOW_1_5, ANY }
 
     public record Input(String name, String label, String type) {
     }

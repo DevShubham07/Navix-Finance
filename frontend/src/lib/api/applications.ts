@@ -4892,7 +4892,7 @@ export interface MandateDebitFilters {
 
 const MESSAGES_BASE = "/api/staff/customer-messages";
 
-export type MessageChannel = "SMS" | "WHATSAPP";
+export type MessageChannel = "SMS" | "WHATSAPP" | "EMAIL";
 export type MessageInputType = "TEXT" | "DATE" | "PERCENT";
 export interface MessageTemplate {
   key: string;
@@ -4910,7 +4910,14 @@ export interface MessagePreview {
   customerId: number;
   recipientName: string | null;
   maskedMobile: string | null;
-  channels: { channel: MessageChannel; providerTemplate: string; params: string[]; skipReason: string | null }[];
+  channels: {
+    channel: MessageChannel;
+    providerTemplate: string;
+    params: string[];
+    skipReason: string | null;
+    /** The rendered message, where the wording is held here; null for provider-held WhatsApp wording. */
+    text?: string | null;
+  }[];
 }
 export interface MessageSendResult {
   customerId: number;
@@ -4956,6 +4963,52 @@ export const customerMessagesApi = {
   send: (b: MessageSendRequest & { confirmed: boolean }) => bff<MessageSendResult>(`${MESSAGES_BASE}/send`, "POST", b),
   log: (f: MessageLogFilters) =>
     bff<{ rows: MessageLogRow[]; total: number; page: number; size: number }>(`${MESSAGES_BASE}/log${qs({ ...f })}`, "GET"),
+};
+
+/** One row of the Admin Templates library. `key` is what the send dialog and send API take. */
+export interface StoredTemplate {
+  id: number;
+  key: string;
+  channel: MessageChannel;
+  name: string;
+  subject: string | null;
+  body: string | null;
+  category: "SERVICE" | "MARKETING";
+  status: "DRAFT" | "SUBMITTED" | "ACTIVE" | "REJECTED";
+  /** SMS: DLT id. WhatsApp: the name SmartChat stored. */
+  providerId: string | null;
+  rejectionReason: string | null;
+  variables: string[];
+  rule: "ANY" | "LIVE" | "OVERDUE";
+  confirmText: string | null;
+  systemManaged: boolean;
+  /** Non-null: why it cannot be sent right now. */
+  unsendableReason: string | null;
+  createdByName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+/** `status`, `providerId` and `remarks` are honoured for SMS only. */
+export interface StoredTemplateInput {
+  channel: MessageChannel;
+  name: string;
+  subject: string | null;
+  body: string;
+  category: string;
+  rule: string;
+  variables: string[];
+  status?: string;
+  providerId?: string;
+  remarks?: string;
+}
+
+const STORED_TEMPLATES_BASE = `${MESSAGES_BASE}/admin-templates`;
+
+export const storedTemplatesApi = {
+  list: (channel: MessageChannel) => bff<StoredTemplate[]>(`${STORED_TEMPLATES_BASE}?channel=${channel}`, "GET"),
+  create: (b: StoredTemplateInput) => bff<StoredTemplate>(STORED_TEMPLATES_BASE, "POST", b),
+  update: (id: number, b: StoredTemplateInput) => bff<StoredTemplate>(`${STORED_TEMPLATES_BASE}/${id}`, "POST", b),
+  refreshWhatsApp: () => bff<{ updated: number; notFound: string[] }>(`${STORED_TEMPLATES_BASE}/whatsapp/refresh`, "POST"),
 };
 
 const MANDATES_BASE = "/api/staff/mandates";

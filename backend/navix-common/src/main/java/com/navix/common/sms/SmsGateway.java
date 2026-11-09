@@ -23,4 +23,12 @@ public interface SmsGateway {
      * mock mode the implementation short-circuits and returns a mock reference without hitting the gateway.
      */
     String send(String number, String text, String dltTemplateKey);
+
+    /**
+     * Send under exactly this DLT Template ID, with no lookup and no fallback: an admin-stored template
+     * must never go out under the login OTP's id. Refuses a blank id.
+     */
+    default String sendRegistered(String number, String text, String dltTemplateId) {
+        throw new UnsupportedOperationException("This SMS gateway cannot send by explicit DLT id");
+    }
 }

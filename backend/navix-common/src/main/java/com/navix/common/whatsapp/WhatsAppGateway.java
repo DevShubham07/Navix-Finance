@@ -15,4 +15,13 @@ public interface WhatsAppGateway {
 
     /** Send the login OTP through the AUTHENTICATION template. */
     String sendOtp(String number, String code);
+
+    /** A template as the provider stores it; {@code name} is the name a send must use. */
+    record TemplateInfo(String name, String status, String rejectedReason) {
+    }
+
+    /** Every template on the provider account. Read-only. */
+    default List<TemplateInfo> listTemplates() {
+        throw new UnsupportedOperationException("This WhatsApp gateway cannot list templates");
+    }
 }

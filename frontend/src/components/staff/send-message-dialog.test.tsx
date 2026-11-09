@@ -64,6 +64,18 @@ beforeEach(() => {
 });
 
 describe("<SendMessageDialog/>", () => {
+  it("opens with initialTemplateKey chosen and its channel ticked", async () => {
+    api.preview.mockResolvedValue(preview);
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <SendMessageDialog open onClose={() => {}} targets={T3} initialTemplateKey="no_response" />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect((screen.getByLabelText("Template") as HTMLSelectElement).value).toBe("no_response"));
+    expect((screen.getByRole("checkbox", { name: "WhatsApp" }) as HTMLInputElement).checked).toBe(true);
+  });
+
   it("hides singleOnly templates when more than one target, shows them for one", async () => {
     const { unmount } = renderDialog(T3);
     await screen.findByRole("option", { name: "No response" });

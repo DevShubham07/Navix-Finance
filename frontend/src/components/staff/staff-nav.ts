@@ -24,6 +24,7 @@ import {
   Repeat,
   FileBarChart,
   MessageSquare,
+  FileText,
 } from "lucide-react";
 import { can, type Permission, type StaffRole } from "@/lib/auth/rbac";
 import type { FeatureFlags } from "@/lib/api/applications";
@@ -147,6 +148,7 @@ export const NAV: NavGroup[] = [
       { label: "Onboarding waitlist", href: "/staff/admin/waitlist", Icon: Users, perm: "waitlist:view" },
       { label: "Blocklist", href: "/staff/admin/blocklist", Icon: Ban, perm: "staff:manage" },
       { label: "Customer messages", href: "/staff/admin/messages", Icon: MessageSquare, perm: "message:send" },
+      { label: "Templates", href: "/staff/admin/templates", Icon: FileText, perm: "message:send" },
     ],
   },
   {

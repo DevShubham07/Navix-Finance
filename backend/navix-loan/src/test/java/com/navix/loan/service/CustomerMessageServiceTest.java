@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 
 import com.navix.common.exception.BusinessException;
 import com.navix.common.featureflag.FeatureFlagService;
+import com.navix.common.notification.MailPort;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
 import com.navix.common.sms.SmsGateway;
@@ -26,6 +27,7 @@ import com.navix.loan.entity.CustomerMessage;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.Loan;
 import com.navix.loan.entity.LoanApplication;
+import com.navix.loan.entity.MessageTemplate;
 import com.navix.loan.entity.RepaymentDiscountOffer;
 import com.navix.loan.repository.BorrowerPreferencesRepository;
 import com.navix.loan.repository.CustomerMessageRepository;
@@ -67,15 +69,18 @@ class CustomerMessageServiceTest {
     @Mock private CustomerMessageRepository messages;
     @Mock private RepaymentDiscountOfferRepository offers;
     @Mock private RepaymentService repayments;
+    @Mock private MessageTemplateService storedTemplates;
+    @Mock private MailPort mail;
 
     private final org.springframework.mock.env.MockEnvironment environment = new org.springframework.mock.env.MockEnvironment();
     private CustomerMessageService service;
     private Loan loan;
+    private CustomerProfile profile;
 
     @BeforeEach
     void setUp() {
         service = new CustomerMessageService(flags, whatsApp, sms, applications, profiles, loans, prefs,
-                messages, offers, repayments, new LoanMath(), environment);
+                messages, offers, repayments, new LoanMath(), environment, storedTemplates, mail);
         service.setClock(clockAt(10, 0));
         ActorContext.set(new CurrentActor("1", "Admin A", "ADMIN"));
         when(flags.isEnabled(CustomerMessageService.FLAG, false)).thenReturn(true);
@@ -91,6 +96,8 @@ class CustomerMessageServiceTest {
         p.setApplicationId(100L);
         p.setFullName("Asha Rao");
         p.setMobile("9876543210");
+        p.setEmail("asha@example.com");
+        profile = p;
         when(profiles.findByApplicationId(100L)).thenReturn(Optional.of(p));
         loan = new Loan();
         loan.setId(50L);
@@ -142,6 +149,134 @@ class CustomerMessageServiceTest {
     private SendRequest discount(String percent) {
         return send("repay_discount", List.of("WHATSAPP"),
                 Map.of("percent", percent, "repayBy", TODAY.plusDays(5).toString()), false);
+    }
+
+    private MessageTemplate stored(String channel, String provider, String body, String variables, String rule) {
+        MessageTemplate t = new MessageTemplate();
+        t.setId(11L);
+        t.setChannel(channel);
+        t.setName("stored");
+        t.setCategory("SERVICE");
+        t.setStatus("ACTIVE");
+        t.setProviderId(provider);
+        t.setBody(body);
+        t.setVariables(variables);
+        t.setRule(rule);
+        when(storedTemplates.requireSendable("tpl:11")).thenReturn(t);
+        return t;
+    }
+
+    private static final String DLT_ID = "1777179420408031626";
+
+    @Test
+    void storedSmsGoesOutUnderItsOwnDltIdWithTheExactRegisteredText() {
+        stored("SMS", DLT_ID, "Dear {#var#}, payment of {#var#} on loan {#var#} is pending. - DhanBoost",
+                "[\"name\",\"amount\",\"loanId\"]", "OVERDUE");
+        when(sms.sendRegistered(anyString(), anyString(), anyString())).thenReturn("job-1");
+
+        SendResult result = service.send(send("tpl:11", List.of("SMS"), Map.of(), false));
+
+        assertThat(result.results().get(0).status()).isEqualTo("SENT");
+        verify(sms).sendRegistered("919876543210",
+                "Dear Asha Rao, payment of Rs. 12,700 on loan 50 is pending. - DhanBoost", DLT_ID);
+        verify(sms, never()).send(anyString(), anyString(), any());
+        ArgumentCaptor<CustomerMessage> row = ArgumentCaptor.forClass(CustomerMessage.class);
+        verify(messages).save(row.capture());
+        assertThat(row.getValue().getTemplateKey()).isEqualTo("tpl:11");
+        assertThat(row.getValue().getProviderTemplate()).isEqualTo(DLT_ID);
+    }
+
+    @Test
+    void storedSmsValueTooLongForDltIsSkippedNotSent() {
+        profile.setFullName("Venkata Subrahmanya Lakshmi Narasimha Rao");
+        stored("SMS", DLT_ID, "Dear {#var#}. - DhanBoost", "[\"name\"]", "ANY");
+
+        SendResult result = service.send(send("tpl:11", List.of("SMS"), Map.of(), false));
+
+        assertThat(result.results().get(0).status()).isEqualTo("SKIPPED");
+        assertThat(result.results().get(0).reason()).contains("30 characters");
+        verify(sms, never()).sendRegistered(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void aStoredTemplateThatCannotBeSentIsRefusedBeforeAnyProviderCall() {
+        when(storedTemplates.requireSendable("tpl:11"))
+                .thenThrow(new BusinessException("TEMPLATE_NOT_SENDABLE", "Only an Active template can be sent."));
+        assertThatThrownBy(() -> service.send(send("tpl:11", List.of("SMS"), Map.of(), false)))
+                .isInstanceOf(BusinessException.class).hasMessageContaining("Active");
+        verify(sms, never()).sendRegistered(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void storedTemplatesKeepTheConfirmationAndSendHourGuards() {
+        MessageTemplate t = stored("SMS", DLT_ID, "Reported. - DhanBoost", "[]", "OVERDUE");
+        t.setConfirmText("MLB confirmed.");
+        assertThatThrownBy(() -> service.send(send("tpl:11", List.of("SMS"), Map.of(), false)))
+                .isInstanceOf(BusinessException.class).hasMessageContaining("confirmation");
+
+        service.setClock(clockAt(20, 0));
+        assertThatThrownBy(() -> service.send(send("tpl:11", List.of("SMS"), Map.of(), true)))
+                .isInstanceOf(BusinessException.class).hasMessageContaining("08:00");
+        verify(sms, never()).sendRegistered(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void storedEmailRendersSubjectAndBodyAndRecordsTheAddress() {
+        MessageTemplate t = stored("EMAIL", null, "Hello {{1}}, thanks.", "[\"name\"]", "ANY");
+        t.setSubject("For {{1}}");
+        when(mail.send(anyString(), anyString(), anyString())).thenReturn(true);
+
+        SendResult result = service.send(send("tpl:11", List.of("EMAIL"), Map.of(), false));
+
+        assertThat(result.results().get(0).status()).isEqualTo("SENT");
+        verify(mail).send("asha@example.com", "For Asha Rao", "Hello Asha Rao, thanks.");
+        ArgumentCaptor<CustomerMessage> row = ArgumentCaptor.forClass(CustomerMessage.class);
+        verify(messages).save(row.capture());
+        assertThat(row.getValue().getEmail()).isEqualTo("asha@example.com");
+        assertThat(row.getValue().getMobile()).isNull();
+    }
+
+    @Test
+    void emailHonoursItsOwnOptOutAndTheSuppressionList() {
+        MessageTemplate t = stored("EMAIL", null, "Hello {{1}}, thanks.", "[\"name\"]", "ANY");
+        t.setSubject("Hi");
+        BorrowerPreferences off = new BorrowerPreferences();
+        off.setEmailOptIn(false);
+        when(prefs.findByCustomerId(7L)).thenReturn(Optional.of(off));
+        assertThat(service.send(send("tpl:11", List.of("EMAIL"), Map.of(), false)).results().get(0).reason())
+                .isEqualTo("OPTED_OUT");
+
+        when(prefs.findByCustomerId(7L)).thenReturn(Optional.empty());
+        when(mail.isSuppressed("asha@example.com")).thenReturn(true);
+        assertThat(service.send(send("tpl:11", List.of("EMAIL"), Map.of(), false)).results().get(0).reason())
+                .isEqualTo("SUPPRESSED");
+        verify(mail, never()).send(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void aRefusedEmailIsRecordedAsFailed() {
+        MessageTemplate t = stored("EMAIL", null, "Hello {{1}}, thanks.", "[\"name\"]", "ANY");
+        t.setSubject("Hi");
+        when(mail.send(anyString(), anyString(), anyString())).thenReturn(false);
+        assertThat(service.send(send("tpl:11", List.of("EMAIL"), Map.of(), false)).results().get(0).status())
+                .isEqualTo("FAILED");
+    }
+
+    @Test
+    void aTemplateForAnyCustomerNeedsNoLiveLoan() {
+        loan.setStatus(LoanStatus.CLOSED);
+        MessageTemplate t = stored("EMAIL", null, "Hello {{1}}, thanks.", "[\"name\"]", "ANY");
+        t.setSubject("Hi");
+        when(mail.send(anyString(), anyString(), anyString())).thenReturn(true);
+        assertThat(service.send(send("tpl:11", List.of("EMAIL"), Map.of(), false)).results().get(0).status())
+                .isEqualTo("SENT");
+    }
+
+    @Test
+    void storedWhatsAppSendsUnderTheNameSmartChatStored() {
+        stored("WHATSAPP", "db_offer_164", "Dear {{1}}, thanks.", "[\"name\"]", "ANY");
+        service.send(send("tpl:11", List.of("WHATSAPP"), Map.of(), false));
+        verify(whatsApp).sendTemplate("919876543210", "db_offer_164", List.of("Asha Rao"));
     }
 
     @Test

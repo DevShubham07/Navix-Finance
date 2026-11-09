@@ -50,6 +50,10 @@ public class CustomerMessage {
     @Column(name = "mobile", length = 20)
     private String mobile;
 
+    /** The address, on an email row. */
+    @Column(name = "email", length = 255)
+    private String email;
+
     /** JSON array of the ordered parameter values (text). */
     @Column(name = "params", columnDefinition = "text")
     private String params;

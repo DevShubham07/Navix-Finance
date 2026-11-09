@@ -81,7 +81,9 @@ public class SecurityConfig {
                             "/api/collections", "/api/collections/**",
                             "/api/dashboard", "/api/dashboard/**",
                             // The Mandates & debits console; the service narrows it to COLLECTION_HEAD/ADMIN.
-                            "/api/mandates", "/api/mandates/**").hasRole("STAFF")
+                            "/api/mandates", "/api/mandates/**",
+                            // Admin messaging and templates; the services narrow it to a real ADMIN.
+                            "/api/customer-messages", "/api/customer-messages/**").hasRole("STAFF")
                     .anyRequest().authenticated())
             .exceptionHandling(ex -> ex.authenticationEntryPoint(
                     new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))

@@ -33,7 +33,7 @@ export interface MessageTargetItem {
 
 /** The discount percent the backend accepts. */
 export const PERCENT_OPTIONS = [1, 2, 3, 4, 5, 6, 7] as const;
-const CHANNEL_LABEL: Record<MessageChannel, string> = { SMS: "SMS", WHATSAPP: "WhatsApp" };
+const CHANNEL_LABEL: Record<MessageChannel, string> = { SMS: "SMS", WHATSAPP: "WhatsApp", EMAIL: "Email" };
 
 function toTarget(t: MessageTargetItem): MessageTarget {
   return t.applicationId != null ? { applicationId: t.applicationId } : { customerId: t.customerId as number };
@@ -54,10 +54,13 @@ export function SendMessageDialog({
   open,
   onClose,
   targets,
+  initialTemplateKey,
 }: {
   open: boolean;
   onClose: () => void;
   targets: MessageTargetItem[];
+  /** Opens with this template already chosen (the Templates page's Send). */
+  initialTemplateKey?: string;
 }) {
   const multi = targets.length > 1;
   const tq = useQuery({
@@ -91,6 +94,14 @@ export function SendMessageDialog({
     setError(null);
     setRows(null);
   }, [open]);
+
+  React.useEffect(() => {
+    const t = open && initialTemplateKey ? templates.find((x) => x.key === initialTemplateKey) : undefined;
+    if (t) {
+      setKey(t.key);
+      setChannels([...t.channels]);
+    }
+  }, [open, initialTemplateKey, templates]);
 
   const tpl: MessageTemplate | undefined = templates.find((t) => t.key === key);
 
@@ -295,6 +306,7 @@ function PreviewBox({ preview }: { preview: MessagePreview }) {
             ) : (
               <span className="text-muted"> — {c.params.join(" · ")}</span>
             )}
+            {c.text && !c.skipReason && <span className="mt-1 block whitespace-pre-wrap text-ink">{c.text}</span>}
           </li>
         ))}
       </ul>

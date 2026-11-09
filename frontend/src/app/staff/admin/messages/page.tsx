@@ -13,6 +13,7 @@ import { customerMessagesApi, type MessageLogFilters, type MessageLogRow } from 
 import { formatDate, formatDateTime } from "@/lib/utils";
 
 const CHUNK = 100;
+const CHANNEL_LABEL: Record<MessageLogRow["channel"], string> = { SMS: "SMS", WHATSAPP: "WhatsApp", EMAIL: "Email" };
 
 const EXPORT_COLUMNS: ExportColumn<MessageLogRow>[] = [
   { header: "Customer ID", value: (r) => r.customerId },
@@ -25,7 +26,7 @@ const EXPORT_COLUMNS: ExportColumn<MessageLogRow>[] = [
   { header: "Reason", value: (r) => r.reason ?? "" },
   { header: "Sent by", value: (r) => r.sentByName ?? "" },
   { header: "Time", value: (r) => r.createdAt },
-  { header: "Mobile (last 4)", value: (r) => r.mobile ?? "" },
+  { header: "Mobile or email (masked)", value: (r) => r.mobile ?? "" },
 ];
 
 const TONE: Record<MessageLogRow["status"], string> = {
@@ -93,7 +94,7 @@ function MessageLog() {
 
   return (
     <div>
-      <PageHeader title="Customer messages" subtitle="Every SMS and WhatsApp message sent from the console, with the result. Admin only.">
+      <PageHeader title="Customer messages" subtitle="Every SMS, WhatsApp and email sent from the console, with the result. Admin only.">
         <ExportMenu
           title="Customer messages"
           fileBase="dhanboost-customer-messages"
@@ -129,6 +130,7 @@ function MessageLog() {
             { value: "", label: "All channels" },
             { value: "SMS", label: "SMS" },
             { value: "WHATSAPP", label: "WhatsApp" },
+            { value: "EMAIL", label: "Email" },
           ]}
         />
         <Select
@@ -182,7 +184,7 @@ function MessageLog() {
                   <th scope="col">Reason</th>
                   <th scope="col">Sent by</th>
                   <th scope="col">Time</th>
-                  <th scope="col">Mobile</th>
+                  <th scope="col">Sent to</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line align-top">
@@ -193,7 +195,7 @@ function MessageLog() {
                       <span className="block text-xs text-muted">#{r.customerId}</span>
                     </td>
                     <td className="whitespace-nowrap">{labelFor(r.templateKey)}</td>
-                    <td className="whitespace-nowrap">{r.channel === "SMS" ? "SMS" : "WhatsApp"}</td>
+                    <td className="whitespace-nowrap">{CHANNEL_LABEL[r.channel]}</td>
                     <td className="whitespace-nowrap">{r.discountPercent != null ? `${r.discountPercent}%` : "—"}</td>
                     <td className="whitespace-nowrap">{r.repayBy ? formatDate(r.repayBy) : "—"}</td>
                     <td className={`whitespace-nowrap font-semibold ${TONE[r.status]}`}>{r.status.toLowerCase()}</td>

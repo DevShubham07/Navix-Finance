@@ -29,7 +29,9 @@ public final class MessagingDtos {
                                  @NotNull List<String> channels, Map<String, String> inputs) {
     }
 
-    public record ChannelPreview(String channel, String providerTemplate, List<String> params, String skipReason) {
+    /** {@code text} is the rendered message where we hold the wording (stored templates and SMS), else null. */
+    public record ChannelPreview(String channel, String providerTemplate, List<String> params, String skipReason,
+                                 String text) {
     }
 
     public record PreviewView(Long customerId, String recipientName, String maskedMobile,
@@ -55,6 +57,25 @@ public final class MessagingDtos {
     }
 
     public record LogPage(List<LogRow> rows, int page, int size, long total) {
+    }
+
+    // ---- Templates library (V97) ----------------------------------------------------
+
+    /** {@code status}, {@code providerId} and {@code remarks} are honoured for SMS only. */
+    public record StoredTemplateRequest(@NotBlank String channel, @NotBlank String name, String subject, String body,
+                                        @NotBlank String category, String status, String providerId, String remarks,
+                                        List<String> variables, String rule) {
+    }
+
+    /** {@code unsendableReason} null means it can be sent now. */
+    public record StoredTemplateView(Long id, String key, String channel, String name, String subject, String body,
+                                     String category, String status, String providerId, String rejectionReason,
+                                     List<String> variables, String rule, String confirmText, boolean systemManaged,
+                                     String unsendableReason, String createdByName, Instant createdAt,
+                                     Instant updatedAt) {
+    }
+
+    public record WhatsAppRefreshResult(int updated, List<String> notFound) {
     }
 
     // ---- allow re-application ------------------------------------------------------

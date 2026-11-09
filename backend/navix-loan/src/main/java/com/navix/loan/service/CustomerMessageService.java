@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.exception.ResourceNotFoundException;
 import com.navix.common.featureflag.FeatureFlagService;
+import com.navix.common.notification.MailPort;
 import com.navix.common.security.ActorContext;
 import com.navix.common.sms.SmsGateway;
 import com.navix.common.util.Masking;
@@ -26,6 +27,7 @@ import com.navix.loan.entity.CustomerMessage;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.Loan;
 import com.navix.loan.entity.LoanApplication;
+import com.navix.loan.entity.MessageTemplate;
 import com.navix.loan.entity.RepaymentDiscountOffer;
 import com.navix.loan.repository.BorrowerPreferencesRepository;
 import com.navix.loan.repository.CustomerMessageRepository;
@@ -35,6 +37,7 @@ import com.navix.loan.repository.LoanRepository;
 import com.navix.loan.repository.RepaymentDiscountOfferRepository;
 import com.navix.loan.service.MessageCatalogue.Input;
 import com.navix.loan.service.MessageCatalogue.Template;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -104,6 +107,8 @@ public class CustomerMessageService {
     private final LoanMath loanMath;
     // Reads navix.sms.dlt-template-ids: an unmapped key silently falls back to the login OTP's DLT id.
     private final org.springframework.core.env.Environment environment;
+    private final MessageTemplateService storedTemplates;
+    private final MailPort mail;
 
     /** Overridable in tests so the 08:00 to 19:00 IST window can be exercised. */
     private Clock clock = Clock.system(IST);
@@ -116,7 +121,11 @@ public class CustomerMessageService {
 
     public List<TemplateView> templates() {
         requireAdmin();
-        return MessageCatalogue.ALL.stream()
+        List<Template> all = new ArrayList<>(MessageCatalogue.ALL);
+        if (featureFlags.isEnabled(FLAG, false)) {
+            all.addAll(storedTemplates.sendable());
+        }
+        return all.stream()
                 .map(t -> new TemplateView(t.key(), t.label(), t.category(), t.channels(),
                         t.inputs().stream().map(i -> new InputView(i.name(), i.label(), i.type())).toList(),
                         t.singleOnly(), t.confirmText()))
@@ -143,7 +152,8 @@ public class CustomerMessageService {
         List<LogRow> rows = result.getContent().stream().map(m -> new LogRow(
                 m.getId(), m.getCustomerId(), names.get(m.getApplicationId()), m.getApplicationId(),
                 m.getLoanId(), m.getTemplateKey(), m.getProviderTemplate(), m.getChannel(),
-                m.getMobile() == null ? null : Masking.maskPhone(m.getMobile()), paramsOf(m.getParams()),
+                m.getMobile() != null ? Masking.maskPhone(m.getMobile())
+                        : m.getEmail() != null ? Masking.maskEmail(m.getEmail()) : null, paramsOf(m.getParams()),
                 m.getStatus(), m.getReason(),
                 m.getDiscountPercent() == null ? null : m.getDiscountPercent().intValue(), m.getRepayBy(),
                 m.getSentByName(), m.getCreatedAt())).toList();
@@ -156,7 +166,8 @@ public class CustomerMessageService {
         Plan plan = plan(req.target(), req.templateKey(), req.channels(), req.inputs());
         return new PreviewView(plan.ctx.customerId, plan.ctx.profile == null ? null : plan.ctx.profile.getFullName(),
                 plan.ctx.mobile() == null ? null : Masking.maskPhone(plan.ctx.mobile()),
-                plan.channels.stream().map(c -> new ChannelPreview(c.channel, c.provider, c.params, c.skipReason))
+                plan.channels.stream().map(c -> new ChannelPreview(c.channel, c.provider, c.params, c.skipReason,
+                                c.subject == null ? c.smsText : c.subject + "\n\n" + c.smsText))
                         .toList());
     }
 
@@ -179,9 +190,7 @@ public class CustomerMessageService {
                 row.setReason(c.skipReason);
             } else {
                 try {
-                    String ref = MessageCatalogue.SMS.equals(c.channel)
-                            ? sms.send("91" + plan.ctx.mobile(), c.smsText, c.dltKey)
-                            : whatsApp.sendTemplate("91" + plan.ctx.mobile(), c.provider, whatsAppParams(c.params));
+                    String ref = deliver(plan, c);
                     row.setStatus(CustomerMessage.SENT);
                     row.setProviderRef(truncate(ref, 200));
                 } catch (RuntimeException e) {
@@ -211,6 +220,23 @@ public class CustomerMessageService {
         return new SendResult(plan.ctx.customerId, results);
     }
 
+    /** Returns the provider reference (email has none). A stored SMS always carries its own DLT id. */
+    private String deliver(Plan plan, PlannedChannel c) {
+        if (MessageTemplateService.EMAIL.equals(c.channel)) {
+            if (!mail.send(plan.ctx.email(), c.subject, c.smsText)) {
+                throw new IllegalStateException("Email was not accepted (email switched off or provider refused)");
+            }
+            return null;
+        }
+        String number = "91" + plan.ctx.mobile();
+        if (!MessageCatalogue.SMS.equals(c.channel)) {
+            return whatsApp.sendTemplate(number, c.provider, whatsAppParams(c.params));
+        }
+        return plan.stored != null
+                ? sms.sendRegistered(number, c.smsText, c.provider)
+                : sms.send(number, c.smsText, c.dltKey);
+    }
+
     /** The offer exists only because a message went out; if it cannot be saved, say so loudly. */
     private void recordOffer(Plan plan, Long messageId) {
         try {
@@ -238,6 +264,11 @@ public class CustomerMessageService {
             throw new BusinessException("FEATURE_DISABLED", "Customer messaging is switched off");
         }
         Template template = MessageCatalogue.find(templateKey);
+        MessageTemplate stored = null;
+        if (template == null && MessageTemplateService.isStoredKey(templateKey)) {
+            stored = storedTemplates.requireSendable(templateKey);
+            template = MessageTemplateService.adapt(stored);
+        }
         if (template == null) {
             throw new BusinessException("INVALID_TEMPLATE", "Unknown message template");
         }
@@ -274,7 +305,13 @@ public class CustomerMessageService {
                     params.add(value(name, template, ctx, channel, in, daysOverdue, percent, repayBy, today));
                 }
                 pc.params = params;
-                if (MessageCatalogue.SMS.equals(channel) && template.discount()) {
+                if (stored != null) {
+                    if (MessageCatalogue.SMS.equals(channel)) {
+                        checkDltValues(params);
+                    }
+                    pc.smsText = MessageTemplateService.render(stored.getBody(), params);
+                    pc.subject = MessageTemplateService.render(stored.getSubject(), params);
+                } else if (MessageCatalogue.SMS.equals(channel) && template.discount()) {
                     boolean review = daysOverdue > ApplicationFlowService.LATE_REPAYMENT_TOLERANCE_DAYS;
                     Map<String, String> byName = MessageCatalogue.byName(template, params);
                     pc.dltKey = MessageCatalogue.discountSmsKey(percent, review);
@@ -296,16 +333,21 @@ public class CustomerMessageService {
             }
             pc.skipReason = skipFor(template, ctx, prefs, channel);
         }
-        return new Plan(template, ctx, planned, percent, repayBy);
+        return new Plan(template, ctx, planned, percent, repayBy, stored);
     }
 
     private String skipFor(Template template, Ctx ctx, BorrowerPreferences prefs, String channel) {
-        if (ctx.mobile() == null || ctx.mobile().isBlank()) {
-            return "NO_MOBILE";
+        boolean email = MessageTemplateService.EMAIL.equals(channel);
+        String address = email ? ctx.email() : ctx.mobile();
+        if (address == null || address.isBlank()) {
+            return email ? "NO_EMAIL" : "NO_MOBILE";
         }
         // smsOptIn=false covers SMS and WhatsApp, matching BorrowerPreferenceAdapter.
-        if (prefs != null && !prefs.isSmsOptIn()) {
+        if (prefs != null && !(email ? prefs.isEmailOptIn() : prefs.isSmsOptIn())) {
             return "OPTED_OUT";
+        }
+        if (email && mail.isSuppressed(address)) {
+            return "SUPPRESSED";
         }
         if (MessageCatalogue.MARKETING.equals(template.category()) && prefs != null && !prefs.isOffersOptIn()) {
             return "OFFERS_OPTED_OUT";
@@ -318,7 +360,22 @@ public class CustomerMessageService {
         return null;
     }
 
+    /** A registered {@code {#var#}} takes up to 30 characters, and anything non-ASCII breaks the DLT match. */
+    private static void checkDltValues(List<String> values) {
+        for (String v : values) {
+            if (v.length() > 30) {
+                throw new NotApplicable("a value is longer than the 30 characters DLT allows");
+            }
+            if (!StandardCharsets.US_ASCII.newEncoder().canEncode(v)) {
+                throw new NotApplicable("a value has characters SMS cannot carry");
+            }
+        }
+    }
+
     private static void checkApplicable(Template template, Ctx ctx, int daysOverdue) {
+        if (template.rule() == MessageCatalogue.Rule.ANY) {
+            return;
+        }
         if (ctx.loan == null) {
             throw new NotApplicable("customer has no live loan");
         }
@@ -491,7 +548,11 @@ public class CustomerMessageService {
         row.setTemplateKey(plan.template.key());
         row.setProviderTemplate(c.provider);
         row.setChannel(c.channel);
-        row.setMobile(plan.ctx.mobile());
+        if (MessageTemplateService.EMAIL.equals(c.channel)) {
+            row.setEmail(plan.ctx.email());
+        } else {
+            row.setMobile(plan.ctx.mobile());
+        }
         row.setParams(toJson(c.params));
         if (plan.template.discount()) {
             row.setDiscountPercent((short) plan.percent);
@@ -570,6 +631,10 @@ public class CustomerMessageService {
         String mobile() {
             return profile == null ? null : profile.getMobile();
         }
+
+        String email() {
+            return profile == null ? null : profile.getEmail();
+        }
     }
 
     private static final class PlannedChannel {
@@ -578,6 +643,7 @@ public class CustomerMessageService {
         List<String> params = List.of();
         String smsText;
         String dltKey;
+        String subject;
         String skipReason;
 
         PlannedChannel(String channel, String provider) {
@@ -586,6 +652,7 @@ public class CustomerMessageService {
         }
     }
 
-    private record Plan(Template template, Ctx ctx, List<PlannedChannel> channels, int percent, LocalDate repayBy) {
+    private record Plan(Template template, Ctx ctx, List<PlannedChannel> channels, int percent, LocalDate repayBy,
+                        MessageTemplate stored) {
     }
 }
