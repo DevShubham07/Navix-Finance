@@ -44,6 +44,7 @@ for s in CREDIT_EXEC_PENDING SANCTIONED DISBURSEMENT_PENDING; do
   [ "$(val "select count(*) from loan_application where status='$s'")" -ge 5 ] || fail "too few $s files"
 done
 [ "$(val "select count(*) from payment where status='PENDING_VERIFICATION'")" -ge 5 ] || fail "too few repayments awaiting verification"
+[ "$(val "select count(*) from application_verification where check_type='ESIGN' and status='PASS'")" = 15 ] || fail "open training files need a signed agreement to reach disbursement"
 pass "training loans meet the targets and leave real rows alone"
 
 if "$RUN" loans 2>/dev/null; then fail "loans ran twice"; fi

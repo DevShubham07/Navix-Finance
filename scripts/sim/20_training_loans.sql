@@ -57,6 +57,12 @@ begin
 
   insert into borrower_mobile (customer_id, mobile, created_at) values (v_customer, v_mobile, p_created);
 
+  -- The sim has no borrower to sign, and forcing a file to disbursement requires a passed eSign.
+  if p_loan is null then
+    insert into application_verification (application_id, check_type, status, provider, message, created_at)
+    values (v_app, 'ESIGN', 'PASS', 'SIMULATION', 'Training data', p_created);
+  end if;
+
   foreach v_to in array v_path[1:v_last] loop
     -- A closed loan went through ACTIVE, not OVERDUE; only overdue files record that step.
     continue when v_to = 'OVERDUE' and p_status <> 'OVERDUE';

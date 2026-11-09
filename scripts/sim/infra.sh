@@ -78,6 +78,15 @@ secrets() {
   put /navix-sim-tools/gateway-key SecureString "$(openssl rand -hex 32)"
 }
 
+tools_image() {
+  DOCKER_CONFIG=$(cygpath -m "$(mktemp -d)"); export DOCKER_CONFIG
+  trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+  printf '{"auths":{"%s":{"auth":"%s"}}}' "$ACCOUNT.dkr.ecr.$AWS_REGION.amazonaws.com" \
+    "$(printf 'AWS:%s' "$(aws ecr get-login-password)" | base64 -w0)" > "$DOCKER_CONFIG/config.json"
+  docker build -t "$REPO:tools" "$ROOT/scripts/sim"
+  docker push "$REPO:tools"
+}
+
 images() {
   # Docker's Windows credential store rejects ECR's long token, so skip `docker login` and hand the
   # token to a throwaway config that is removed on exit.
@@ -119,11 +128,19 @@ restore() {
   aws rds wait db-snapshot-available --db-snapshot-identifier "$copy"
   aws rds restore-db-instance-from-db-snapshot --db-instance-identifier $SIM_DB --db-snapshot-identifier "$copy" --db-instance-class db.t4g.micro --db-subnet-group-name navix-sim --vpc-security-group-ids "$(sg navix-sim-db)" --no-publicly-accessible --no-multi-az >/dev/null
   aws rds wait db-instance-available --db-instance-identifier $SIM_DB
+  finish_restore
+}
+
+# Separate and safe to re-run: a dropped connection after the restore must not leave production's password in place.
+finish_restore() {
   # A restored instance keeps production's master password until this runs.
   aws rds modify-db-instance --db-instance-identifier $SIM_DB --master-user-password "$(get /navix-sim-tools/db-master-password)" --backup-retention-period 1 --apply-immediately >/dev/null
   aws rds wait db-instance-available --db-instance-identifier $SIM_DB
   put /navix/sim/spring/datasource/url String "jdbc:postgresql://$(db_host):5432/navix?sslmode=require"
-  aws rds delete-db-snapshot --db-snapshot-identifier "$copy" >/dev/null
+  local seed
+  for seed in $(aws rds describe-db-snapshots --snapshot-type manual --query "DBSnapshots[?starts_with(DBSnapshotIdentifier,'navix-sim-seed')].DBSnapshotIdentifier" --output text); do
+    aws rds delete-db-snapshot --db-snapshot-identifier "$seed" >/dev/null
+  done
   register_tools
 }
 
@@ -219,6 +236,8 @@ teardown() {
 
 case "${1:-}" in
   base|secrets|images|edge|restore|service|status|teardown) "$1" ;;
+  finish-restore) finish_restore ;;
+  tools-image) tools_image ;;
   copy-docs) copy_docs ;;
   tools) tools "$2" ;;
   *) echo "usage: infra.sh base|secrets|images|edge|restore|copy-docs|tools <prepare|loans|verify>|service|status|teardown" >&2; exit 64 ;;
