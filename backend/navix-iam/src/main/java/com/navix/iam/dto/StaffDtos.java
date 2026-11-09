@@ -9,6 +9,7 @@ import com.navix.iam.entity.StaffUser;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 import java.time.Instant;
 
@@ -59,7 +60,7 @@ public final class StaffDtos {
             @Email @NotBlank String email,
             @NotBlank String name,
             @NotNull StaffRole role,
-            @NotBlank String password
+            @NotBlank @Size(min = 8, max = 72, message = "Password must be 8 to 72 characters") String password
     ) {
     }
 

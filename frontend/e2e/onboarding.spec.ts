@@ -4,7 +4,7 @@ import { uniqueMobile } from "./_fixtures";
 /**
  * The Phase-1 ten-screen intake (revamp.md). Rewritten for the revamp: the old spec drove
  * `/signup/mobile-otp`, a route Phase 1 retired to a redirect stub, and set a 13-character
- * password that the 6–10 policy (decision 23) now rejects.
+ * password that the 8–72 policy (decision 23) now rejects.
  *
  * We drive the deterministic screens — start → otp (dev-echo) → employment → set-password →
  * employer — and assert each gates and advances. Provider/device steps stay `test.fixme`.
@@ -91,16 +91,16 @@ test.describe("onboarding wizard", () => {
     await expect(page).toHaveURL(/\/signup\/set-password/, { timeout: 20_000 });
     await expect(page.getByRole("button", { name: /skip for now/i })).toBeVisible();
 
-    // Decision 23: 6–10 chars with a letter, a digit and a special character.
+    // Decision 23 (now 8–72 bytes): chars with a letter, a digit and a special character.
     await page.getByLabel("Password", { exact: true }).fill("abc123"); // no special char
     await page.getByLabel("Confirm password").fill("abc123");
     await page.getByRole("button", { name: /set password & continue/i }).click();
     // "Password must be …" is the error; the bare rule text is also on screen as helper copy.
-    await expect(page.getByText(/^Password must be 6/)).toBeVisible();
+    await expect(page.getByText(/^Password must be at least 8/)).toBeVisible();
     await expect(page).toHaveURL(/\/signup\/set-password/); // did not advance
 
-    await page.getByLabel("Password", { exact: true }).fill("abc12!");
-    await page.getByLabel("Confirm password").fill("abc12!");
+    await page.getByLabel("Password", { exact: true }).fill("abc123!x");
+    await page.getByLabel("Confirm password").fill("abc123!x");
     await page.getByRole("button", { name: /set password & continue/i }).click();
 
     await expect(page).toHaveURL(/\/signup\/employer/, { timeout: 20_000 });

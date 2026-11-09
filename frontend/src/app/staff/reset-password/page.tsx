@@ -66,10 +66,10 @@ function StaffResetInner() {
             type="password"
             value={password}
             onChange={(e) => { setPassword(e.target.value); setError(undefined); }}
-            placeholder="At least 10 characters"
+            placeholder={PASSWORD_HINT}
             leftIcon={<Lock size={16} />}
             autoComplete="new-password"
-            helperText="10+ characters, including letters and digits"
+            helperText={PASSWORD_HINT}
           />
           <Input
             label="Confirm new password"

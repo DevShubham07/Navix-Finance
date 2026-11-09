@@ -218,7 +218,7 @@ function CreateStaffForm() {
   const [password, setPassword] = React.useState("");
 
   const canSubmit =
-    email.trim().length > 0 && name.trim().length > 0 && password.length >= 4;
+    email.trim().length > 0 && name.trim().length > 0 && password.length >= 8 && password.length <= 72;
 
   const create = useMutation({
     mutationFn: () =>
@@ -252,7 +252,7 @@ function CreateStaffForm() {
         />
         <Input
           label="Password" type="password" autoComplete="new-password" value={password}
-          onChange={(e) => setPassword(e.target.value)} placeholder="Set a password (min 4)"
+          onChange={(e) => setPassword(e.target.value)} placeholder="Set a password (min 8)"
         />
       </div>
       <div className="mt-3 flex items-center gap-3">
