@@ -21,6 +21,7 @@ import com.navix.loan.pdf.SanctionLetterPdfRenderer;
 import com.navix.loan.repository.ApplicationDocumentRepository;
 import com.navix.loan.repository.ApplicationReferenceRepository;
 import com.navix.loan.repository.CustomerProfileRepository;
+import com.navix.loan.repository.ApplicationVerificationRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
 import com.navix.loan.service.ApplicationVerificationService.StepResult;
 import java.time.Instant;
@@ -72,6 +73,7 @@ public class OfferService {
     private final LoanMath loanMath;
     private final MandateService mandateService;
     private final com.navix.common.featureflag.FeatureFlagService featureFlags;
+    private final ApplicationVerificationRepository verificationRepo;
 
     @Value("${navix.grievance.officer-name:Lalit Kumar}")
     private String grievanceOfficerName;
@@ -92,6 +94,7 @@ public class OfferService {
     @Transactional
     public LoanApplication chooseAmount(Long appId, long amountPaise) {
         LoanApplication app = requireSanctioned(appId);
+        requireNotSigned(appId);
         long ceiling = ceilingOf(app);
         if (amountPaise < LoanMath.MIN_LOAN_PAISE) {
             throw new BusinessException("AMOUNT_TOO_LOW", "Requested amount is below the minimum of ₹1,000");
@@ -261,6 +264,15 @@ public class OfferService {
     @Transactional
     public SanctionLetterView sanctionLetter(Long appId) {
         LoanApplication app = requireSanctioned(appId);
+        if (isSigned(appId)) {
+            // The signed terms are fixed: show the letter on file, never re-render over it.
+            Optional<ApplicationDocument> existing = documentRepo.findFirstByApplicationIdAndDocTypeOrderByIdDesc(
+                    appId, ApplicationVerificationService.SANCTION_LETTER);
+            if (existing.isPresent()) {
+                return new SanctionLetterView(existing.get().getId(),
+                        storage.presignDownload(existing.get().getS3ObjectKey()));
+            }
+        }
         CustomerProfile p = profileRepo.findByApplicationId(appId).orElse(null);
         byte[] pdf = letterRenderer.render(agreementFacts(app, p));
 
@@ -322,8 +334,12 @@ public class OfferService {
     @Transactional
     public StepResult manualEsign(Long appId, ManualEsignRequest req) {
         LoanApplication app = requireSanctioned(appId);
+        boolean alreadySigned = isSigned(appId);
         StepResult result = verification.recordManualEsign(appId, req.signatureDataUrl(),
                 req.latitude(), req.longitude(), req.accuracyMeters());
+        if (alreadySigned) {
+            return result; // a repeat must not re-render over the signed PDF
+        }
 
         CustomerProfile profile = profileRepo.findByApplicationId(appId).orElse(null);
         String signedAtValue = String.valueOf(result.derived().get("signedAt"));
@@ -572,6 +588,19 @@ public class OfferService {
             throw new BusinessException("NOT_APPLICABLE", "This offer isn't ready");
         }
         return app;
+    }
+
+    private boolean isSigned(Long appId) {
+        return verificationRepo.findByApplicationIdAndCheckType(appId, ApplicationVerificationService.ESIGN)
+                .filter(v -> ApplicationVerificationService.PASS.equals(v.getStatus()))
+                .isPresent();
+    }
+
+    private void requireNotSigned(Long appId) {
+        if (isSigned(appId)) {
+            throw new BusinessException("TERMS_LOCKED",
+                    "You have already signed your agreement, so the loan amount can no longer be changed.");
+        }
     }
 
     private static long ceilingOf(LoanApplication app) {

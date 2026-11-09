@@ -7,7 +7,7 @@ import { WizardActions } from "@/components/borrower/wizard-actions";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { LoanCostBreakdown } from "@/components/borrower/loan-cost-breakdown";
 import { useQuery } from "@tanstack/react-query";
-import { offerApi } from "@/lib/api/applications";
+import { ApplicationApiError, journeyApi, offerApi } from "@/lib/api/applications";
 import { buildCostBreakdown, MIN_LOAN_AMOUNT } from "@/lib/calc/loan-math";
 import { useOffer, completeOfferStep, nextOfferRoute } from "@/lib/offer";
 import { formatINR0, formatDate } from "@/lib/utils";
@@ -77,6 +77,14 @@ export default function LoanAmountPage() {
       await offerApi.chooseAmount(appId, Math.round(value * 100));
       await completeOfferStep(appId, "OFFER_AMOUNT", router, nextOfferRoute("amount"));
     } catch (err) {
+      if (err instanceof ApplicationApiError && err.code === "TERMS_LOCKED") {
+        // Already signed: the amount is fixed, so send them to wherever the server says they are.
+        const j = await journeyApi.get(appId).catch(() => null);
+        if (j?.route?.startsWith("/loan/")) {
+          router.replace(j.route);
+          return;
+        }
+      }
       setError(formatApiError(err, "Could not save your amount — please try again."));
       setBusy(false);
     }

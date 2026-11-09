@@ -843,7 +843,8 @@ public class ApplicationFlowService {
         // UMRN present => may proceed. Flag off => the eMandate step does not exist.
         requireMandate(app);
         long ceiling = app.getSanctionedAmountPaise() != null ? app.getSanctionedAmountPaise() : 0L;
-        long drawn = amountPaise != null ? amountPaise : ceiling;
+        // The e-signed Key Fact Statement carries the stored amount; a caller-supplied one is ignored.
+        long drawn = app.getAmountRequested() != null ? app.getAmountRequested() : ceiling;
         if (drawn < LoanMath.MIN_LOAN_PAISE) {
             throw new BusinessException("AMOUNT_TOO_LOW", "Requested amount is below the minimum of ₹1,000");
         }

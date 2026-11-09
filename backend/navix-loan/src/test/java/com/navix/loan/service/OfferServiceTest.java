@@ -64,6 +64,7 @@ class OfferServiceTest {
     @Mock private SanctionLetterPdfRenderer letterRenderer;
     @Mock private DocumentStoragePort storage;
     @Mock private MandateService mandateService;
+    @Mock private com.navix.loan.repository.ApplicationVerificationRepository verificationRepo;
 
     private OfferService offer;
     private LoanApplication app;
@@ -73,7 +74,7 @@ class OfferServiceTest {
     void setUp() {
         offer = new OfferService(applicationRepo, profileRepo, referenceRepo, pennyDropGuard,
                 documentRepo, verification, flow, journey, changeLogger, letterRenderer, storage, new LoanMath(), mandateService,
-                org.mockito.Mockito.mock(com.navix.common.featureflag.FeatureFlagService.class));
+                org.mockito.Mockito.mock(com.navix.common.featureflag.FeatureFlagService.class), verificationRepo);
 
         app = new LoanApplication();
         app.setId(APP);
@@ -277,6 +278,58 @@ class OfferServiceTest {
         assertThat(document.getValue().getDocType()).isEqualTo(ApplicationVerificationService.SIGNED_AGREEMENT);
         assertThat(document.getValue().getS3ObjectKey())
                 .isEqualTo("applications/1/signed_agreement/sanction-letter-signed.pdf");
+    }
+
+    // ---------------------------------------------------------------- signed terms are locked (F4)
+
+    private void signed() {
+        com.navix.loan.entity.ApplicationVerification row = new com.navix.loan.entity.ApplicationVerification();
+        row.setStatus(ApplicationVerificationService.PASS);
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, ApplicationVerificationService.ESIGN))
+                .thenReturn(Optional.of(row));
+    }
+
+    @Test
+    void afterSigningTheAmountCannotBeChanged() {
+        signed();
+        app.setAmountRequested(1_500_000L);
+
+        assertThatThrownBy(() -> offer.chooseAmount(APP, 1_000_000L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "TERMS_LOCKED");
+        assertThat(app.getAmountRequested()).isEqualTo(1_500_000L);
+    }
+
+    @Test
+    void afterSigningTheSanctionLetterIsNotRerenderedOrOverwritten() {
+        signed();
+        ApplicationDocument doc = new ApplicationDocument();
+        doc.setId(5L);
+        doc.setS3ObjectKey("applications/1/sanction_letter/sanction-letter.pdf");
+        when(documentRepo.findFirstByApplicationIdAndDocTypeOrderByIdDesc(
+                APP, ApplicationVerificationService.SANCTION_LETTER)).thenReturn(Optional.of(doc));
+        when(storage.presignDownload(doc.getS3ObjectKey())).thenReturn("https://signed-url");
+
+        var view = offer.sanctionLetter(APP);
+
+        assertThat(view.documentId()).isEqualTo(5L);
+        verify(letterRenderer, never()).render(any());
+        verify(storage, never()).store(anyString(), any(), anyString());
+    }
+
+    @Test
+    void aRepeatManualEsignNeverReRendersOrOverwritesTheSignedPdf() {
+        signed();
+        when(verification.recordManualEsign(eq(APP), anyString(), eq(null), eq(null), eq(null)))
+                .thenReturn(new StepResult(ApplicationVerificationService.ESIGN,
+                        ApplicationVerificationService.PASS, "signed", Map.of()));
+
+        offer.manualEsign(APP, new ManualEsignRequest(
+                "data:image/png;base64," + Base64.getEncoder().encodeToString(new byte[] {1}), null, null, null));
+
+        verify(letterRenderer, never()).renderSigned(any(), any(), anyString(), any());
+        verify(storage, never()).store(anyString(), any(), anyString());
+        verify(documentRepo, never()).save(any());
     }
 
     // ---------------------------------------------------------------- disbursal account

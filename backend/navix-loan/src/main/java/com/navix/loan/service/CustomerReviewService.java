@@ -111,6 +111,11 @@ public class CustomerReviewService {
         }
 
         CustomerProfile p = profileRepository.findByApplicationId(appId).orElseGet(CustomerProfile::new);
+        boolean afterDraft = app.getStatus() != ApplicationStatus.DRAFT;
+        if (borrower && afterDraft) {
+            refuseSalaryRaise(req.monthlySalaryPaise(), p.getMonthlySalaryPaise());
+        }
+        java.util.Set<String> changedFields = new java.util.HashSet<>();
         p.setApplicationId(appId);
         // Name / PAN / DOB are what verification and the credit decision are recorded against: free to
         // correct while DRAFT (nothing has been compared yet), frozen once the file has left it.
@@ -165,26 +170,32 @@ public class CustomerReviewService {
         String address = trimToNull(req.address());
         if (address != null) {
             log(customerId, appId, "address", p.getAddress(), address);
+            // address is deliberately not tracked in changedFields: the address step verifies first
+            // and saves after, so invalidating here would undo the check it just passed.
             p.setAddress(address);
         }
         String employer = trimToNull(req.employer());
         if (employer != null) {
             log(customerId, appId, "employer", p.getEmployer(), employer);
+            if (!employer.equals(p.getEmployer())) changedFields.add("employer");
             p.setEmployer(employer);
         }
         String employmentStatus = trimToNull(req.employmentStatus());
         if (employmentStatus != null) {
             log(customerId, appId, "employmentStatus", p.getEmploymentStatus(), employmentStatus);
+            if (!employmentStatus.equals(p.getEmploymentStatus())) changedFields.add("employmentStatus");
             p.setEmploymentStatus(employmentStatus);
         }
         if (req.monthlySalaryPaise() != null) {
             log(customerId, appId, "monthlySalaryPaise", str(p.getMonthlySalaryPaise()),
                     req.monthlySalaryPaise().toString());
+            if (!req.monthlySalaryPaise().equals(p.getMonthlySalaryPaise())) changedFields.add("monthlySalaryPaise");
             p.setMonthlySalaryPaise(req.monthlySalaryPaise());
         }
         String salaryBank = trimToNull(req.salaryBank());
         if (salaryBank != null) {
             log(customerId, appId, "salaryBank", p.getSalaryBank(), salaryBank);
+            if (!salaryBank.equals(p.getSalaryBank())) changedFields.add("salaryBank");
             p.setSalaryBank(salaryBank);
         }
         String email = trimToNull(req.email());
@@ -192,6 +203,7 @@ public class CustomerReviewService {
             log(customerId, appId, "email", p.getEmail(), email);
             if (!email.equalsIgnoreCase(p.getEmail())) {
                 p.setPersonalEmailVerified(null); // inbox control was proven for the OLD address
+                changedFields.add("email");
             }
             p.setEmail(email);
         }
@@ -200,6 +212,9 @@ public class CustomerReviewService {
         String officialEmail = trimToNull(req.officialEmail());
         if (officialEmail != null) {
             log(customerId, appId, "officialEmail", p.getOfficialEmail(), officialEmail);
+            if (!officialEmail.equalsIgnoreCase(p.getOfficialEmail())) {
+                p.setOfficialEmailOtpVerified(null); // inbox control was proven for the OLD address
+            }
             p.setOfficialEmail(officialEmail);
         }
         String accountNumber = trimToNull(req.salaryAccountNumber());
@@ -224,7 +239,8 @@ public class CustomerReviewService {
                     req.annualSalaryPaise().toString());
             p.setAnnualSalaryPaise(req.annualSalaryPaise());
         }
-        if (req.previousSalaryDate() != null) {
+        // After DRAFT a borrower cannot move the salary day: it moves the real due date.
+        if (req.previousSalaryDate() != null && !(borrower && afterDraft)) {
             log(customerId, appId, "previousSalaryDate", str(p.getPreviousSalaryDate()),
                     req.previousSalaryDate().toString());
             p.setPreviousSalaryDate(req.previousSalaryDate());
@@ -245,7 +261,20 @@ public class CustomerReviewService {
                     p.getPepDeclaredAt() != null ? "true" : null, "true");
             p.setPepDeclaredAt(Instant.now());
         }
-        return profileRepository.save(p);
+        CustomerProfile saved = profileRepository.save(p);
+        // ponytail: DRAFT writes don't invalidate, because the wizard steps save around their own checks.
+        if (afterDraft) {
+            verificationInvalidation.invalidateForFields(appId, changedFields);
+        }
+        return saved;
+    }
+
+    /** A borrower past DRAFT may lower salary but not raise it: the raise needs staff to re-verify it. */
+    private static void refuseSalaryRaise(Long requested, Long stored) {
+        if (requested != null && (stored == null || requested > stored)) {
+            throw new BusinessException("SALARY_INCREASE_NEEDS_REVIEW",
+                    "To update your salary, please contact support. We need to verify the new amount first.");
+        }
     }
 
     /**
@@ -310,6 +339,9 @@ public class CustomerReviewService {
                 .orElseThrow(() -> new ResourceNotFoundException("CustomerProfile", "application:" + appId));
         Long customerId = app.getCustomerId();
 
+        if (app.getStatus() != ApplicationStatus.DRAFT && "BORROWER".equals(ActorContext.get().role())) {
+            refuseSalaryRaise(req.monthlySalaryPaise(), p.getMonthlySalaryPaise());
+        }
         java.util.Set<String> changed = new java.util.HashSet<>();
         String address = trimToNull(req.address());
         if (address != null && !address.equals(p.getAddress())) {

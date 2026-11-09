@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -186,6 +187,120 @@ class CustomerReviewServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("can't be changed");
         service.saveProfile(APP_ID, req("ABCDE1234F", null));
+    }
+
+    // ---- F5 / F14: verified fields and salary after the check ------------------------------
+
+    private ProfileRequest slice(String address, String employer, Long salary, String email,
+                                 String officialEmail, java.time.LocalDate prevSalaryDate) {
+        return new ProfileRequest(null, null, null, null, address, employer, null, salary, null, email,
+                officialEmail, null, null, null, prevSalaryDate, null, null, null, null);
+    }
+
+    private CustomerProfile stubProfile(ApplicationStatus status) {
+        LoanApplication app = application();
+        app.setStatus(status);
+        when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(app));
+        CustomerProfile p = new CustomerProfile();
+        p.setApplicationId(APP_ID);
+        p.setAddress("Old address");
+        p.setEmployer("Acme");
+        p.setMonthlySalaryPaise(5_000_000L);
+        p.setOfficialEmail("a@acme.com");
+        p.setOfficialEmailOtpVerified(true);
+        when(profileRepository.findByApplicationId(APP_ID)).thenReturn(Optional.of(p));
+        lenient().when(profileRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        return p;
+    }
+
+    @Test
+    void changingTheOfficialEmailClearsItsOtpFlag_andSameAddressKeepsIt() {
+        CustomerProfile p = stubProfile(ApplicationStatus.DRAFT);
+
+        service.saveProfile(APP_ID, slice(null, null, null, null, "A@ACME.com", null));
+        assertThat(p.getOfficialEmailOtpVerified()).isTrue();
+
+        service.saveProfile(APP_ID, slice(null, null, null, null, "b@acme.com", null));
+        assertThat(p.getOfficialEmailOtpVerified()).isNull();
+    }
+
+    @Test
+    void afterDraftChangedVerifiedFieldsAreInvalidated_butAddressIsNot() {
+        stubProfile(ApplicationStatus.KYC_PENDING);
+
+        service.saveProfile(APP_ID, slice("New address", "Globex", null, null, null, null));
+
+        verify(verificationInvalidation).invalidateForFields(eq(APP_ID),
+                argThat(s -> s.equals(java.util.Set.of("employer"))));
+    }
+
+    @Test
+    void inDraftNothingIsInvalidated() {
+        stubProfile(ApplicationStatus.DRAFT);
+
+        service.saveProfile(APP_ID, slice(null, "Globex", 6_000_000L, null, null, null));
+
+        verify(verificationInvalidation, never()).invalidateForFields(any(), any());
+    }
+
+    @Test
+    void afterDraftABorrowerCannotMoveTheSalaryDay() {
+        LoanApplication app = application();
+        app.setStatus(ApplicationStatus.SANCTIONED);
+        app.setSalaryCreditDay(5);
+        when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(app));
+        CustomerProfile p = new CustomerProfile();
+        when(profileRepository.findByApplicationId(APP_ID)).thenReturn(Optional.of(p));
+        when(profileRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        service.saveProfile(APP_ID, slice(null, null, null, null, null, java.time.LocalDate.of(2026, 10, 28)));
+
+        assertThat(app.getSalaryCreditDay()).isEqualTo(5);
+        assertThat(p.getPreviousSalaryDate()).isNull();
+    }
+
+    @Test
+    void inDraftTheSalaryDayIsStillDerived() {
+        LoanApplication app = application();
+        when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(app));
+        when(profileRepository.findByApplicationId(APP_ID)).thenReturn(Optional.of(new CustomerProfile()));
+        when(profileRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        service.saveProfile(APP_ID, slice(null, null, null, null, null, java.time.LocalDate.of(2026, 10, 28)));
+
+        assertThat(app.getSalaryCreditDay()).isEqualTo(28);
+    }
+
+    @Test
+    void afterDraftABorrowerCannotRaiseSalary_inEitherPath() {
+        CustomerProfile p = stubProfile(ApplicationStatus.KYC_PENDING);
+
+        assertThatThrownBy(() -> service.saveProfile(APP_ID, slice(null, null, 6_000_000L, null, null, null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code").isEqualTo("SALARY_INCREASE_NEEDS_REVIEW");
+        assertThatThrownBy(() -> service.editOwnProfile(APP_ID, new EditProfileRequest(
+                null, null, null, 6_000_000L, null, null, null, null, null, null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code").isEqualTo("SALARY_INCREASE_NEEDS_REVIEW");
+        assertThat(p.getMonthlySalaryPaise()).isEqualTo(5_000_000L);
+    }
+
+    @Test
+    void afterDraftABorrowerMayLowerSalary() {
+        CustomerProfile p = stubProfile(ApplicationStatus.KYC_PENDING);
+
+        service.saveProfile(APP_ID, slice(null, null, 4_000_000L, null, null, null));
+
+        assertThat(p.getMonthlySalaryPaise()).isEqualTo(4_000_000L);
+    }
+
+    @Test
+    void inDraftABorrowerMayRaiseSalary() {
+        CustomerProfile p = stubProfile(ApplicationStatus.DRAFT);
+
+        service.saveProfile(APP_ID, slice(null, null, 6_000_000L, null, null, null));
+
+        assertThat(p.getMonthlySalaryPaise()).isEqualTo(6_000_000L);
     }
 
     // ---- V75: Aadhaar number slice ------------------------------------------------------

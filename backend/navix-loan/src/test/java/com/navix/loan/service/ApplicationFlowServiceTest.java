@@ -257,6 +257,7 @@ class ApplicationFlowServiceTest {
         // sit in front of this call; all it needs from them is a signed sanction letter.
         actor("7", "BORROWER");
         esigned(1L);
+        app.setAmountRequested(1_500_000L); // chosen on the offer screen, before signing
         flow.acceptOffer(1L, 1_500_000L);
         assertThat(app.getStatus()).isEqualTo(ApplicationStatus.DISBURSEMENT_PENDING);
         assertThat(app.getAmountRequested()).isEqualTo(1_500_000L);
@@ -275,10 +276,24 @@ class ApplicationFlowServiceTest {
         app.setSanctionedAmountPaise(2_000_000L);
         actor("7", "BORROWER");
         esigned(1L);
+        app.setAmountRequested(2_500_000L);
 
-        assertThatThrownBy(() -> flow.acceptOffer(1L, 2_500_000L))
+        assertThatThrownBy(() -> flow.acceptOffer(1L, null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("exceeds the sanctioned amount");
+    }
+
+    @Test
+    void acceptOfferIgnoresACallerSuppliedAmountAndUsesTheSignedOne() {
+        LoanApplication app = appAt(ApplicationStatus.SANCTIONED);
+        app.setSanctionedAmountPaise(2_000_000L);
+        app.setAmountRequested(1_500_000L);
+        actor("7", "BORROWER");
+        esigned(1L);
+
+        flow.acceptOffer(1L, 1_000_000L);
+
+        assertThat(app.getAmountRequested()).isEqualTo(1_500_000L);
     }
 
     @Test
