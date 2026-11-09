@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import Script from "next/script";
 
 /**
@@ -22,6 +23,18 @@ import Script from "next/script";
  */
 export function GoogleAnalytics() {
   const gaId = process.env.NEXT_PUBLIC_GA_ID;
+
+  // next/script stays loaded across client-side navigation, so switch collection off when the
+  // visitor leaves the marketing layout for login, signup or the app.
+  useEffect(() => {
+    if (!gaId) return;
+    const w = window as unknown as Record<string, boolean>;
+    w[`ga-disable-${gaId}`] = false;
+    return () => {
+      w[`ga-disable-${gaId}`] = true;
+    };
+  }, [gaId]);
+
   if (!gaId) return null;
 
   return (
