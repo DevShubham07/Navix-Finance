@@ -45,6 +45,14 @@ public class MessageTemplate {
     @Column(name = "category", nullable = false, length = 16)
     private String category;
 
+    /** What it is for (Collections, Repayment...), which orders the Templates page. */
+    @Column(name = "purpose", nullable = false, length = 24)
+    private String purpose;
+
+    /** The plain name staff see; the registered name when blank. */
+    @Column(name = "label", length = 120)
+    private String label;
+
     @Column(name = "status", nullable = false, length = 16)
     private String status;
 

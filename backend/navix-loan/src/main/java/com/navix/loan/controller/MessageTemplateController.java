@@ -39,6 +39,12 @@ public class MessageTemplateController {
         return ApiResponse.ok(service.update(id, req));
     }
 
+    @PostMapping("/{id}/delete")
+    public ApiResponse<Void> delete(@PathVariable Long id) {
+        service.delete(id);
+        return ApiResponse.ok(null);
+    }
+
     @PostMapping("/whatsapp/refresh")
     public ApiResponse<WhatsAppRefreshResult> refreshWhatsApp() {
         return ApiResponse.ok(service.refreshWhatsApp());

@@ -4905,6 +4905,7 @@ export interface MessageTemplate {
   channels: MessageChannel[];
   inputs: { name: string; label: string; type: MessageInputType }[];
   singleOnly: boolean;
+  rule?: "ANY" | "LIVE" | "OVERDUE" | "WINDOW_1_5" | null;
   /** Non-null: the sender must tick "confirmed" with this wording. */
   confirmText: string | null;
 }
@@ -4965,6 +4966,11 @@ export const customerMessagesApi = {
   templates: () => bff<MessageTemplate[]>(`${MESSAGES_BASE}/templates`, "GET"),
   preview: (b: MessageSendRequest) => bff<MessagePreview>(`${MESSAGES_BASE}/preview`, "POST", b),
   send: (b: MessageSendRequest & { confirmed: boolean }) => bff<MessageSendResult>(`${MESSAGES_BASE}/send`, "POST", b),
+  audience: (group: string) =>
+    bff<{ group: string; count: number; customerIds: number[]; capped: boolean }>(
+      `${MESSAGES_BASE}/audience?group=${encodeURIComponent(group)}`,
+      "GET",
+    ),
   log: (f: MessageLogFilters) =>
     bff<{ rows: MessageLogRow[]; total: number; page: number; size: number }>(`${MESSAGES_BASE}/log${qs({ ...f })}`, "GET"),
 };
@@ -4991,8 +4997,11 @@ export interface StoredTemplate {
   createdByName: string | null;
   createdAt: string;
   updatedAt: string;
+  purpose: TemplatePurpose;
+  label: string | null;
 }
-/** `status`, `providerId` and `remarks` are honoured for SMS only. */
+export type TemplatePurpose = "COLLECTIONS" | "REPAYMENT" | "DISCOUNTS" | "LOAN_UPDATES" | "KYC" | "REFERENCES" | "OTHER";
+/** `status`, `providerId` and `remarks` are honoured for SMS and WhatsApp. */
 export interface StoredTemplateInput {
   channel: MessageChannel;
   name: string;
@@ -5000,6 +5009,8 @@ export interface StoredTemplateInput {
   body: string;
   category: string;
   rule: string;
+  purpose: string;
+  label?: string;
   variables: string[];
   status?: string;
   providerId?: string;
@@ -5012,6 +5023,7 @@ export const storedTemplatesApi = {
   list: (channel: MessageChannel) => bff<StoredTemplate[]>(`${STORED_TEMPLATES_BASE}?channel=${channel}`, "GET"),
   create: (b: StoredTemplateInput) => bff<StoredTemplate>(STORED_TEMPLATES_BASE, "POST", b),
   update: (id: number, b: StoredTemplateInput) => bff<StoredTemplate>(`${STORED_TEMPLATES_BASE}/${id}`, "POST", b),
+  remove: (id: number) => bff<void>(`${STORED_TEMPLATES_BASE}/${id}/delete`, "POST"),
   refreshWhatsApp: () => bff<{ updated: number; notFound: string[] }>(`${STORED_TEMPLATES_BASE}/whatsapp/refresh`, "POST"),
 };
 

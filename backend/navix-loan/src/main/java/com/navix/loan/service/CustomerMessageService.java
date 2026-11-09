@@ -128,7 +128,7 @@ public class CustomerMessageService {
         return all.stream()
                 .map(t -> new TemplateView(t.key(), t.label(), t.category(), t.channels(),
                         t.inputs().stream().map(i -> new InputView(i.name(), i.label(), i.type())).toList(),
-                        t.singleOnly(), t.confirmText()))
+                        t.singleOnly(), t.confirmText(), t.rule() == null ? null : t.rule().name()))
                 .toList();
     }
 

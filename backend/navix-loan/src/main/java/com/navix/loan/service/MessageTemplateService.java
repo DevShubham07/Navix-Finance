@@ -47,6 +47,8 @@ public class MessageTemplateService {
 
     private static final Set<String> STATUSES = Set.of(
             MessageTemplate.DRAFT, MessageTemplate.SUBMITTED, MessageTemplate.ACTIVE, MessageTemplate.REJECTED);
+    private static final Set<String> PURPOSES = Set.of("COLLECTIONS", "REPAYMENT", "DISCOUNTS", "LOAN_UPDATES", "KYC",
+            "REFERENCES", "OTHER");
     private static final Set<String> CATEGORIES = Set.of(MessageCatalogue.SERVICE, MessageCatalogue.MARKETING);
     private static final Set<String> OVERDUE_VARIABLES = Set.of("daysOverdue", "dailyCharge");
     private static final Set<String> LOAN_VARIABLES = Set.of("amount", "loanId", "dueDate", "dueDatePlus5");
@@ -184,6 +186,7 @@ public class MessageTemplateService {
                 checkWhatsAppBody(missing);
                 t.setBody(missing);
             }
+            applyPurpose(t, req);
             applyWhatsAppStatus(t, req);
             return view(repository.save(t));
         }
@@ -230,11 +233,33 @@ public class MessageTemplateService {
                 }
             }
         }
+        applyPurpose(t, req);
         t.setCategory(category);
         t.setSubject(subject);
         t.setBody(body);
         t.setVariables(jsonList(variables));
         t.setRule(effectiveRule(req.rule(), variables));
+    }
+
+    private static void applyPurpose(MessageTemplate t, StoredTemplateRequest req) {
+        String purpose = req.purpose() == null || req.purpose().isBlank()
+                ? t.getPurpose() : req.purpose().trim().toUpperCase(Locale.ROOT);
+        if (purpose == null || !PURPOSES.contains(purpose)) {
+            throw new BusinessException("INVALID_CATEGORY", "Choose a category for this template");
+        }
+        t.setPurpose(purpose);
+        t.setLabel(trimToNull(req.label()));
+    }
+
+    /** Removes it from this page only; SmartChat and DLT keep their own copy. */
+    public void delete(Long id) {
+        requireEnabledAdmin();
+        MessageTemplate t = repository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Template", String.valueOf(id)));
+        if (t.isSystemManaged()) {
+            throw new BusinessException("TEMPLATE_PROTECTED", "This template is sent by the system and cannot be deleted");
+        }
+        repository.delete(t);
     }
 
     /** Kept by hand when SmartChat's list cannot be read; Refresh overwrites it when it can. */
@@ -431,7 +456,7 @@ public class MessageTemplateService {
         return new StoredTemplateView(t.getId(), KEY_PREFIX + t.getId(), t.getChannel(), t.getName(), t.getSubject(),
                 t.getBody(), t.getCategory(), t.getStatus(), t.getProviderId(), t.getRejectionReason(), variablesOf(t),
                 t.getRule(), t.getConfirmText(), t.isSystemManaged(), unsendableReason(t), t.getCreatedByName(),
-                t.getCreatedAt(), t.getUpdatedAt());
+                t.getCreatedAt(), t.getUpdatedAt(), t.getPurpose(), t.getLabel());
     }
 
     private static List<String> variablesOf(MessageTemplate t) {

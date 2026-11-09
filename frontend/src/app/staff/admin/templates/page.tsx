@@ -2,12 +2,9 @@
 
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, Loader2, Plus, RefreshCw, Search } from "lucide-react";
+import { Loader2, Pencil, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import { Dialog, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState, ErrorState, Select, Skeleton } from "@/components/ui";
-import { Badge, type BadgeVariant } from "@/components/ui/badge";
-import { Tabs } from "@/components/ui/tabs";
-import { PageHeader } from "@/components/staff/staff-ui";
 import { NoAccessNotice, PermissionGate } from "@/components/staff/live-pipeline";
 import { useQueueSelection } from "@/components/staff/pipeline/bulk-actions";
 import { SendMessageDialog, type MessageTargetItem } from "@/components/staff/send-message-dialog";
@@ -19,14 +16,60 @@ import {
   type MessageChannel,
   type StoredTemplate,
   type StoredTemplateInput,
+  type TemplatePurpose,
 } from "@/lib/api/applications";
 import { formatApiError } from "@/lib/api/errors";
 
 const CHANNELS: { key: MessageChannel; label: string }[] = [
-  { key: "SMS", label: "SMS" },
   { key: "WHATSAPP", label: "WhatsApp" },
+  { key: "SMS", label: "SMS" },
   { key: "EMAIL", label: "Email" },
 ];
+
+/** In page order: what staff send most comes first. */
+const SECTIONS: { key: TemplatePurpose; title: string; pill: string }[] = [
+  { key: "COLLECTIONS", title: "Collections", pill: "bg-[#FCEEE6] text-[#9A4318]" },
+  { key: "REPAYMENT", title: "Repayment", pill: "bg-[#E6EFF8] text-[#1F5A92]" },
+  { key: "DISCOUNTS", title: "Discounts", pill: "bg-[#FBF1D8] text-[#7A5005]" },
+  { key: "LOAN_UPDATES", title: "Loan updates", pill: "bg-[#E3F3EF] text-[#17675A]" },
+  { key: "KYC", title: "KYC", pill: "bg-[#EFEAF8] text-[#57408F]" },
+  { key: "REFERENCES", title: "References", pill: "bg-[#EEF1F4] text-[#44505E]" },
+  { key: "OTHER", title: "Other", pill: "bg-[#EFEDE6] text-[#5A6473]" },
+];
+
+/** How much of a loan a group's customers are known to have. */
+type GroupKind = "OVERDUE" | "LIVE" | "ANY";
+type Group = { key: string; label: string; kind: GroupKind };
+
+const MAIN_GROUPS: Group[] = [
+  { key: "DUE_SOON", label: "Due soon", kind: "LIVE" },
+  { key: "OVERDUE_1_7", label: "Overdue 1 to 7", kind: "OVERDUE" },
+  { key: "OVERDUE_8_30", label: "8 to 30", kind: "OVERDUE" },
+  { key: "OVERDUE_31_60", label: "31 to 60", kind: "OVERDUE" },
+  { key: "OVERDUE_61_90", label: "61 to 90", kind: "OVERDUE" },
+  { key: "OVERDUE_90_PLUS", label: "90+", kind: "OVERDUE" },
+];
+
+const MORE_GROUPS: Group[] = [
+  { key: "active", label: "Active", kind: "LIVE" },
+  { key: "closed", label: "Closed", kind: "ANY" },
+  { key: "reloan", label: "Reloan", kind: "ANY" },
+  { key: "approved", label: "Approved", kind: "ANY" },
+  { key: "disbursementPending", label: "Disbursement pending", kind: "ANY" },
+  { key: "incomplete", label: "Incomplete", kind: "ANY" },
+  { key: "pending", label: "Pending", kind: "ANY" },
+  { key: "review", label: "Review", kind: "ANY" },
+  { key: "hold", label: "Hold", kind: "ANY" },
+  { key: "rejected", label: "Rejected", kind: "ANY" },
+];
+
+/** Whether everyone in the group can receive a template with this rule. */
+function fits(rule: string | null | undefined, group: Group): boolean {
+  if (rule === "WINDOW_1_5") return group.key === "OVERDUE_1_7";
+  if (rule === "OVERDUE") return group.kind === "OVERDUE";
+  if (rule === "LIVE") return group.kind !== "ANY";
+  return true;
+}
 
 const VARIABLE_OPTIONS = [
   { value: "name", label: "Customer name" },
@@ -40,13 +83,6 @@ const VARIABLE_OPTIONS = [
   { value: "in:text", label: "Typed when sending (text)" },
   { value: "in:date", label: "Typed when sending (date)" },
 ];
-
-const STATUS_BADGE: Record<StoredTemplate["status"], BadgeVariant> = {
-  DRAFT: "neutral",
-  SUBMITTED: "warning",
-  ACTIVE: "success",
-  REJECTED: "error",
-};
 
 function statusLabel(channel: MessageChannel, status: StoredTemplate["status"]): string {
   if (channel === "WHATSAPP") {
@@ -79,7 +115,20 @@ function fromVariable(v: Variable): string {
   return v.kind.startsWith("in:") ? `${v.kind}:${v.label.trim()}` : v.kind;
 }
 
-/** Admin · the SMS, WhatsApp and email template library, with status, add and send. */
+/** The wording as one plain line: card text is clamped, the full message shows when sending. */
+function plainText(t: StoredTemplate): string {
+  if (!t.body) return "Wording is kept on the provider.";
+  const label = (position: number) => {
+    const v = t.variables[position - 1];
+    if (!v) return "[…]";
+    if (v.startsWith("in:")) return `[${toVariable(v).label || "…"}]`;
+    return `[${(VARIABLE_OPTIONS.find((o) => o.value === v)?.label ?? v).toLowerCase()}]`;
+  };
+  let next = 0;
+  return t.body.replace(/\{#var#\}|\{\{(\d+)\}\}/g, (_, n) => label(n ? Number(n) : ++next));
+}
+
+/** Admin · every SMS, WhatsApp and email template, by category, ready to send to a group of customers. */
 export default function AdminTemplatesPage() {
   return (
     <PermissionGate permission="message:send" fallback={<NoAccessNotice message="Admin access only." />}>
@@ -88,154 +137,122 @@ export default function AdminTemplatesPage() {
   );
 }
 
+type Audience = { group: Group; count: number | null; customerIds: number[]; capped: boolean };
+
 function Templates() {
-  const [tab, setTab] = React.useState<MessageChannel>("SMS");
+  const [channel, setChannel] = React.useState<MessageChannel>("WHATSAPP");
+  const [groupKey, setGroupKey] = React.useState("");
+  const [search, setSearch] = React.useState("");
+  const [adding, setAdding] = React.useState(false);
   const flags = useQuery({ queryKey: ["feature-flags"], queryFn: () => featureFlagsApi.get(), staleTime: 60_000 });
   const off = flags.data?.["admin-messaging"] !== true;
 
+  const group = [...MAIN_GROUPS, ...MORE_GROUPS].find((g) => g.key === groupKey) ?? null;
+  const members = useQuery({
+    queryKey: ["message-audience", groupKey],
+    queryFn: () => customerMessagesApi.audience(groupKey),
+    enabled: group != null && !off,
+  });
+  const audience: Audience | null = group && {
+    group,
+    count: members.data?.count ?? null,
+    customerIds: members.data?.customerIds ?? [],
+    capped: members.data?.capped ?? false,
+  };
+  const chip = (on: boolean) =>
+    `h-9 rounded-full border px-3.5 text-[13px] font-semibold ${on ? "border-navy bg-navy text-white" : "border-line bg-white text-navy hover:border-navy"}`;
+  const inMore = MORE_GROUPS.some((g) => g.key === groupKey);
+
   return (
-    <div>
-      <PageHeader title="Templates" subtitle="Every SMS, WhatsApp and email template, its approval status, and who can receive it." />
+    <div className="mx-auto max-w-[1240px]">
+      <div className="mb-5 flex flex-wrap items-center gap-3">
+        <h1 className="mr-auto font-serif text-2xl font-bold text-navy">Templates</h1>
+        <div className="relative">
+          <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+          <input
+            type="search"
+            aria-label="Search templates"
+            placeholder="Search templates"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="h-10 w-56 rounded-lg border border-line bg-white pl-9 pr-3 text-sm text-ink focus:border-navy focus:outline-none"
+          />
+        </div>
+        <div role="tablist" aria-label="Channel" className="flex rounded-lg bg-[#F3F0E7] p-1">
+          {CHANNELS.map((c) => (
+            <button
+              key={c.key}
+              type="button"
+              role="tab"
+              aria-selected={channel === c.key}
+              onClick={() => setChannel(c.key)}
+              className={`h-8 rounded-md px-3.5 text-[13px] font-semibold ${channel === c.key ? "bg-white text-navy shadow-sm" : "text-muted"}`}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+        <button type="button" disabled={off} onClick={() => setAdding(true)} className="btn btn-sm btn-outline disabled:opacity-50">
+          <Plus size={14} /> Add template
+        </button>
+      </div>
+
       {off && (
         <p role="status" className="mb-4 rounded-lg border border-warning-100 bg-warning-50 px-3 py-2 text-sm text-ink">
           Customer messaging is switched off (admin-messaging flag). Templates can be read, but not added, changed or sent.
         </p>
       )}
-      <Tabs tabs={CHANNELS} active={tab} onChange={(k) => setTab(k as MessageChannel)} className="mb-4" />
-      <ChannelPanel key={tab} channel={tab} off={off} />
+
+      <div className="mb-8 flex flex-wrap items-center gap-2 rounded-lg border border-line bg-white px-4 py-3">
+        <span className="mr-1 text-sm font-bold text-navy">Send to</span>
+        <button type="button" aria-pressed={group == null} onClick={() => setGroupKey("")} className={chip(group == null)}>
+          Choose customers
+        </button>
+        {MAIN_GROUPS.map((g) => (
+          <button key={g.key} type="button" aria-pressed={groupKey === g.key} onClick={() => setGroupKey(g.key)} className={chip(groupKey === g.key)}>
+            {g.label}
+          </button>
+        ))}
+        <select
+          aria-label="More groups"
+          value={inMore ? groupKey : ""}
+          onChange={(e) => setGroupKey(e.target.value)}
+          className={`${chip(inMore)} ${inMore ? "" : "pr-2"}`}
+        >
+          <option value="">More groups</option>
+          {MORE_GROUPS.map((g) => (
+            <option key={g.key} value={g.key}>
+              {g.label}
+            </option>
+          ))}
+        </select>
+        {group && (
+          <span className="ml-auto text-sm text-muted" role="status">
+            {members.isError ? "Could not load this group" : audience?.count == null ? "Counting…" : `${audience.count} customers`}
+          </span>
+        )}
+      </div>
+
+      <ChannelPanel key={channel} channel={channel} off={off} audience={audience} search={search} adding={adding} onAdded={() => setAdding(false)} />
     </div>
   );
 }
 
-type StatusFilter = "ALL" | StoredTemplate["status"];
-
-const STATUS_ORDER: Record<StoredTemplate["status"], number> = { ACTIVE: 0, SUBMITTED: 1, DRAFT: 2, REJECTED: 3 };
-
-const TILES: { key: StatusFilter; label: string; idle: string; on: string }[] = [
-  { key: "ALL", label: "All templates", idle: "border-line bg-white text-navy", on: "border-navy bg-navy text-white" },
-  { key: "ACTIVE", label: "Ready to send", idle: "border-success-100 bg-success-50 text-success-800", on: "border-success-700 bg-success-700 text-white" },
-  { key: "SUBMITTED", label: "In review", idle: "border-warning-100 bg-warning-50 text-warning-800", on: "border-warning-700 bg-warning-700 text-white" },
-  { key: "REJECTED", label: "Rejected", idle: "border-error-100 bg-error-50 text-error-800", on: "border-error-700 bg-error-700 text-white" },
-];
-
-const OPTION_LABEL: Record<string, string> = Object.fromEntries(VARIABLE_OPTIONS.map((o) => [o.value, o.label]));
-
-function variableLabel(variable: string | undefined, position: number): string {
-  if (!variable) return `Variable ${position}`;
-  if (variable.startsWith("in:")) return toVariable(variable).label || `Variable ${position}`;
-  return OPTION_LABEL[variable] ?? variable;
-}
-
-/** The message as the customer reads it, with each variable shown by what fills it. */
-function Wording({ template }: { template: StoredTemplate }) {
-  if (!template.body) {
-    return (
-      <p className="rounded-md bg-grey-50 px-3 py-2 text-xs italic text-muted">
-        {template.channel === "WHATSAPP" ? "Wording is kept on SmartChat. Use Edit to save a copy here." : "Wording not filled in."}
-      </p>
-    );
-  }
-  let next = 0;
-  return (
-    <p className="whitespace-pre-wrap break-words rounded-md bg-ivory px-3 py-2 text-[13px] leading-relaxed text-ink">
-      {template.body.split(/(\{#var#\}|\{\{\d+\}\})/).map((part, i) => {
-        const numbered = part.match(/^\{\{(\d+)\}\}$/);
-        if (part !== "{#var#}" && !numbered) return <React.Fragment key={i}>{part}</React.Fragment>;
-        const position = numbered ? Number(numbered[1]) : ++next;
-        return (
-          <span key={i} className="mx-0.5 inline-block rounded bg-navy-tint px-1.5 text-xs font-semibold text-navy">
-            {variableLabel(template.variables[position - 1], position)}
-          </span>
-        );
-      })}
-    </p>
-  );
-}
-
-function CopyId({ value }: { value: string }) {
-  const [copied, setCopied] = React.useState(false);
-  return (
-    <button
-      type="button"
-      aria-label={`Copy ${value}`}
-      title="Copy"
-      className="inline-flex items-center gap-1 break-all text-left font-mono text-xs text-muted hover:text-navy"
-      onClick={() => {
-        void navigator.clipboard?.writeText(value);
-        setCopied(true);
-        window.setTimeout(() => setCopied(false), 1500);
-      }}
-    >
-      {value} {copied ? <Check size={12} className="flex-shrink-0 text-success-700" /> : <Copy size={12} className="flex-shrink-0" />}
-    </button>
-  );
-}
-
-function TemplateCard({
-  template: t,
+function ChannelPanel({
+  channel,
   off,
-  sendKey,
-  onEdit,
-  onSend,
+  audience,
+  search,
+  adding,
+  onAdded,
 }: {
-  template: StoredTemplate;
+  channel: MessageChannel;
   off: boolean;
-  sendKey: string | null;
-  onEdit: () => void;
-  onSend: () => void;
+  audience: Audience | null;
+  search: string;
+  adding: boolean;
+  onAdded: () => void;
 }) {
-  const idLabel = t.channel === "SMS" ? "DLT id" : t.channel === "WHATSAPP" ? "Stored as" : "Provider id";
-  // A listed template that the catalogue can send is not really unsendable, whatever the row says.
-  const note = sendKey ? null : t.unsendableReason;
-  return (
-    <article className="flex flex-col gap-3 rounded-lg border border-line bg-white p-4 shadow-sm transition-shadow hover:shadow-md">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <h3 className="break-all font-mono text-sm font-semibold text-navy">{t.name}</h3>
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
-            <Badge size="sm" variant={STATUS_BADGE[t.status]}>{statusLabel(t.channel, t.status)}</Badge>
-            <Badge size="sm" variant="neutral">{t.category === "MARKETING" ? "Marketing" : "Service"}</Badge>
-          </div>
-        </div>
-        <div className="flex flex-shrink-0 gap-2">
-          <button type="button" disabled={off} onClick={onEdit} className="btn btn-sm btn-outline disabled:opacity-50">
-            Edit
-          </button>
-          <button
-            type="button"
-            disabled={off || sendKey == null}
-            title={note ?? undefined}
-            onClick={onSend}
-            className="btn btn-sm btn-navy disabled:opacity-50"
-          >
-            Send
-          </button>
-        </div>
-      </div>
-
-      {t.subject && <p className="text-sm font-semibold text-ink">{t.subject}</p>}
-      <Wording template={t} />
-
-      {t.rejectionReason && (
-        <p className="rounded-md border border-error-100 bg-error-50 px-3 py-2 text-xs text-error-800">{t.rejectionReason}</p>
-      )}
-      {(t.providerId || note) && (
-        <div className="mt-auto flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-line pt-2">
-          {t.providerId ? (
-            <span className="flex items-center gap-1.5 text-xs text-muted">
-              {idLabel} <CopyId value={t.providerId} />
-            </span>
-          ) : (
-            <span />
-          )}
-          {note && <span className="text-xs text-muted">{note}</span>}
-        </div>
-      )}
-    </article>
-  );
-}
-
-function ChannelPanel({ channel, off }: { channel: MessageChannel; off: boolean }) {
   const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["stored-templates", channel],
@@ -246,12 +263,11 @@ function ChannelPanel({ channel, off }: { channel: MessageChannel; off: boolean 
     queryFn: () => customerMessagesApi.templates(),
     enabled: channel === "WHATSAPP" && !off,
   });
-  const [editing, setEditing] = React.useState<StoredTemplate | "new" | null>(null);
+  const [editing, setEditing] = React.useState<StoredTemplate | null>(null);
+  const [deleting, setDeleting] = React.useState<StoredTemplate | null>(null);
   const [sending, setSending] = React.useState<{ template: StoredTemplate; key: string } | null>(null);
   const [targets, setTargets] = React.useState<MessageTargetItem[] | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
-  const [filter, setFilter] = React.useState<StatusFilter>("ALL");
-  const [search, setSearch] = React.useState("");
 
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: ["stored-templates", channel] });
@@ -262,29 +278,18 @@ function ChannelPanel({ channel, off }: { channel: MessageChannel; off: boolean 
     mutationFn: () => storedTemplatesApi.refreshWhatsApp(),
     onSuccess: (r) => {
       invalidate();
-      setNotice(
-        `${r.updated} updated.` + (r.notFound.length ? ` Not on SmartChat yet: ${r.notFound.join(", ")}.` : ""),
-      );
+      setNotice(`${r.updated} updated.` + (r.notFound.length ? ` Not on SmartChat yet: ${r.notFound.join(", ")}.` : ""));
     },
-    onError: (e) =>
-      setNotice(`${formatApiError(e, "Could not read templates from SmartChat.")} You can still update a status with Edit.`),
+    onError: (e) => setNotice(`${formatApiError(e, "Could not read templates from SmartChat.")} You can still update a status with Edit.`),
   });
 
-  const all = React.useMemo(
-    () => [...(q.data ?? [])].sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]),
-    [q.data],
-  );
-  const counts = (key: StatusFilter) => (key === "ALL" ? all.length : all.filter((t) => t.status === key).length);
-  const term = search.trim().toLowerCase();
-  const matching = all.filter(
-    (t) =>
-      (filter === "ALL" || t.status === filter) &&
-      (term === "" || t.name.toLowerCase().includes(term) || (t.body ?? "").toLowerCase().includes(term)),
-  );
-  // Rejected templates fold away so they don't bury the ones that can be used.
-  const foldRejected = filter === "ALL";
-  const main = foldRejected ? matching.filter((t) => t.status !== "REJECTED") : matching;
-  const rejected = foldRejected ? matching.filter((t) => t.status === "REJECTED") : [];
+  const remove = useMutation({
+    mutationFn: (id: number) => storedTemplatesApi.remove(id),
+    onSuccess: () => {
+      invalidate();
+      setDeleting(null);
+    },
+  });
 
   /** What Send opens: the stored template, or for a listed WhatsApp one its entry in the send catalogue. */
   const sendKeyFor = (t: StoredTemplate): string | null => {
@@ -293,122 +298,206 @@ function ChannelPanel({ channel, off }: { channel: MessageChannel; off: boolean 
     const key = t.name.replace(/^db_/, "").replace(/_v1_164$/, "");
     return catalogue.data?.some((c) => c.key === key) ? key : null;
   };
-  const singleOnly = (s: { template: StoredTemplate; key: string }) =>
-    catalogue.data?.find((c) => c.key === s.key)?.singleOnly ?? s.template.variables.some((v) => v.startsWith("in:"));
+  const catalogueEntry = (key: string | null) => catalogue.data?.find((c) => c.key === key);
+  const needsOne = (t: StoredTemplate, key: string | null) =>
+    catalogueEntry(key)?.singleOnly ?? t.variables.some((v) => v.startsWith("in:"));
+
+  const term = search.trim().toLowerCase();
+  const all = (q.data ?? []).filter(
+    (t) => term === "" || [t.label, t.name, t.body].some((v) => (v ?? "").toLowerCase().includes(term)),
+  );
+  const ready = all.filter((t) => t.status === "ACTIVE" && sendKeyFor(t) != null);
+  const automatic = all.filter((t) => t.status === "ACTIVE" && sendKeyFor(t) == null && t.systemManaged);
+  const notReady = all.filter((t) => !ready.includes(t) && !automatic.includes(t));
+  // With a group chosen, only what every customer in it can actually receive is offered.
+  const shown = audience
+    ? ready.filter((t) => {
+        const key = sendKeyFor(t);
+        return fits(catalogueEntry(key)?.rule ?? t.rule, audience.group) && !needsOne(t, key);
+      })
+    : ready;
 
   const closeSend = () => {
     setSending(null);
     setTargets(null);
   };
+  const startSend = (t: StoredTemplate, key: string) => {
+    setSending({ template: t, key });
+    if (audience) setTargets(audience.customerIds.map((id) => ({ customerId: id, label: `Customer #${id}` })));
+  };
+
   const card = (t: StoredTemplate) => (
     <TemplateCard
       key={t.id}
       template={t}
       off={off}
       sendKey={sendKeyFor(t)}
+      audience={audience}
       onEdit={() => setEditing(t)}
-      onSend={() => {
-        const key = sendKeyFor(t);
-        if (key) setSending({ template: t, key });
+      onDelete={() => {
+        remove.reset();
+        setDeleting(t);
       }}
+      onSend={startSend}
     />
   );
+  const fold = (title: string, rows: StoredTemplate[]) =>
+    rows.length > 0 && (
+      <details className="group">
+        <summary className="cursor-pointer text-sm font-semibold text-muted hover:text-navy">
+          {title} ({rows.length})
+        </summary>
+        <div className="mt-4 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{rows.map(card)}</div>
+      </details>
+    );
 
   return (
-    <div>
-      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {TILES.map((tile) => (
-          <button
-            key={tile.key}
-            type="button"
-            aria-pressed={filter === tile.key}
-            onClick={() => setFilter(tile.key)}
-            className={`rounded-lg border px-4 py-3 text-left transition-colors ${filter === tile.key ? tile.on : tile.idle}`}
-          >
-            <span className="block text-2xl font-bold leading-none">{counts(tile.key)}</span>
-            <span className="mt-1 block text-xs font-semibold">{tile.label}</span>
-          </button>
-        ))}
-      </div>
-
-      <div className="mb-2 flex flex-wrap items-center gap-2">
-        <div className="relative min-w-[14rem] flex-1">
-          <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-          <input
-            type="search"
-            aria-label="Search templates"
-            placeholder="Search by name or wording"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-lg border border-line bg-white py-2 pl-9 pr-3 text-sm text-ink focus:border-navy focus:outline-none"
-          />
-        </div>
-        {channel === "WHATSAPP" && (
-          <button
-            type="button"
-            disabled={off || refresh.isPending}
-            onClick={() => refresh.mutate()}
-            className="btn btn-sm btn-outline disabled:opacity-50"
-          >
-            {refresh.isPending ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Refresh status from SmartChat
-          </button>
-        )}
-        <button type="button" disabled={off} onClick={() => setEditing("new")} className="btn btn-sm btn-navy disabled:opacity-50">
-          <Plus size={14} /> Add template
-        </button>
-      </div>
-      <p className="mb-4 text-xs text-muted">
-        {channel === "WHATSAPP"
-          ? "New templates are filed on the SmartChat portal first, then added here under the same name."
-          : channel === "SMS"
-            ? "DLT has no API, so status and DLT ids are kept here by hand. A new SMS also needs adding in Ultron before it can send."
-            : "Email templates can be sent as soon as they are saved."}
-      </p>
+    <div className="space-y-9">
       {notice && (
-        <p role="status" className="mb-4 rounded-lg border border-line bg-white px-3 py-2 text-xs text-ink">
+        <p role="status" className="rounded-lg border border-line bg-white px-3 py-2 text-xs text-ink">
           {notice}
         </p>
       )}
-
       {q.isLoading ? (
         <Skeleton variant="table" rows={6} cols={2} className="rounded-lg border border-line bg-white" />
       ) : q.isError ? (
         <ErrorState error={q.error} onRetry={() => void q.refetch()} />
-      ) : matching.length === 0 ? (
-        <EmptyState title={all.length === 0 ? "No templates yet." : "No templates match."} />
+      ) : shown.length === 0 && (audience != null || all.length === 0) ? (
+        <EmptyState title={audience ? "No templates fit this group." : "No templates match."} />
       ) : (
-        <>
-          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">{main.map(card)}</div>
-          {rejected.length > 0 && (
-            <details className="mt-4 rounded-lg border border-line bg-white p-3">
-              <summary className="cursor-pointer text-sm font-semibold text-navy">Rejected ({rejected.length})</summary>
-              <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2">{rejected.map(card)}</div>
-            </details>
-          )}
-        </>
+        SECTIONS.map((s) => {
+          const rows = shown.filter((t) => (t.purpose ?? "OTHER") === s.key);
+          return (
+            rows.length > 0 && (
+              <section key={s.key}>
+                <h2 className="mb-3.5 text-[15px] font-bold text-navy">{s.title}</h2>
+                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{rows.map(card)}</div>
+              </section>
+            )
+          );
+        })
       )}
 
-      {editing && (
+      {audience?.capped && <p className="text-xs text-muted">Only the first 2,000 customers in this group are sent to at a time.</p>}
+
+      {!audience && !q.isLoading && (
+        <div className="flex flex-col gap-4">
+          {fold("Not ready to send", notReady)}
+          {fold("Sent automatically", automatic)}
+          {channel === "WHATSAPP" && (
+            <div>
+              <button type="button" disabled={off || refresh.isPending} onClick={() => refresh.mutate()} className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted hover:text-navy disabled:opacity-50">
+                {refresh.isPending ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Refresh status from SmartChat
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {(adding || editing) && (
         <TemplateForm
           channel={channel}
-          template={editing === "new" ? null : editing}
-          onClose={() => setEditing(null)}
+          template={editing}
+          onClose={() => {
+            setEditing(null);
+            onAdded();
+          }}
           onSaved={() => {
             invalidate();
             setEditing(null);
+            onAdded();
           }}
         />
       )}
+      {deleting && (
+        <Dialog open onClose={() => setDeleting(null)} aria-label="Delete template">
+          <DialogHeader>
+            <DialogTitle>Delete {deleting.label ?? deleting.name}?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-ink">This removes it from this page only. It stays on {channel === "SMS" ? "DLT and Ultron" : "SmartChat"}.</p>
+          {remove.error != null && <p className="mt-2 text-xs text-error-700">{formatApiError(remove.error, "Could not delete.")}</p>}
+          <DialogFooter>
+            <button type="button" onClick={() => setDeleting(null)} className="btn btn-sm btn-outline">
+              Cancel
+            </button>
+            <button type="button" disabled={remove.isPending} onClick={() => remove.mutate(deleting.id)} className="btn btn-sm btn-navy disabled:opacity-50">
+              Delete
+            </button>
+          </DialogFooter>
+        </Dialog>
+      )}
       {sending && !targets && (
         <RecipientPicker
-          single={singleOnly(sending)}
-          templateName={sending.template.name}
+          single={needsOne(sending.template, sending.key)}
+          templateName={sending.template.label ?? sending.template.name}
           onCancel={closeSend}
           onPick={setTargets}
         />
       )}
       {sending && targets && <SendMessageDialog open onClose={closeSend} targets={targets} initialTemplateKey={sending.key} />}
     </div>
+  );
+}
+
+function TemplateCard({
+  template: t,
+  off,
+  sendKey,
+  audience,
+  onEdit,
+  onDelete,
+  onSend,
+}: {
+  template: StoredTemplate;
+  off: boolean;
+  sendKey: string | null;
+  audience: Audience | null;
+  onEdit: () => void;
+  onDelete: () => void;
+  onSend: (t: StoredTemplate, key: string) => void;
+}) {
+  const section = SECTIONS.find((s) => s.key === t.purpose) ?? SECTIONS[SECTIONS.length - 1];
+  const empty = audience != null && !audience.count;
+  const ready = t.status === "ACTIVE" && sendKey != null;
+  return (
+    <article className="flex flex-col gap-2 rounded-[10px] border border-line bg-white px-3.5 py-3">
+      <div className="flex h-6 items-center justify-between">
+        <span className={`rounded-md px-2 py-[3px] text-[11px] font-bold ${section.pill}`}>{section.title.toUpperCase()}</span>
+        <span className="-mr-2 flex">
+          <button type="button" aria-label={`Edit ${t.label ?? t.name}`} title="Edit" disabled={off} onClick={onEdit} className="grid h-[30px] w-[30px] place-items-center text-muted hover:text-navy disabled:opacity-50">
+            <Pencil size={14} />
+          </button>
+          {!t.systemManaged && (
+            <button type="button" aria-label={`Delete ${t.label ?? t.name}`} title="Delete" disabled={off} onClick={onDelete} className="grid h-[30px] w-[30px] place-items-center text-muted hover:text-error-700 disabled:opacity-50">
+              <Trash2 size={14} />
+            </button>
+          )}
+        </span>
+      </div>
+      <div className="min-w-0 flex-1">
+        <h3 className="mb-0.5 break-words text-[15px] font-bold text-navy">{t.label ?? t.name}</h3>
+        <p title={plainText(t)} className="line-clamp-2 text-[13px] leading-[1.4] text-muted">
+          {plainText(t)}
+        </p>
+      </div>
+      {!ready && (
+        <p className="text-xs text-muted">
+          {statusLabel(t.channel, t.status)}
+          {t.rejectionReason && `: ${t.rejectionReason}`}
+          {t.unsendableReason && !t.rejectionReason && <span className="block">{t.unsendableReason}</span>}
+        </p>
+      )}
+      <div className="flex justify-end">
+        <button
+          type="button"
+          disabled={off || sendKey == null || empty}
+          onClick={() => sendKey && onSend(t, sendKey)}
+          className="h-[34px] rounded-[7px] bg-navy px-3.5 text-[13px] font-bold text-white disabled:opacity-50"
+        >
+          {audience ? `Send to ${audience.count ?? "…"}` : "Send"}
+        </button>
+      </div>
+    </article>
   );
 }
 
@@ -503,6 +592,8 @@ function TemplateForm({
   const [status, setStatus] = React.useState<StoredTemplate["status"]>(template?.status ?? "DRAFT");
   const [providerId, setProviderId] = React.useState(template?.providerId ?? "");
   const [remarks, setRemarks] = React.useState(template?.rejectionReason ?? "");
+  const [purpose, setPurpose] = React.useState<string>(template?.purpose ?? "");
+  const [label, setLabel] = React.useState(template?.label ?? "");
   const [variables, setVariables] = React.useState<Variable[]>((template?.variables ?? []).map(toVariable));
 
   // A template listed from SmartChat: its wording lives with Meta, so only the status is kept here.
@@ -523,6 +614,8 @@ function TemplateForm({
         body,
         category,
         rule,
+        purpose,
+        label,
         variables: shown.map(fromVariable),
         ...(channel !== "EMAIL" ? { status, providerId, remarks } : {}),
       };
@@ -540,6 +633,19 @@ function TemplateForm({
         <div className="field">
           <label htmlFor="tpl-name">Name</label>
           <input id="tpl-name" value={name} disabled={template != null} onChange={(e) => setName(e.target.value)} />
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="field">
+            <label htmlFor="tpl-label">Display name (optional)</label>
+            <input id="tpl-label" value={label} maxLength={120} onChange={(e) => setLabel(e.target.value)} />
+          </div>
+          <Select
+            label="Category"
+            required
+            value={purpose}
+            onChange={(e) => setPurpose(e.target.value)}
+            options={[{ value: "", label: "Choose…" }, ...SECTIONS.map((c) => ({ value: c.key, label: c.title }))]}
+          />
         </div>
         {channel === "EMAIL" && (
           <div className="field">
@@ -570,7 +676,7 @@ function TemplateForm({
         ))}
         {!listedOnly && <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Select
-          label="Category"
+          label="Message type"
           value={category}
           onChange={(e) => setCategory(e.target.value as StoredTemplate["category"])}
           options={[
@@ -625,7 +731,7 @@ function TemplateForm({
         </button>
         <button
           type="button"
-          disabled={save.isPending || name.trim() === "" || !typedOk}
+          disabled={save.isPending || name.trim() === "" || purpose === "" || !typedOk}
           onClick={() => save.mutate()}
           className="btn btn-sm btn-navy disabled:opacity-50"
         >

@@ -54,7 +54,7 @@ class MessageTemplateServiceTest {
     }
 
     private static StoredTemplateRequest sms(String status, String dlt, String body, List<String> vars) {
-        return new StoredTemplateRequest("SMS", "T1", null, body, "SERVICE", status, dlt, null, vars, "LIVE");
+        return new StoredTemplateRequest("SMS", "T1", null, body, "SERVICE", status, dlt, null, vars, "LIVE", "COLLECTIONS", null);
     }
 
     private static MessageTemplate row(String channel, String status, String provider, String body) {
@@ -115,17 +115,17 @@ class MessageTemplateServiceTest {
     @Test
     void ruleIsTightenedToWhatTheVariablesNeed() {
         var req = new StoredTemplateRequest("EMAIL", "e", "Hi", "Amount {{1}} due. Thanks", "SERVICE", null, null, null,
-                List.of("amount"), "ANY");
+                List.of("amount"), "ANY", "COLLECTIONS", null);
         assertThat(service.create(req).rule()).isEqualTo("LIVE");
         var overdue = new StoredTemplateRequest("EMAIL", "e2", "Hi", "Late {{1}} days. Thanks", "SERVICE", null, null, null,
-                List.of("daysOverdue"), "ANY");
+                List.of("daysOverdue"), "ANY", "COLLECTIONS", null);
         assertThat(service.create(overdue).rule()).isEqualTo("OVERDUE");
     }
 
     @Test
     void emailIsActiveOnSaveAndNeedsNoProviderId() {
         var req = new StoredTemplateRequest("EMAIL", "e", "Hello {{1}}", "Your loan. Thanks", "MARKETING", "DRAFT", null, null,
-                List.of("name"), "ANY");
+                List.of("name"), "ANY", "COLLECTIONS", null);
         var saved = service.create(req);
         assertThat(saved.status()).isEqualTo("ACTIVE");
         assertThat(saved.rule()).isEqualTo("ANY");
@@ -135,12 +135,12 @@ class MessageTemplateServiceTest {
     @Test
     void whatsAppStartsDraftAndItsStatusCanBeSetByHand() {
         var draft = service.create(new StoredTemplateRequest("WHATSAPP", "db_new", null, "Dear {{1}}, thanks.", "SERVICE", null,
-                null, null, List.of("name"), "ANY"));
+                null, null, List.of("name"), "ANY", "COLLECTIONS", null));
         assertThat(draft.status()).isEqualTo("DRAFT");
         assertThat(draft.providerId()).isNull();
 
         var approved = service.create(new StoredTemplateRequest("WHATSAPP", "db_two", null, "Dear {{1}}, thanks.", "SERVICE", "ACTIVE",
-                null, null, List.of("name"), "ANY"));
+                null, null, List.of("name"), "ANY", "COLLECTIONS", null));
         assertThat(approved.status()).isEqualTo("ACTIVE");
         assertThat(approved.providerId()).isEqualTo("db_two");
     }
@@ -148,10 +148,10 @@ class MessageTemplateServiceTest {
     @Test
     void whatsAppWordingIsCheckedAgainstThePortalRules() {
         var quoted = new StoredTemplateRequest("WHATSAPP", "db_new", null, "Say \"hi\" {{1}} ok", "SERVICE", null, null,
-                null, List.of("name"), "ANY");
+                null, List.of("name"), "ANY", "COLLECTIONS", null);
         assertRefused(() -> service.create(quoted), "INVALID_TEMPLATE");
         var edge = new StoredTemplateRequest("WHATSAPP", "db_new", null, "{{1}} is your name", "SERVICE", null, null, null,
-                List.of("name"), "ANY");
+                List.of("name"), "ANY", "COLLECTIONS", null);
         assertRefused(() -> service.create(edge), "INVALID_TEMPLATE");
     }
 
@@ -163,7 +163,7 @@ class MessageTemplateServiceTest {
         when(repository.findById(5L)).thenReturn(Optional.of(t));
         java.util.function.BiFunction<String, String[], StoredTemplateRequest> req = (category, v) ->
                 new StoredTemplateRequest("WHATSAPP", "t1", null, "Dear {{1}}, thanks.", category, v[0], v[1], null,
-                        List.of("name"), "ANY");
+                        List.of("name"), "ANY", "COLLECTIONS", null);
 
         assertRefused(() -> service.update(5L, req.apply("MARKETING", new String[] {"SUBMITTED", null})), "TEMPLATE_LOCKED");
         assertRefused(() -> service.update(5L, req.apply("SERVICE", new String[] {"DRAFT", null})), "INVALID_STATUS");
@@ -172,6 +172,25 @@ class MessageTemplateServiceTest {
         var approved = service.update(5L, req.apply("SERVICE", new String[] {"ACTIVE", "t1_164"}));
         assertThat(approved.status()).isEqualTo("ACTIVE");
         assertThat(approved.providerId()).isEqualTo("t1_164");
+    }
+
+    @Test
+    void aSystemTemplateCannotBeDeletedButACustomOneCan() {
+        MessageTemplate system = row("WHATSAPP", "ACTIVE", "t1", null);
+        system.setSystemManaged(true);
+        when(repository.findById(5L)).thenReturn(Optional.of(system));
+        assertRefused(() -> service.delete(5L), "TEMPLATE_PROTECTED");
+        org.mockito.Mockito.verify(repository, org.mockito.Mockito.never()).delete(org.mockito.ArgumentMatchers.any());
+
+        system.setSystemManaged(false);
+        service.delete(5L);
+        org.mockito.Mockito.verify(repository).delete(system);
+    }
+
+    @Test
+    void aNewTemplateNeedsACategory() {
+        assertRefused(() -> service.create(new StoredTemplateRequest("WHATSAPP", "db_new", null, "Dear {{1}}, thanks.", "SERVICE", null,
+                null, null, List.of("name"), "ANY", null, null)), "INVALID_CATEGORY");
     }
 
     @Test

@@ -27,6 +27,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class CustomerMessageController {
 
     private final CustomerMessageService service;
+    private final com.navix.loan.service.MessageAudienceService audiences;
+
+    @GetMapping("/audience")
+    public ApiResponse<com.navix.loan.dto.MessagingDtos.AudienceView> audience(@org.springframework.web.bind.annotation.RequestParam String group) {
+        return ApiResponse.ok(audiences.audience(group));
+    }
 
     @GetMapping("/templates")
     public ApiResponse<List<TemplateView>> templates() {

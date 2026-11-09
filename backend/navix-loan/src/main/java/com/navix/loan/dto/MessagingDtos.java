@@ -22,7 +22,11 @@ public final class MessagingDtos {
 
     /** {@code category} is SERVICE or MARKETING; {@code confirmText} non-null means a confirmation is required. */
     public record TemplateView(String key, String label, String category, List<String> channels,
-                               List<InputView> inputs, boolean singleOnly, String confirmText) {
+                               List<InputView> inputs, boolean singleOnly, String confirmText, String rule) {
+    }
+
+    /** {@code customerIds} stops at the cap; {@code count} is the whole group. */
+    public record AudienceView(String group, long count, List<Long> customerIds, boolean capped) {
     }
 
     public record PreviewRequest(@NotNull Target target, @NotBlank String templateKey,
@@ -64,7 +68,7 @@ public final class MessagingDtos {
     /** {@code status}, {@code providerId} and {@code remarks} are honoured for SMS only. */
     public record StoredTemplateRequest(@NotBlank String channel, @NotBlank String name, String subject, String body,
                                         @NotBlank String category, String status, String providerId, String remarks,
-                                        List<String> variables, String rule) {
+                                        List<String> variables, String rule, String purpose, String label) {
     }
 
     /** {@code unsendableReason} null means it can be sent now. */
@@ -72,7 +76,7 @@ public final class MessagingDtos {
                                      String category, String status, String providerId, String rejectionReason,
                                      List<String> variables, String rule, String confirmText, boolean systemManaged,
                                      String unsendableReason, String createdByName, Instant createdAt,
-                                     Instant updatedAt) {
+                                     Instant updatedAt, String purpose, String label) {
     }
 
     public record WhatsAppRefreshResult(int updated, List<String> notFound) {
