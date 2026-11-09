@@ -4,7 +4,7 @@ import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { CalendarClock, Eye, FileSpreadsheet, FileText, Loader2, Search, X } from "lucide-react";
+import { CalendarClock, Database, Eye, FileSpreadsheet, FileText, Loader2, Search, X } from "lucide-react";
 import { EmptyState, ErrorState, Skeleton } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { useStaffMe, useCan, NoAccessNotice, ROLE_LABEL } from "@/components/staff/live-pipeline";
@@ -20,6 +20,24 @@ import { downloadReport, formatReportCell, periodLine, reportTotals } from "@/li
 const PREVIEW_ROWS = 200;
 
 type Format = "csv" | "pdf";
+
+const EXPORT_GROUP = "Customers";
+const EXPORT_CARD_TEXT = "customer data export every field of a customer, chosen group, csv or pdf";
+
+/** Entry card to the customer data export page (ADMIN, like the rest of this page). */
+function ExportEntryCard() {
+  return (
+    <Link href="/staff/admin/reports/customer-export" className="flex flex-col rounded border border-navy bg-white p-4 shadow-sm hover:ring-1 hover:ring-navy">
+      <div className="mb-1 flex items-center gap-1.5 font-semibold text-navy">
+        <Database size={15} /> Customer data export
+      </div>
+      <p className="mb-3 flex-1 text-sm text-muted">
+        Pick a group, a date window and days past due, choose any customer fields (personal, loans, verification, collections and more), and download a CSV or PDF.
+      </p>
+      <div className="text-[11px] uppercase tracking-wide text-muted">Choose customers and fields</div>
+    </Link>
+  );
+}
 
 /**
  * Admin · Reports — one place to pull any report about the platform (customers, loans, repayments,
@@ -79,6 +97,11 @@ function ReportsCentre() {
     requestAnimationFrame(() => previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
   };
 
+  const showExportCard =
+    can("staff:manage") &&
+    (!category || category === EXPORT_GROUP) &&
+    (!search.trim() || EXPORT_CARD_TEXT.includes(search.trim().toLowerCase()));
+
   const groups = React.useMemo(() => {
     const needle = search.trim().toLowerCase();
     const out = new Map<string, ReportDef[]>();
@@ -87,8 +110,10 @@ function ReportsCentre() {
       if (needle && !`${d.title} ${d.description} ${d.category}`.toLowerCase().includes(needle)) continue;
       out.set(d.category, [...(out.get(d.category) ?? []), d]);
     }
+    // The customer data export is a page of its own, listed with the Customers reports.
+    if (showExportCard && !out.has(EXPORT_GROUP)) out.set(EXPORT_GROUP, []);
     return [...out.entries()];
-  }, [catalog.data, search, category]);
+  }, [catalog.data, search, category, showExportCard]);
 
   if (me && !can("staff:manage")) return <NoAccessNotice message="Admin access only." />;
 
@@ -176,6 +201,7 @@ function ReportsCentre() {
             <section key={category}>
               <h2 className="mb-3 text-lg">{category}</h2>
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {category === EXPORT_GROUP && showExportCard && <ExportEntryCard />}
                 {defs.map((d) => (
                   <ReportCard
                     key={d.key}

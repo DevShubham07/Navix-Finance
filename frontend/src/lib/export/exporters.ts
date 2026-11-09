@@ -487,3 +487,136 @@ export function exportReportPdf(r: PdfReport): void {
   drawPdfFooter(doc);
   doc.save(`${r.fileBase}.pdf`);
 }
+
+/**
+ * One digit-only identifier (Aadhaar, account number, UAN, mobile) as a CSV cell Excel keeps as text.
+ * A bare 123456789012 becomes 1.23457E+11 and 0012345678 loses its zeros, so the value is written as
+ * the formula `="0012345678"`. Only a string of digits and nothing else qualifies, so this is the one
+ * place a leading "=" is allowed through: `csvCell` still neutralises any other formula-looking text.
+ */
+export function csvTextNumberCell(v: string | number | null | undefined): string {
+  const raw = cell(v);
+  return /^\d+$/.test(raw) ? `"=""${raw}"""` : csvCell(raw);
+}
+
+/** A customer-export table PDF: a header row and one string row per customer/application. */
+export interface CustomerTablePdf {
+  fileBase: string;
+  title: string;
+  subtitle?: string;
+  /** What the export covers, wrapped under the header ("Overdue loans, 1–7 days past due. Came between …"). */
+  summary: string;
+  header: string[];
+  rows: string[][];
+  actor: ExportActor;
+  generatedAt: string;
+}
+
+/** The provenance + scope lines under the header band, wrapped to the page; returns where content may start. */
+function drawCustomerPdfIntro(doc: jsPDF, summary: string, provenance: string): number {
+  const width = doc.internal.pageSize.getWidth() - 80;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(90, 90, 90);
+  const lines = doc.splitTextToSize(pdfText(`${provenance}
+${summary}`), width) as string[];
+  doc.text(lines, 40, 78);
+  return 78 + lines.length * 10 + 8;
+}
+
+/**
+ * The customer export as a table (landscape A4) — for a handful of fields. Cells wrap by word, and a
+ * set of columns that does not fit across the page continues on following pages with the first
+ * column repeated, so a value is never cut off or run off the edge.
+ */
+export function exportCustomerTablePdf(o: CustomerTablePdf): void {
+  const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+  drawPdfHeader(doc, o.title, o.subtitle);
+  const top = drawCustomerPdfIntro(
+    doc,
+    o.summary,
+    `Downloaded by ${o.actor.name} · ${o.actor.role}  ·  Generated ${o.generatedAt}  ·  ${o.rows.length} row${o.rows.length === 1 ? "" : "s"}`,
+  );
+  const fontSize = o.header.length > 8 ? 7 : PDF_FONT_SIZE;
+  autoTable(doc, {
+    startY: top,
+    head: [o.header.map(pdfText)],
+    body: o.rows.length > 0 ? o.rows.map((r) => r.map((v) => pdfText(v))) : [[{ content: "No records.", colSpan: o.header.length, styles: { halign: "center", textColor: 120 } }]],
+    styles: { fontSize, cellPadding: 3, overflow: "linebreak", valign: "top" },
+    headStyles: { fillColor: NAVY, textColor: 255, fontStyle: "bold" },
+    alternateRowStyles: { fillColor: ROW_ALT },
+    margin: { left: 40, right: 40, top: 40, bottom: 36 },
+    horizontalPageBreak: true,
+    horizontalPageBreakRepeat: 0,
+  });
+  drawPdfFooter(doc);
+  doc.save(`${o.fileBase}.pdf`);
+}
+
+/** One customer's card: a title bar and titled sections of label/value rows. */
+export interface CustomerPdfCard {
+  title: string;
+  badge?: string;
+  sections: { title: string; rows: [string, string][] }[];
+}
+
+/**
+ * The customer export as one card per customer (portrait A4) — for many fields, where a table would
+ * be unreadable. Each card is a navy title bar over its sections; values wrap inside their cell and a
+ * card that runs past the page foot continues on the next page under a repeated title bar.
+ */
+export function exportCustomerCardsPdf(o: {
+  fileBase: string;
+  title: string;
+  subtitle?: string;
+  summary: string;
+  cards: CustomerPdfCard[];
+  actor: ExportActor;
+  generatedAt: string;
+}): void {
+  const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+  const pageHeight = doc.internal.pageSize.getHeight();
+  drawPdfHeader(doc, o.title, o.subtitle);
+  let y = drawCustomerPdfIntro(
+    doc,
+    o.summary,
+    `Downloaded by ${o.actor.name} · ${o.actor.role}  ·  Generated ${o.generatedAt}  ·  ${o.cards.length} customer${o.cards.length === 1 ? "" : "s"}`,
+  );
+  for (const card of o.cards) {
+    // A title bar plus a section heading and a row must fit, or the card starts on a fresh page.
+    if (y > pageHeight - 120) {
+      doc.addPage();
+      y = 40;
+    }
+    const body: Parameters<typeof autoTable>[1]["body"] = [];
+    for (const s of card.sections) {
+      body.push([
+        {
+          content: pdfText(s.title).toUpperCase(),
+          colSpan: 2,
+          styles: { fillColor: ROW_ALT, textColor: NAVY, fontStyle: "bold", fontSize: 7.5 },
+        },
+      ]);
+      for (const [k, v] of s.rows) body.push([pdfText(k), pdfText(v)]);
+    }
+    autoTable(doc, {
+      startY: y,
+      head: [
+        [
+          { content: pdfText(card.title), styles: { halign: "left" } },
+          { content: pdfText(card.badge ?? ""), styles: { halign: "right", textColor: GOLD } },
+        ],
+      ],
+      body,
+      theme: "plain",
+      styles: { fontSize: PDF_FONT_SIZE, cellPadding: 3, overflow: "linebreak", valign: "top", lineColor: [230, 224, 210], lineWidth: { bottom: 0.3 } },
+      headStyles: { fillColor: NAVY, textColor: 255, fontStyle: "bold", fontSize: 10 },
+      columnStyles: { 0: { cellWidth: 150, textColor: [91, 102, 117] }, 1: { cellWidth: "auto" } },
+      margin: { left: 40, right: 40, top: 40, bottom: 36 },
+      rowPageBreak: "avoid",
+    });
+    y = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y) + 14;
+  }
+  drawPdfFooter(doc);
+  doc.save(`${o.fileBase}.pdf`);
+}
