@@ -5,6 +5,6 @@ import { getStaffSession } from "@/lib/api/bff-session";
 export async function GET() {
   const session = await getStaffSession();
   return NextResponse.json({
-    session: session ? { id: session.id, name: session.name, role: session.role } : null,
+    session: session ? { id: session.id, name: session.name, role: session.role, sim: session.sim === true } : null,
   });
 }

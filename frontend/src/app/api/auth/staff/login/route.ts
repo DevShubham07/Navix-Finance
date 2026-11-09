@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { rejectCrossSite } from "@/lib/api/bff-proxy";
 import { setStaffSession } from "@/lib/api/bff-session";
+import { isSimLogin, simTarget } from "@/lib/api/sim-routing";
 import type { StaffRole } from "@/lib/auth/rbac";
 import { config } from "@/lib/config";
 
@@ -44,12 +45,14 @@ export async function POST(req: NextRequest) {
   }
   const loginEmail = email;
   const loginPassword = password;
+  // Only the designated account leaves the production path.
+  const sim = isSimLogin(loginEmail) ? simTarget() : null;
 
   let backendRes: Response;
   try {
-    backendRes = await fetch(`${config.backendBaseUrl}/api/auth/staff/login`, {
+    backendRes = await fetch(`${sim?.baseUrl ?? config.backendBaseUrl}/api/auth/staff/login`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers: { "Content-Type": "application/json", Accept: "application/json", ...sim?.headers },
       body: JSON.stringify({
         email: loginEmail,
         password: loginPassword,
@@ -82,7 +85,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unexpected authentication response." }, { status: 502 });
   }
 
-  const session = { token: data.token, id: String(data.id), name: data.name, role: data.role };
+  const session = {
+    token: data.token,
+    id: String(data.id),
+    name: data.name,
+    role: data.role,
+    ...(sim ? { sim: true as const } : {}),
+  };
   await setStaffSession(session);
   // Never return the token to the browser.
   return NextResponse.json({ id: session.id, name: session.name, role: session.role });

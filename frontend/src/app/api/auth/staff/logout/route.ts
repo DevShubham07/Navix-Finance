@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { clearStaffSession, getStaffSession } from "@/lib/api/bff-session";
-import { config } from "@/lib/config";
+import { targetForSession } from "@/lib/api/sim-routing";
 
 /**
  * Clear the staff session cookie — and tell the backend first, so `staff_user.active_session_id`
@@ -10,10 +10,11 @@ import { config } from "@/lib/config";
 export async function POST() {
   const session = await getStaffSession();
   if (session) {
+    const target = targetForSession(session);
     try {
-      await fetch(`${config.backendBaseUrl}/api/auth/staff/logout`, {
+      await fetch(`${target.baseUrl}/api/auth/staff/logout`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${session.token}`, Accept: "application/json" },
+        headers: { Authorization: `Bearer ${session.token}`, Accept: "application/json", ...target.headers },
         cache: "no-store",
       });
     } catch {
