@@ -179,8 +179,8 @@ export function MarketingScripts() {
           R = +rate.value;
         const interest = A * (R / 100) * T,
           total = A + interest,
-          // All-in: 10% fee + 18% GST (11.8%) plus interest, on the 88.2% actually received.
-          apr = ((11.8 + R * T) / 88.2) * (365 / T) * 100;
+          // 10% fee plus interest on the 90% left after the fee; GST is excluded.
+          apr = ((10 + R * T) / 90) * (365 / T) * 100;
         set("amtV", rupee(A));
         set("tenV", T + " days");
         set("rateV", R + "% / day");
@@ -271,8 +271,8 @@ export function MarketingScripts() {
           R = RATE;
         const interest = A * (R / 100) * T,
           total = A + interest,
-          // All-in: 10% fee + 18% GST (11.8%) plus interest, on the 88.2% actually received.
-          apr = ((11.8 + R * T) / 88.2) * (365 / T) * 100;
+          // 10% fee plus interest on the 90% left after the fee; GST is excluded.
+          apr = ((10 + R * T) / 90) * (365 / T) * 100;
         if (calAmtV) calAmtV.textContent = rupee(A);
         if (bigEl) bigEl.textContent = sel.getDate() + " " + MON[sel.getMonth()];
         if (subEl) subEl.textContent = WEEKDAYS[sel.getDay()] + " " + sel.getFullYear() + " · " + T + (T === 1 ? " day" : " days") + " away";

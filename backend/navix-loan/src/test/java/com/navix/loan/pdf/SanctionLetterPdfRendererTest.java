@@ -39,7 +39,7 @@ class SanctionLetterPdfRendererTest {
 
     @Test
     void namesTheLenderAndStatesTheAllInApr() throws Exception {
-        // ₹15,000 over 30 days: net 13,230, total 19,500 → 6,270 / 13,230 × 365 / 30 = 576.6%.
+        // ₹15,000 over 30 days, GST excluded: 13,500 after fee, total 19,500 → 6,000 / 13,500 × 365 / 30 = 540.7%.
         SanctionLetterPdfRenderer.Facts f = new SanctionLetterPdfRenderer.Facts(
                 54L, "Asha Kumari", "AZKPQ3156X", "9811100948",
                 1_500_000L, 150_000L, 27_000L, 1_323_000L, 450_000L, 1_950_000L, 30,
@@ -50,7 +50,7 @@ class SanctionLetterPdfRendererTest {
         String text = new PdfTextExtractor(reader).getTextFromPage(1);
         reader.close();
 
-        assertThat(text.replaceAll("\\s+", " ")).contains("MLB Securities Private Limited", "14.00526", "576.6% per year",
+        assertThat(text.replaceAll("\\s+", " ")).contains("MLB Securities Private Limited", "14.00526", "540.7% per year", "excluding GST",
                 "credit information companies");
     }
 

@@ -12,7 +12,7 @@ export const html = `<section class="page active" id="risk-management">
       <li>Loans are limited to 25% of monthly salary.</li>
       <li>Income, employment and bank details are verified before a loan is offered.</li>
       <li>A credit report is reviewed, with your consent, as part of the assessment.</li>
-      <li>Each loan is a single repayment linked to your salary date, within 40 days of disbursal.</li>
+      <li>Each loan is a single repayment within the tenure stated in your Key Fact Statement.</li>
     </ul>
     <h2>3. Fraud risk</h2>
     <p>Identity details are checked against official records, and mismatches are reviewed or rejected. See our <a href="/kyc-aml-policy" data-link="">KYC &amp; AML Policy</a>.</p>

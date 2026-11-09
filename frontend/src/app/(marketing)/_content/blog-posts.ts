@@ -72,7 +72,7 @@ export const POSTS: Record<string, BlogPost> = {
     <h2>Why the "net disbursed" line is the one people miss</h2>
     <p>A loan of ₹10,000 does not put ₹10,000 in your account. The processing fee and GST are taken from the disbursal, so you receive a little less — and you repay the full principal plus interest. This is normal and disclosed, but it surprises first-time borrowers. Read the net-disbursed line first, then the total-payable line, and you'll know exactly what you're getting and what you're giving back.</p>
     <h2>Check the due date and the late-payment terms</h2>
-    <p>DhanBoost loans are salary-linked and repaid in a single instalment on or after your salary date. Your KFS shows the exact due date and the total due. It also states the late-payment fee: 2% per day on the overdue principal, capped at 30 days. Knowing this before you sign means there are no surprises if something slips.</p>
+    <p>DhanBoost loans are repaid in a single instalment. Your KFS shows the exact due date and the total due. It also states the late-payment fee: 2% per day on the overdue principal, capped at 30 days. Knowing this before you sign means there are no surprises if something slips.</p>
     <h2>A 60-second KFS checklist</h2>
     <ul>
       <li>Does the <b>net disbursed</b> amount match what you need?</li>
@@ -142,7 +142,7 @@ export const POSTS: Record<string, BlogPost> = {
       body: `
     <p>Your credit score is a three-digit summary of how you've handled borrowing. In India it usually runs from 300 to 900, and lenders use it as one input when they assess you. It isn't magic, and it isn't fixed — it responds to a few clear behaviours. Here's what actually moves it.</p>
     <h2>Payment history — the biggest factor</h2>
-    <p>Paying on time, every time, is the strongest thing you can do. A single missed or late payment can dent your score, and the effect lingers. Set reminders, automate where you can, and if you're going to be late, talk to your lender early. On DhanBoost, your due date is salary-linked and shown clearly, precisely so it's easy to pay on time.</p>
+    <p>Paying on time, every time, is the strongest thing you can do. A single missed or late payment can dent your score, and the effect lingers. Set reminders, automate where you can, and if you're going to be late, talk to your lender early. On DhanBoost, your due date is shown clearly in your Key Fact Statement, precisely so it's easy to pay on time.</p>
     <h2>Credit utilisation — how much of your limit you use</h2>
     <p>If you have credit cards or revolving limits, using a large share of them signals stress. A common rule of thumb is to keep usage well below 30% of your limit. Lower utilisation generally helps your score.</p>
     <h2>Age and mix of credit</h2>
@@ -191,7 +191,7 @@ export const POSTS: Record<string, BlogPost> = {
     <h2>A quick example</h2>
     <p>Imagine two lenders offering a similar-sounding rate on the same amount. The one quoting a flat rate can end up costing noticeably more than the one quoting an equivalent-looking APR, because the flat rate keeps charging on money you've already repaid. Same headline, different bill.</p>
     <h2>How DhanBoost keeps it honest</h2>
-    <p>DhanBoost loans charge a simple 1% per day on the principal over your actual tenure, and — because it's a single-repayment, salary-linked loan — the Key Fact Statement shows you the exact rupee total you'll repay before you accept. Our calculator shows the same figure, including a representative APR, so you compare on total cost, not a headline.</p>
+    <p>DhanBoost loans charge a simple 1% per day on the principal over your actual tenure, and — because it's a single-repayment loan — the Key Fact Statement shows you the exact rupee total you'll repay before you accept. Our calculator shows the same figure, including a representative APR, so you compare on total cost, not a headline.</p>
     <h2>The one habit to build</h2>
     <p>Whenever you compare loans, ignore the marketing rate and ask two questions: <b>what's the APR</b>, and <b>what's the total rupee amount I'll repay?</b> Those two numbers cut through almost every pricing trick.</p>`,
     }),
@@ -217,7 +217,7 @@ export const POSTS: Record<string, BlogPost> = {
     <h2>When it can make sense</h2>
     <ul>
       <li><b>A genuine, time-bound need with a clear payoff.</b> An essential expense you can't defer — a medical bill, a critical repair, a fee with a deadline — where a short bridge until your salary solves the problem cleanly.</li>
-      <li><b>You already know how you'll repay.</b> A salary-linked loan works best when your due date lines up with money you know is coming. If the repayment plan is obvious, the loan is doing its job.</li>
+      <li><b>You already know how you'll repay.</b> A short-term loan works best when you know exactly where the repayment will come from. If the repayment plan is obvious, the loan is doing its job.</li>
       <li><b>The total cost is small relative to the benefit.</b> If a modest amount of interest saves you a large late penalty, a lost deposit, or real hardship, the maths can favour borrowing.</li>
     </ul>
     <h2>When it doesn't</h2>
@@ -257,8 +257,8 @@ export const POSTS: Record<string, BlogPost> = {
       readMin: 3,
       date: "Apr 2026",
       body: `
-    <h2>One repayment, on your salary date</h2>
-    <p>A DhanBoost loan is designed to be simple: you repay it in a <b>single instalment</b> on or after your salary date. There are no EMIs to track. Your exact due date and total amount are shown in your Key Fact Statement and on your dashboard, so you always know what's due and when.</p>
+    <h2>One repayment, on your due date</h2>
+    <p>A DhanBoost loan is designed to be simple: you repay it in a <b>single instalment</b> on or before your due date. There are no EMIs to track. Your exact due date and total amount are shown in your Key Fact Statement and on your dashboard, so you always know what's due and when.</p>
     <h2>The ways to pay</h2>
     <ul>
       <li><b>UPI:</b> the fastest option — pay from any UPI app to the details shown on your repayment screen. Payments usually reflect within minutes.</li>

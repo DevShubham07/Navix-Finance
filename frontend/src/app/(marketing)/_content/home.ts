@@ -115,7 +115,7 @@ export const html = `<section class="page active" id="home">
           <div class="jp-visual"><div class="mini-card">
             <div class="kfs-row"><span>You borrow</span><b>₹25,000</b></div>
             <div class="kfs-row"><span>Interest</span><b>₹7,500</b></div>
-            <div class="kfs-row apr"><span>Representative APR</span><b>576.6%</b></div>
+            <div class="kfs-row apr"><span>Representative APR</span><b>540.7%</b></div>
             <div class="kfs-total"><span>You repay</span><b>₹32,500</b></div>
             <svg class="kfs-sign" viewBox="0 0 200 40"><path d="M6 28 C 26 6 44 34 64 18 C 84 2 104 4 132 24 C 150 36 176 18 194 14"></path></svg>
             <div class="kfs-esign">✓ e-signed · just now</div>
@@ -255,10 +255,10 @@ export const html = `<section class="page active" id="home">
           <div class="cr-line"><span>Tenure</span><b id="calOT">30 days</b></div>
           <div class="cr-line"><span>Interest rate</span><b id="calOR">1% / day</b></div>
           <div class="cr-line"><span>Interest payable</span><b id="calOI">₹3,000</b></div>
-          <div class="cr-line apr"><span>Representative APR</span><b id="calOApr">576.6%</b></div>
+          <div class="cr-line apr"><span>Representative APR</span><b id="calOApr">540.7%</b></div>
           <div class="cr-total"><span class="t-lbl">Total payable</span><span class="t-val" id="calOTotal">₹13,000</span></div>
         </div>
-        <p class="cal-note">Interest is a fixed 1% per day across your selected tenure. Figures are indicative — your exact due date and APR are confirmed before you accept, with no pre-closure or prepayment charge.</p>
+        <p class="cal-note">Interest is a fixed 1% per day across your selected tenure. APR includes the processing fee and excludes GST. Figures are indicative — your exact due date and APR are confirmed before you accept, with no pre-closure or prepayment charge.</p>
         <a href="/signup/start" class="btn btn-gold btn-block" data-link="">Apply for this loan <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"></path></svg></a>
       </div>
     </div>

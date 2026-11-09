@@ -21,7 +21,7 @@ export const html = `<section class="page active" id="interest-rate-policy">
     <h2>4. Worked example</h2>
     <p>For a ₹10,000 loan held for 27 days, the processing fee is ₹1,000 and GST is ₹180, so you receive ₹8,820. Interest is ₹2,700, so you repay ₹12,700. If you repay on day 20 instead, interest is ₹2,000 and you repay ₹12,000. This example is illustrative.</p>
     <h2>5. Annual Percentage Rate</h2>
-    <p>The Annual Percentage Rate (APR) combines interest and fees and depends on your loan amount and tenure. The APR for your loan is stated in your Key Fact Statement.</p>
+    <p>The Annual Percentage Rate (APR) combines interest and the processing fee, excludes GST, and depends on your loan amount and tenure. The APR for your loan is stated in your Key Fact Statement.</p>
     <h2>6. Changes</h2>
     <p>Any change in rates will be published on this page. The terms in your signed Key Fact Statement continue to apply to your loan.</p>
   </div></div></div>

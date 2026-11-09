@@ -184,16 +184,17 @@ public class SanctionLetterPdfRenderer {
         }
     }
 
-    /** All-in cost on the money actually received: (total repaid - net received) / net, annualised. */
+    /** Interest plus processing fee on the principal less that fee, annualised. GST is excluded. */
     private static String apr(Facts f) {
-        if (f.netDisbursedPaise() <= 0 || f.tenureDays() <= 0) {
+        long netOfFee = f.netDisbursedPaise() + f.gstPaise();
+        if (netOfFee <= 0 || f.tenureDays() <= 0) {
             return "—";
         }
-        BigDecimal percent = BigDecimal.valueOf(f.totalRepayablePaise() - f.netDisbursedPaise())
+        BigDecimal percent = BigDecimal.valueOf(f.totalRepayablePaise() - netOfFee)
                 .multiply(BigDecimal.valueOf(36_500))
-                .divide(BigDecimal.valueOf(f.netDisbursedPaise()).multiply(BigDecimal.valueOf(f.tenureDays())),
+                .divide(BigDecimal.valueOf(netOfFee).multiply(BigDecimal.valueOf(f.tenureDays())),
                         1, RoundingMode.HALF_UP);
-        return percent.toPlainString() + "% per year, including fee and GST";
+        return percent.toPlainString() + "% per year, including fee, excluding GST";
     }
 
     private PdfPTable signatureBlock(long applicationId, byte[] signaturePng,
