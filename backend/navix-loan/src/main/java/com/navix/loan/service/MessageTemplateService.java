@@ -189,7 +189,10 @@ public class MessageTemplateService {
         }
         boolean wordingChanged = !Objects.equals(trimToNull(req.body()), t.getBody())
                 || !jsonList(req.variables()).equals(t.getVariables());
-        if (MessageCatalogue.WHATSAPP.equals(t.getChannel()) && wordingChanged
+        // The category decides who may opt out and the rule who may receive it, so both are locked with the wording.
+        boolean termsChanged = !req.category().trim().toUpperCase(Locale.ROOT).equals(t.getCategory())
+                || !effectiveRule(req.rule(), req.variables() == null ? List.of() : req.variables()).equals(t.getRule());
+        if (MessageCatalogue.WHATSAPP.equals(t.getChannel()) && (wordingChanged || termsChanged)
                 && !Set.of(MessageTemplate.DRAFT, MessageTemplate.REJECTED).contains(t.getStatus())) {
             throw new BusinessException("TEMPLATE_LOCKED",
                     "This template is with Meta. To change it, add a new one under a new name.");
@@ -240,9 +243,18 @@ public class MessageTemplateService {
         if (!STATUSES.contains(status)) {
             throw new BusinessException("INVALID_STATUS", "Unknown template status");
         }
+        if (MessageTemplate.DRAFT.equals(status)
+                && Set.of(MessageTemplate.ACTIVE, MessageTemplate.SUBMITTED).contains(t.getStatus())) {
+            throw new BusinessException("INVALID_STATUS", "A template already with SmartChat cannot go back to Draft");
+        }
         String stored = trimToNull(req.providerId());
         if (stored == null && MessageTemplate.ACTIVE.equals(status)) {
             stored = t.getName();
+        }
+        // Its own name, or the name SmartChat stored it under: never another template's.
+        if (stored != null && !stored.equals(t.getName())
+                && !stored.matches(Pattern.quote(t.getName()) + "_\\d+")) {
+            throw new BusinessException("INVALID_STORED_NAME", "Use this template's own name as stored on SmartChat");
         }
         if (stored != null && !stored.equals(t.getProviderId())
                 && repository.existsByChannelAndProviderId(t.getChannel(), stored)) {

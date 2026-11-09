@@ -156,6 +156,25 @@ class MessageTemplateServiceTest {
     }
 
     @Test
+    void aWhatsAppTemplateWithSmartChatKeepsItsTermsButItsStatusCanChange() {
+        MessageTemplate t = row("WHATSAPP", "SUBMITTED", null, "Dear {{1}}, thanks.");
+        t.setVariables("[\"name\"]");
+        t.setRule("ANY");
+        when(repository.findById(5L)).thenReturn(Optional.of(t));
+        java.util.function.BiFunction<String, String[], StoredTemplateRequest> req = (category, v) ->
+                new StoredTemplateRequest("WHATSAPP", "t1", null, "Dear {{1}}, thanks.", category, v[0], v[1], null,
+                        List.of("name"), "ANY");
+
+        assertRefused(() -> service.update(5L, req.apply("MARKETING", new String[] {"SUBMITTED", null})), "TEMPLATE_LOCKED");
+        assertRefused(() -> service.update(5L, req.apply("SERVICE", new String[] {"DRAFT", null})), "INVALID_STATUS");
+        assertRefused(() -> service.update(5L, req.apply("SERVICE", new String[] {"ACTIVE", "someone_else"})), "INVALID_STORED_NAME");
+
+        var approved = service.update(5L, req.apply("SERVICE", new String[] {"ACTIVE", "t1_164"}));
+        assertThat(approved.status()).isEqualTo("ACTIVE");
+        assertThat(approved.providerId()).isEqualTo("t1_164");
+    }
+
+    @Test
     void activeWordingIsLockedButABlankSeedCanBeFilled() {
         MessageTemplate active = row("SMS", "ACTIVE", DLT, "Old {#var#}");
         active.setVariables("[\"name\"]");
