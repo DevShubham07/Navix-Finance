@@ -93,7 +93,7 @@ public class CreditBriefPdfRenderer {
         Document doc = new Document(PageSize.A4.rotate(), 42, 42, 40, 40);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         try {
-            PdfWriter.getInstance(doc, out);
+            SimulationStamp.apply(PdfWriter.getInstance(doc, out));
             doc.open();
 
             doc.add(headerTable());

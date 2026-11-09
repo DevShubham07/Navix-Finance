@@ -115,7 +115,7 @@ public class SanctionLetterPdfRenderer {
         Document doc = new Document(PageSize.A4, 44, 44, 26, 22);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         try {
-            PdfWriter.getInstance(doc, out);
+            SimulationStamp.apply(PdfWriter.getInstance(doc, out));
             doc.open();
 
             doc.add(header());
