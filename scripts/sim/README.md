@@ -39,7 +39,7 @@ AWS restarts a stopped database after 7 days. To resume, start the database, the
 
     CONFIRM_TEARDOWN=navix-sim bash scripts/sim/infra.sh teardown
 
-Then remove `SIM_LOGIN_EMAIL`, `SIM_BACKEND_BASE_URL` and `SIM_GATEWAY_KEY` from the Vercel project and
+Then remove `SIM_LOGIN_EMAIL`, `SIM_BACKEND_BASE_URL` and `SIM_GATEWAY_KEY` from the GitHub repository secrets and
 redeploy. With those unset the sim route is inert.
 
 ## Limits

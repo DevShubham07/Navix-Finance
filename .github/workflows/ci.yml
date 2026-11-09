@@ -110,9 +110,17 @@ jobs:
           fi
       - name: Deploy to production
         working-directory: frontend
-        run: npx vercel@latest deploy --prod --yes --archive=tgz --token "$VERCEL_TOKEN"
+        # The SIM_* values enable the training login (scripts/sim/README.md). Unset = the route is inert.
+        run: |
+          npx vercel@latest deploy --prod --yes --archive=tgz --token "$VERCEL_TOKEN" \
+            --env SIM_LOGIN_EMAIL="$SIM_LOGIN_EMAIL" \
+            --env SIM_BACKEND_BASE_URL="$SIM_BACKEND_BASE_URL" \
+            --env SIM_GATEWAY_KEY="$SIM_GATEWAY_KEY"
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          SIM_LOGIN_EMAIL: ${{ secrets.SIM_LOGIN_EMAIL }}
+          SIM_BACKEND_BASE_URL: ${{ secrets.SIM_BACKEND_BASE_URL }}
+          SIM_GATEWAY_KEY: ${{ secrets.SIM_GATEWAY_KEY }}
       - name: Verify the live site picked up this build
         # The alias moving is the only thing that matters; a green deploy that leaves
         # dhanboost.com on the old build is exactly the failure this repo already hit.
