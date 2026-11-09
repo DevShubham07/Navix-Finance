@@ -158,8 +158,9 @@ public class NotificationTemplates {
 
         inApp(NotificationType.LOAN_SANCTIONED, "Your loan is sanctioned",
                 "Application #{applicationId} is sanctioned — finish the remaining steps to receive it.");
+        // DLT refused "sanctioned" as promotional, so this shares DHANBOOST_REBORROW_APPROVED_V1's wording and id.
         sms(NotificationType.LOAN_SANCTIONED,
-                "Dear {name}, your DhanBoost loan application {applicationId} is sanctioned. Complete the "
+                "Dear {name}, your DhanBoost application {applicationId} is approved. Complete the "
                         + "remaining steps at https://dhanboost.com/login. - DhanBoost");
         email(NotificationType.LOAN_SANCTIONED, "Your DhanBoost loan is sanctioned",
                 "Hi {name},\n\nGood news — loan application #{applicationId} has been sanctioned by our "

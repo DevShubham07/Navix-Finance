@@ -68,7 +68,7 @@ class UltronSmsClientTest {
             assertThat(m.group(2)).as("DLT id default for %s", m.group(1)).matches("\\d{19}");
             mapped++;
         }
-        assertThat(mapped).isEqualTo(16);
+        assertThat(mapped).isEqualTo(17);
     }
 
     /**
