@@ -17,6 +17,14 @@ public interface VerificationPort {
     /** PAN check — Signzy 206AB primary, Digitap {@code pan_details_plus} fallback. */
     PanCheck verifyPan(String pan, String clientRef);
 
+    /**
+     * Is this PAN linked to this Aadhaar number? Signzy only (Digitap/Fintrix have no equivalent), so
+     * unlike the other capabilities there is no fallback chain: the router calls Signzy directly.
+     */
+    default PanAadhaarLinkCheck verifyPanAadhaarLink(String pan, String aadhaar, String clientRef) {
+        throw new UnsupportedOperationException("This provider has no PAN-Aadhaar link endpoint");
+    }
+
     /** Email + establishment match — Digitap {@code cv/email_verification} (Signzy has no email API). */
     EmailCheck verifyEmail(String email, String individualName, String establishmentName, String clientRef);
 
@@ -115,6 +123,9 @@ public interface VerificationPort {
                     boolean aadhaarLinked, String maskedAadhaar, String panNumber,
                     String addressState, String addressZip,
                     String panStatus, String panAllotmentDate, Boolean compliant, String isSpecified) {
+    }
+
+    record PanAadhaarLinkCheck(String provider, boolean linked, String maskedAadhaar, String message, String code) {
     }
 
     record EmailCheck(String txnId, String provider, boolean verified, boolean establishmentMatched,

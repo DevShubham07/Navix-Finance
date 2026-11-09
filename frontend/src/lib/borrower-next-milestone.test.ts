@@ -72,6 +72,11 @@ describe("nextBorrowerMilestone", () => {
     });
   });
 
+  it("a loan without a grace day is overdue the day after its due date", () => {
+    expect(nextBorrowerMilestone("ACTIVE", "2026-08-07", TODAY, 0).title).toBe("Payment overdue by 1 day");
+    expect(nextBorrowerMilestone("ACTIVE", "2026-08-08", TODAY, 0).title).toBe("Repayment due today");
+  });
+
   it("shows overdue days even when the ACTIVE status has not refreshed yet", () => {
     expect(nextBorrowerMilestone("ACTIVE", "2026-08-05", TODAY).title).toBe("Payment overdue by 3 days");
   });

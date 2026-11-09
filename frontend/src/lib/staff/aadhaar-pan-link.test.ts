@@ -28,6 +28,29 @@ describe("aadhaarPanLinkStep", () => {
     expect(aadhaarPanLinkStep([pan])?.derived.aadhaarNumber).toBe("XXXXXXXX1234");
   });
 
+  it("is unconfirmed, never PASS, when the customer has no Aadhaar number on file", () => {
+    const s = aadhaarPanLinkStep([pan], null);
+    expect(s).toMatchObject({ status: "REVIEW", derived: { linked: null, panReportsLinked: true } });
+    expect(s?.message).toMatch(/no Aadhaar number is on file/);
+    // Signzy 206AB: a link flag with no mask to compare.
+    const signzy = { ...pan, derived: { panNumber: "ABCDE1234F", aadhaarLinked: true } } as StepResult;
+    expect(aadhaarPanLinkStep([signzy])?.status).toBe("REVIEW");
+    expect(aadhaarPanLinkStep([signzy], "123456781234")?.status).toBe("REVIEW");
+  });
+
+  it("is unconfirmed when the PAN record's Aadhaar is not the customer's", () => {
+    expect(aadhaarPanLinkStep([pan], "123456789999")?.status).toBe("REVIEW");
+  });
+
+  it("takes the backend's PAN_AADHAAR_LINK check over the PAN record's flag", () => {
+    const missing = { checkType: "PAN_AADHAAR_LINK", status: "REVIEW", message: "PAN or Aadhaar number missing — link not checked", derived: {} } as StepResult;
+    expect(aadhaarPanLinkStep([pan, missing], "123456781234")).toMatchObject({ status: "REVIEW", message: missing.message, derived: { linked: null } });
+    const notLinked = { ...missing, message: "PAN not linked to Aadhaar", provider: "SIGNZY", derived: { linked: false } } as StepResult;
+    expect(aadhaarPanLinkStep([pan, notLinked], "123456781234")).toMatchObject({ status: "REVIEW", provider: "SIGNZY", derived: { linked: false } });
+    const linked = { ...notLinked, message: "PAN linked to Aadhaar", derived: { linked: true } } as StepResult;
+    expect(aadhaarPanLinkStep([linked], "123456781234")).toMatchObject({ status: "PASS", derived: { linked: true } });
+  });
+
   it("fails when the provider reports no link", () => {
     expect(aadhaarPanLinkStep([{ ...pan, derived: { ...pan.derived, aadhaarLinked: false } }])?.status).toBe("FAIL");
   });

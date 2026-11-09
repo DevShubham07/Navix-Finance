@@ -65,6 +65,8 @@ export interface ApplicationView {
   id: number;
   customerId: number;
   status: ApplicationStatus;
+  /** Stored JourneyService step (Step / OfferStep enum name); null when unknown. Staff stage signal only. */
+  journeyStep?: string | null;
   amountRequestedPaise: number | null;
   eligibleLimitPaise: number | null;
   /** What this customer may borrow right now — the admin limit override when set, else the
@@ -209,6 +211,46 @@ export interface StaffPerformanceRow {
   rejectedPaymentCount: number | null;
   /** Telecaller + collections calls logged in the window. See `callTrackingSince` before reading a 0. */
   callsMade: number;
+  /** Their human application-event actions in the window, by action (`ASSIGN`, `SANCTION`, …). */
+  actionCounts: Record<string, number>;
+  /** Their collections work in the window, plus open cases on their desk now. */
+  collections: CollectionStaffStats;
+  /** Value of the sanctions they issued in the window, paise. */
+  sanctionedPaise: number;
+  /** Value of the disbursements they released in the window, paise. */
+  releasedPaise: number;
+  /** Their own activity per IST day — application events plus collections actions. */
+  daily: StaffActivityPoint[];
+}
+
+/** One staffer's collections work over the window (backend `CollectionStaffStats`). */
+export interface CollectionStaffStats {
+  /** Borrower interactions they logged, and the outcome breakdown under it. */
+  interactions: number;
+  connected: number;
+  promisesToPay: number;
+  paidOutcomes: number;
+  noAnswer: number;
+  disputed: number;
+  /** Open cases assigned to them right now — live, NOT windowed. */
+  casesNow: number;
+  /** Collections payments they recorded; of those, validated (money credited), pending, rejected. */
+  paymentsRaised: number;
+  paymentsRaisedPaise: number;
+  paymentsRecovered: number;
+  paymentsRecoveredPaise: number;
+  paymentsPending: number;
+  paymentsRejected: number;
+  settlementsProposed: number;
+  settlementsProposedPaise: number;
+  /** Settlements they decided — a Collection Head's approvals and rejections. */
+  settlementsApproved: number;
+  settlementsApprovedPaise: number;
+  settlementsRejected: number;
+  /** Collections payments they validated / rejected at the Accountant step. */
+  paymentsValidated: number;
+  paymentsValidatedPaise: number;
+  paymentsValidationRejected: number;
 }
 
 /** One day's action count across the whole visible roster — the trend line. */
@@ -233,20 +275,50 @@ export interface StaffPerformanceSummary {
  * True when a disbursed loan is past its due date — the DPD definition used across this product
  * (`daysBetween` compares calendar dates, so this is timezone-safe). Falls back to the application
  * status only when no loan due date is known.
+ *
+ * A settled loan is never overdue, however late it was repaid: the due date stays on file forever,
+ * and `LoanStatus.OVERDUE` is compute-on-read (nothing writes it), so the date is the only live
+ * signal and it needs the status beside it. Same guard, same reason, as `dpdFor`.
  */
 export function isLoanOverdue(app: ApplicationView, asOf: Date = new Date()): boolean {
+  if (isSettledLoanStatus(app.loanStatus)) return false;
   if (!app.loanDueDate) return app.status === "OVERDUE";
   return daysBetween(new Date(`${app.loanDueDate}T00:00:00`), asOf) > 0;
+}
+
+const SETTLED_LOAN_STATUSES = new Set(["CLOSED", "REPAID", "WRITTEN_OFF", "DECLINED"]);
+
+/**
+ * True when the loan has stopped running, so its due date is history rather than a debt.
+ *
+ * Mirrors `CollectionsService.TERMINAL_LOAN_STATUSES`, which drops exactly these cases off the
+ * collections worklist for the same reason; DECLINED joins them because nothing was ever disbursed.
+ * One definition on purpose — every surface that reads a due date as arrears (`isLoanOverdue`,
+ * `dpdFor`) must agree on when a loan is done.
+ */
+export function isSettledLoanStatus(status: string | null | undefined): boolean {
+  return SETTLED_LOAN_STATUSES.has(status ?? "");
 }
 
 /**
  * ADMIN-only flat view of an application with full KYC detail + onboarding completeness — covers
  * complete AND incomplete (DRAFT / partially filled) applications. Mirrors backend AdminApplicationView.
  */
+/** One page of the ADMIN register; `total` matches the filter, `allCount` is every application. */
+export interface AdminApplicationPage {
+  rows: AdminApplicationView[];
+  page: number;
+  size: number;
+  total: number;
+  allCount: number;
+}
+
 export interface AdminApplicationView {
   id: number;
   customerId: number;
   status: ApplicationStatus;
+  /** Stored JourneyService step (Step / OfferStep enum name); null when unknown. Staff stage signal only. */
+  journeyStep?: string | null;
   amountRequestedPaise: number | null;
   eligibleLimitPaise: number | null;
   purpose: string | null;
@@ -296,6 +368,8 @@ export interface TelecallingView {
   id: number;
   customerId: number;
   status: ApplicationStatus;
+  /** Stored JourneyService step (Step / OfferStep enum name); null when unknown. Staff stage signal only. */
+  journeyStep?: string | null;
   customerName: string | null;
   mobile: string | null;
   email: string | null;
@@ -340,12 +414,18 @@ export interface LoanView {
   disbursalTxnRef: string | null;
   /** When the loan was settled in full. Null while it is still running. */
   closedOn: string | null;
+  /** Penalty-free days after the due date this loan was written with (1 on legacy loans, 0 on new ones).
+   *  Optional: an older backend omits it, and a missing value reads as 1 (`loanGraceDays`). */
+  graceDays?: number;
 }
+
+/** The loan's grace days, defaulting to the legacy 1 when the backend did not send the field. */
+export const loanGraceDays = (loan: { graceDays?: number } | null | undefined) => loan?.graceDays ?? 1;
 
 /**
  * The three balances the repay screen quotes together: as of the requested day, on the salary day
- * the loan is due, and on the one grace day after it. `due`/`grace` are null when the loan has no
- * due date yet. One call in place of three `outstanding` round trips for the same screen.
+ * the loan is due, and on its grace day after it. `due`/`grace` are null when the loan has no
+ * due date yet; `grace` is also null when the loan carries no grace day. One call in place of three `outstanding` round trips for the same screen.
  */
 export interface OutstandingScheduleView {
   asOf: OutstandingView;
@@ -367,12 +447,61 @@ export interface OutstandingView {
   penaltyPaise?: number;
   verifiedPaise?: number;
   /** The day counts those amounts were charged over — interest capped at the tenure, penalty net
-   *  of the 1-day grace and capped at 30 — so the UI can show "1%/day × 27 days". */
+   *  of the loan's grace days and capped at 30 — so the UI can show "1%/day × 27 days". */
   interestDays?: number;
   penaltyDays?: number;
 }
 
-export type PaymentMethodName = "UPI" | "BANK_TRANSFER" | "NACH";
+export type PaymentMethodName = "UPI" | "BANK_TRANSFER" | "NACH" | "PAYU";
+
+export type PayuOrderStatus = "INITIATED" | "PENDING" | "SUCCESS" | "FAILED" | "EXPIRED";
+
+/** A PayU checkout attempt as the borrower sees it (mirrors backend PayuController OrderView). */
+export interface PayuOrderView {
+  txnid: string;
+  status: PayuOrderStatus;
+  amountPaise: number;
+  feePaise: number | null;
+  mode: string | null;
+  bankRefNum: string | null;
+  credited: boolean;
+  createdAt: string;
+}
+
+export interface PayuStateView {
+  enabled: boolean;
+  manualAllowed: boolean;
+  creditCardFeePaise: number | null;
+  openOrder: PayuOrderView | null;
+  lastOrder: PayuOrderView | null;
+}
+
+/** Hidden-form checkout handoff: POST `fields` to `action`. */
+export interface PayuCheckoutView {
+  action: string;
+  fields: Record<string, string>;
+  order: PayuOrderView;
+}
+/** A PayU order Accounts must look at (mirrors backend PayuReviewService.ReviewView). */
+export type PayuReviewReason = "AMOUNT_MISMATCH" | "NO_PROVIDER_ID" | "LOAN_SETTLED" | "FEE_MISMATCH" | "OVERPAID";
+export interface PayuReviewView {
+  orderId: number;
+  txnid: string;
+  loanId: number;
+  customerId: number;
+  customerName: string | null;
+  amountPaise: number;
+  feePaise: number | null;
+  mihpayid: string | null;
+  bankRefNum: string | null;
+  mode: string | null;
+  paidOn: string | null;
+  status: PayuOrderStatus;
+  reviewReason: PayuReviewReason;
+  overpayment: boolean;
+  credited: boolean;
+  createdAt: string;
+}
 export type PaymentStatusName = "PENDING_VERIFICATION" | "VERIFIED" | "REJECTED";
 
 /** A recorded repayment against a loan (mirrors backend PaymentView). */
@@ -422,8 +551,11 @@ export interface TransactionPage {
   size: number;
   /** Rows matching the whole filter. */
   total: number;
+  /** Verified repayments only. Rejected repayments are not in the ledger at all. */
   totalInPaise: number;
   totalOutPaise: number;
+  /** Repayments listed but still awaiting verification — not yet counted in `totalInPaise`. */
+  pendingInPaise: number;
 }
 
 export interface TransactionView {
@@ -440,6 +572,10 @@ export interface TransactionView {
   date: string | null;
   /** Presigned link to the borrower-uploaded repayment screenshot. REPAYMENT rows only. */
   proofUrl: string | null;
+  /** The loan's repayment (due) date — the same on its disbursal row and every repayment against it. */
+  repaymentDate: string | null;
+  /** The loan's penalty-free days after that date (1 on legacy loans); missing reads as 1. */
+  graceDays?: number;
 }
 
 /**
@@ -650,6 +786,15 @@ export interface CustomerSummary {
   applicationCount: number;
   loanCount: number;
   latestStatus: string | null;
+  /** Stored JourneyService step (Step / OfferStep enum name); null when unknown. Staff stage signal only. */
+  journeyStep?: string | null;
+  /** Returning borrower: the latest file was created after a prior loan closed. */
+  reloan?: boolean | null;
+  /** A live block on the customer's mobile in the rejection register — a staff block or a running
+   *  cooling-off. The borrower cannot start a new application while it holds. */
+  blocked?: boolean | null;
+  /** The staff-entered reason for a staff block, the reason code otherwise; null when not blocked. */
+  blockedReason?: string | null;
   totalOutstandingPaise: number;
   /** Latest credit headline for the customer (staff-only). */
   creditScore?: number | null;
@@ -741,6 +886,16 @@ export interface CustomerDetail {
   /** The itemised interest/penalty/paid breakdown per loan id, computed with the rest of this
    *  payload. The Loans tab used to fetch one `/outstanding` per loan card to get it. */
   outstandingByLoanId?: Record<string, OutstandingView>;
+  /** Same rule as `CustomerSummary.blocked`: a live rejection-register block on the mobile. */
+  blocked?: boolean | null;
+  blockedReason?: string | null;
+}
+
+/** The customer's block state after `customersApi.block` / `unblock` (mirrors backend CustomerBlockView). */
+export interface CustomerBlockView {
+  customerId: number;
+  blocked: boolean;
+  blockedReason: string | null;
 }
 
 /**
@@ -937,6 +1092,8 @@ export interface CreditBriefView {
   bureauSource?: string | null;
   /** The bureau's own PDF (BUREAU_REPORT — Fintrix CRIF), null when none was returned (Experian, KBA). */
   bureauReportDocumentId?: number | null;
+  /** Why the stars are what they are: the score band, then each BRE deduction or cap applied. */
+  ratingReasons?: string[];
 }
 
 /** Admin edit of a customer's KYC / salary data (identity fields excluded — they stay locked). */
@@ -1385,6 +1542,17 @@ export const borrowerApi = {
     payload: { amountPaise: number; method: PaymentMethodName; txnRef?: string; proofUrl?: string; paidOn?: string },
   ) => bff<PaymentView>(`${BORROWER_LOAN_BASE}/${loanId}/repayments`, "POST", payload),
 
+  /** PayU checkout state for this loan; `amountPaise` lets the server quote the credit-card fee. */
+  payuState: (loanId: number, amountPaise?: number) =>
+    bff<PayuStateView>(
+      `${BORROWER_LOAN_BASE}/${loanId}/payu/state${amountPaise ? `?amountPaise=${amountPaise}` : ""}`,
+      "GET",
+    ),
+  payuCreateOrder: (loanId: number, amountPaise: number) =>
+    bff<PayuCheckoutView>(`${BORROWER_LOAN_BASE}/${loanId}/payu/orders`, "POST", { amountPaise }),
+  payuOrder: (loanId: number, txnid: string) =>
+    bff<PayuOrderView>(`${BORROWER_LOAN_BASE}/${loanId}/payu/orders/${encodeURIComponent(txnid)}`, "GET"),
+
   /** Repayments recorded against this loan (the borrower's payment history). */
   repayments: (loanId: number) => bff<PaymentView[]>(`${BORROWER_LOAN_BASE}/${loanId}/repayments`, "GET"),
 
@@ -1398,6 +1566,9 @@ export const borrowerApi = {
 
   /** Read back the (masked) profile. */
   getProfile: (id: number) => bff<ProfileView>(`${BORROWER_BASE}/${id}/profile`, "GET"),
+
+  /** The borrower's own eMandate (auto-repayment). Same view staff see; it is all their own data. */
+  mandate: (id: number) => bff<MandateView | null>(`${BORROWER_BASE}/${id}/mandate`, "GET"),
 
   /** The borrower's notification preferences (server-persisted; honored by the engine). */
   getPreferences: () => bff<BorrowerPreferences>(`/api/borrower/preferences`, "GET"),
@@ -1462,54 +1633,6 @@ export interface VerificationProgress {
   failed: number;
   pending: number;
   percent: number;
-}
-
-/** One row in the pending-API dashboard (Phase 3.3) — mirrors backend VerificationOverviewRow. */
-export interface VerificationOverviewRow {
-  applicationId: number;
-  customerId: number | null;
-  borrowerName: string | null;
-  borrowerMobile: string | null;
-  checkType: string;
-  status: CheckStatus;
-  provider: string | null;
-  message: string | null;
-  updatedAt: string | null;
-  /** The owning application's lifecycle status (e.g. "KYC_PENDING") — lets staff surfaces scope
-   *  verification rows to applications that still need a KYC decision. */
-  applicationStatus: ApplicationStatus | null;
-}
-
-/** Pending-API dashboard payload (Phase 3.3) — status tallies + rows. */
-export interface VerificationOverview {
-  passed: number;
-  review: number;
-  failed: number;
-  pending: number;
-  neverRun: number;
-  /** The requested page's rows, grouped whole: an application's checks are never split across pages. */
-  rows: VerificationOverviewRow[];
-  page: number;
-  size: number;
-  /** Matching APPLICATIONS (the paging unit), not rows. The five tallies above always cover the
-   *  whole undecided queue, whatever page or filter is showing. */
-  total: number;
-  /**
-   * The "Not started" bucket: KYC_PENDING applications with no verification row at all, newest
-   * first, capped at 200, with the same `q` search as the rows. Not paged — the same list comes back
-   * on every page. Optional only so a backend that predates it (mid-deploy) reads as an empty bucket.
-   */
-  notStarted?: VerificationNotStarted[];
-  /** True size of the "Not started" bucket; larger than `notStarted.length` when the list is capped. */
-  notStartedTotal?: number;
-}
-
-/** One KYC_PENDING application with no verification row yet — mirrors backend `NotStartedApplication`. */
-export interface VerificationNotStarted {
-  applicationId: number;
-  customerId: number | null;
-  borrowerName: string | null;
-  borrowerMobile: string | null;
 }
 
 /** Result of a staff-triggered KYC reminder (Phase 3.4). */
@@ -1742,6 +1865,8 @@ export interface ReferenceView {
   fullName: string;
   mobile: string;
   relation: string;
+  otpRequired?: boolean;
+  verified?: boolean;
 }
 
 export interface ReferenceInput {
@@ -1766,6 +1891,10 @@ export interface OfferSummaryView {
   repaymentDate: string | null;
   /** Calendar days, 18:00 IST cut-off — no weekend or holiday roll. */
   expectedDisbursalDate: string;
+  /** Repayment discount taken off the processing fee, in paise; 0/absent when none. */
+  feeDiscountPaise?: number;
+  /** The percent of principal that discount represents (1..7); null/absent when none. */
+  feeDiscountPercent?: number | null;
 }
 
 export interface SanctionLetterView {
@@ -1778,7 +1907,7 @@ export interface DisbursalAccountView {
   ifsc: string | null;
   holderName: string | null;
   bank: string | null;
-  verified: boolean;
+  verified?: boolean;
   pennyDropRequired: boolean;
   /** Non-null: the borrower burnt their penny-drop attempts and must wait this out. */
   lockedUntil: string | null;
@@ -1798,6 +1927,11 @@ export const offerApi = {
   saveReferences: (id: number, references: ReferenceInput[]) =>
     bff<ReferenceView[]>(`${OFFER(id)}/references`, "POST", { references }),
 
+  sendReferenceOtp: (id: number, slot: number) => bff<void>(`${OFFER(id)}/references/${slot}/otp`, "POST"),
+
+  verifyReferenceOtp: (id: number, slot: number, otp: string) =>
+    bff<ReferenceView[]>(`${OFFER(id)}/references/${slot}/otp/verify`, "POST", { otp }),
+
   summary: (id: number) => bff<OfferSummaryView>(`${OFFER(id)}/summary`, "GET"),
 
   /** Renders the Key Fact Statement to S3 and returns a short-lived URL to read it. */
@@ -1813,6 +1947,12 @@ export const offerApi = {
 
   /** Poll the Aadhaar e-sign session once the provider redirects the borrower back. */
   esignStatus: (id: number) => bff<StepResult>(`${OFFER(id)}/esign/status`, "GET"),
+
+  /** Start the NACH eMandate. `derived.url` is the Digio page; `derived.bankUnsupported` is terminal. A retry calls this again. */
+  mandateInit: (id: number) => bff<StepResult>(`${OFFER(id)}/mandate/init`, "POST"),
+
+  /** Poll the mandate. PASS once usable (the backend has then already routed the file to disbursement). */
+  mandateStatus: (id: number) => bff<StepResult>(`${OFFER(id)}/mandate/status`, "GET"),
 
   /**
    * Fallback: record a drawn signature. Without a signature by one route or the other the
@@ -1850,6 +1990,140 @@ export const offerApi = {
 // Staff client — routes under /api/staff/*
 // ---------------------------------------------------------------------------
 
+/**
+ * One page of a server-paged register, and one column's facet values.
+ *
+ * Four registers moved server-side at once and each would otherwise grow its own near-identical
+ * pair of calls — which is how `col` and `column` ended up naming the same parameter on two
+ * different endpoints. One helper fixes the convention in one place: every register answers
+ * `GET <base>/page?page&size&<view params>` and `GET <base>/facets?column=<key>&<other filters>`.
+ *
+ * `filters` is the register view's `queryParams` — `q`, `sort`, `dir` and one `f.<column>` each.
+ * The server keeps only the columns it declared and drops the rest, so an old link cannot 400.
+ */
+export interface RegisterPage<T> {
+  rows: T[];
+  page: number;
+  size: number;
+  /** Rows matching the filters, across every page — what drives the pagination and the count. */
+  total: number;
+}
+
+/** The ledger's money figures, summed over the whole filter rather than the page. */
+export interface LedgerTotals {
+  /** Verified repayments only — money the accountant has confirmed arrived. */
+  totalInPaise: number;
+  totalOutPaise: number;
+  /** Listed but not yet counted in: repayments still awaiting verification. */
+  pendingInPaise: number;
+}
+
+export interface RegisterFacet {
+  values: string[];
+  /** The server had more than it will return: offer a text filter, not a partial checklist. */
+  truncated: boolean;
+}
+
+function registerPage<T, R extends RegisterPage<T> = RegisterPage<T>>(
+  base: string,
+  p: { filters?: Record<string, string>; page: number; size: number; extra?: Record<string, string> },
+) {
+  const sp = new URLSearchParams({
+    ...p.filters,
+    ...p.extra,
+    page: String(p.page),
+    size: String(p.size),
+  });
+  return bff<R>(`${base}/page?${sp}`, "GET");
+}
+
+/** `filters` must already have this column's own `f.<column>` removed — the server's `without(col)`
+ *  — so the dropdown offers the values you could switch TO, not just the one you are on. */
+function registerFacet(base: string, column: string, filters: Record<string, string>) {
+  return bff<RegisterFacet>(`${base}/facets?${new URLSearchParams({ ...filters, column })}`, "GET");
+}
+
+/** A presented NACH debit. No provider message and no failure code reach the UI by design. */
+export interface DebitResult {
+  debitId: number;
+  status: string;
+  amountPaise: number;
+  settlementDate: string | null;
+  attemptNo: number;
+}
+
+/**
+ * One presented NACH debit as staff see it. The provider's failure code and message are deliberately
+ * absent (the message echoes account numbers) — `representable` is what staff need from them: whether
+ * another attempt is possible. `overpayment` means money was taken from a borrower who had already
+ * repaid, i.e. a refund is owed.
+ */
+export interface DebitRecord {
+  debitId: number;
+  loanId: number;
+  status: string;
+  amountPaise: number;
+  settlementDate: string | null;
+  attemptNo: number;
+  trigger: string | null;
+  utr: string | null;
+  overpayment: boolean;
+  representable: boolean;
+  createdAt: string | null;
+}
+
+/** One mandate attempt. The authorisation url is deliberately absent — it is a bearer link. */
+export interface MandateAttempt {
+  id: number;
+  applicationId: number | null;
+  attemptNo: number;
+  status: string;
+  umrn: string | null;
+  bankName: string | null;
+  accountLast4: string | null;
+  digioState: string | null;
+  digioBankState: string | null;
+  authSubMode: string | null;
+  rejectReason: string | null;
+  maximumAmountPaise: number;
+  createdAt: string | null;
+  authenticatedAt: string | null;
+  /** True for the attempt that actually governs this application right now. */
+  reusable: boolean;
+  /** Set when staff cancelled it at the provider; with who did it and why (staff-only). */
+  cancelledAt: string | null;
+  cancelledBy: string | null;
+  cancelReason: string | null;
+}
+
+/** The mandate ceiling for an application: formula, ADMIN override (V89) and what a new mandate uses. */
+export interface MandateCeilingView {
+  formulaPaise: number | null;
+  overridePaise: number | null;
+  registrationPaise: number | null;
+  overrideNote: string | null;
+  overrideSetBy: string | null;
+  overrideSetAt: string | null;
+}
+
+/** Why staff are cancelling an ACTIVE mandate (maps to Digio C001 / C002). */
+export type MandateCancelReason = "CUSTOMER_REQUEST" | "CORPORATE_REQUEST";
+
+export interface MandateView {
+  status: "PENDING_AUTHORIZATION" | "ACTIVE" | "AUTHORIZATION_FAILED" | "EXPIRED" | "BANK_UNSUPPORTED";
+  umrn: string | null;
+  bankName: string | null;
+  accountLast4: string | null;
+  authenticatedAt: string | null;
+  rejectReason: string | null;
+  attemptNo: number;
+  overridable: boolean;
+  /** Registered on an earlier advance and reused; nothing was filed on this application. */
+  carriedOver: boolean;
+  /** Set when staff cancelled this mandate. */
+  cancelledAt: string | null;
+}
+
 const STAFF_BASE = "/api/staff/applications";
 const STAFF_LOAN_BASE = "/api/staff/loan";
 
@@ -1861,11 +2135,19 @@ export const staffApi = {
    * (name/mobile/PAN/application/loan #) — it must never bypass the date filter, so it's just
    * another query param alongside `from`/`to`, not a separate search endpoint.
    */
-  listByStatus: (status: ApplicationStatus, range?: { from?: string; to?: string }, q?: string) => {
+  listByStatus: (
+    status: ApplicationStatus,
+    range?: { from?: string; to?: string },
+    q?: string,
+    /** `mine` narrows a Disbursement Head's queue to the files THEY released (past-disbursed
+     *  history). A Credit or Collection Executive is always scoped server-side to their own files. */
+    opts?: { mine?: boolean },
+  ) => {
     const qs = new URLSearchParams({ status });
     if (range?.from) qs.set("from", range.from);
     if (range?.to) qs.set("to", range.to);
     if (q) qs.set("q", q);
+    if (opts?.mine) qs.set("mine", "true");
     return bff<ApplicationView[]>(`${STAFF_BASE}?${qs.toString()}`, "GET");
   },
 
@@ -1893,6 +2175,31 @@ export const staffApi = {
 
   /** ADMIN-only: every application (complete + incomplete) with full KYC detail + completeness. */
   listAllApplications: () => bff<AdminApplicationView[]>(`${STAFF_BASE}/all`, "GET"),
+
+  /**
+   * ADMIN: one page of the register — search, column filters, completeness and paging run server-side.
+   * `filters` is the register view's `queryParams` (`q`, `f.<column>`, sort): the server keeps only the
+   * columns it declared and ignores the rest.
+   */
+  listAllApplicationsPage: (p: {
+    q?: string;
+    filters?: Record<string, string>;
+    completeness?: "ALL" | "COMPLETE" | "INCOMPLETE";
+    page: number;
+    size: number;
+  }) => {
+    const sp = new URLSearchParams({ ...p.filters, page: String(p.page), size: String(p.size) });
+    if (p.q) sp.set("q", p.q);
+    if (p.completeness && p.completeness !== "ALL") sp.set("completeness", p.completeness);
+    return bff<AdminApplicationPage>(`${STAFF_BASE}/all/page?${sp}`, "GET");
+  },
+
+  /** ADMIN: the values one column's filter can offer; `filters` carries the OTHER columns' `f.*`. */
+  allApplicationsFacet: (column: string, filters: Record<string, string>) =>
+    bff<{ values: string[]; truncated: boolean }>(
+      `${STAFF_BASE}/all/facets?${new URLSearchParams({ ...filters, column })}`,
+      "GET",
+    ),
 
   /** TELECALLER/ADMIN: every pre-SANCTIONED application, enriched with completeness + staleness. */
   telecalling: () => bff<TelecallingView[]>(`${STAFF_BASE}/telecalling`, "GET"),
@@ -1969,6 +2276,13 @@ export const staffApi = {
   forceDisbursementPending: (id: number, notes: string) =>
     bff<ApplicationView>(`${STAFF_BASE}/${id}/force-disbursement-pending`, "POST", { notes }),
 
+  /** Latest eMandate attempt (last four of the account only; never the auth url). Null = none started. */
+  mandate: (id: number) => bff<MandateView | null>(`${STAFF_BASE}/${id}/mandate`, "GET"),
+
+  /** DISBURSEMENT_HEAD/ADMIN: only valid when the mandate is BANK_UNSUPPORTED. Reason is audited. */
+  mandateOverride: (id: number, notes: string) =>
+    bff<ApplicationView>(`${STAFF_BASE}/${id}/mandate/override`, "POST", { notes }),
+
   /** Cancel a pre-disbursement application (staff/admin). Backend rejects once past disbursement. */
   cancel: (id: number, notes?: string) =>
     bff<ApplicationView>(`${STAFF_BASE}/${id}/cancel`, "POST", { notes }),
@@ -2001,6 +2315,31 @@ export const staffApi = {
   // --- repayment verification (accountant maker-checker) ---
   /** Repayments awaiting proof verification, across all loans (accountant queue). */
   pendingRepayments: () => bff<PaymentView[]>(`${STAFF_LOAN_BASE}/pending-repayments`, "GET"),
+  /** PayU orders captured but not credited / needing a refund / looking wrong (Accountant + Admin). */
+  payuReviewQueue: () => bff<PayuReviewView[]>(`${STAFF_LOAN_BASE}/payu-review`, "GET"),
+  /** Record that a person dealt with one. Changes no money and no order state. */
+  resolvePayuReview: (orderId: number, note: string) =>
+    bff<null>(`${STAFF_LOAN_BASE}/payu-review/${orderId}/resolve`, "POST", { note }),
+
+  /**
+   * One page of the ledger with the register's column filters applied server-side.
+   *
+   * `transactions()` below reads every disbursal AND every repayment in the window through two
+   * repositories and merges them in Java; this goes through the native union query instead, so a
+   * filtered page costs one statement rather than the whole period.
+   */
+  transactionsPage: (p: { filters?: Record<string, string>; page: number; size: number; extra?: Record<string, string> }) =>
+    // The three summary figures ride along with the page because the server computes them in the
+    // same aggregate over the same filter — they cover the WHOLE filter, not the page on screen, so
+    // the cards stay still while a reviewer pages. Typed here rather than cast at the call site.
+    registerPage<TransactionView, RegisterPage<TransactionView> & LedgerTotals>(
+      `${STAFF_LOAN_BASE}/transactions`,
+      p,
+    ),
+
+  /** The values one ledger column's filter can offer, under the other columns' filters. */
+  transactionsFacet: (column: string, filters: Record<string, string>) =>
+    registerFacet(`${STAFF_LOAN_BASE}/transactions`, column, filters),
 
   /**
    * One page of the company-wide transactions ledger (disbursals + repayments), newest first, with
@@ -2039,6 +2378,51 @@ export const staffApi = {
   /** The customer's KYC details (PAN masked). */
   getProfile: (id: number) => bff<ProfileView>(`${STAFF_BASE}/${id}/profile`, "GET"),
 
+  /**
+   * Invite this customer to set up auto-repayment — the only route for someone whose loan was already
+   * live when the mandate step shipped. Returns the link to copy; the engine also sends it.
+   */
+  /** Every mandate attempt this customer has made, newest first. */
+  mandateHistory: (id: number) => bff<MandateAttempt[]>(`${STAFF_BASE}/${id}/mandate/history`, "GET"),
+
+  /** Re-read unsettled attempts from Digio. Files nothing; adopts one that completed after we gave up. */
+  mandateRefresh: (id: number) => bff<MandateAttempt[]>(`${STAFF_BASE}/${id}/mandate/refresh`, "POST", {}),
+
+  /**
+   * Cancel one stale mandate attempt at NPCI. Never the one in force. COLLECTION_HEAD/DISB_HEAD/ADMIN.
+   * `withdrawLocally`: if the bank refuses a never-authorised attempt (no UMRN), mark it cancelled on our side.
+   */
+  mandateCancel: (id: number, mandateId: number, withdrawLocally = false) =>
+    bff<MandateAttempt>(`${STAFF_BASE}/${id}/mandate/${mandateId}/cancel`, "POST", { withdrawLocally }),
+
+  /**
+   * Cancel the customer's ACTIVE mandate (the live debit authority) — on their request or to replace it.
+   * COLLECTION_HEAD/DISB_HEAD/ADMIN; a note is required and the borrower is notified.
+   */
+  mandateCancelActive: (id: number, mandateId: number, reason: MandateCancelReason, notes: string) =>
+    bff<MandateAttempt>(`${STAFF_BASE}/${id}/mandate/${mandateId}/cancel-active`, "POST", { reason, notes }),
+
+  /** The mandate ceiling: formula, any override, and what a NEW registration would be filed for. */
+  mandateCeiling: (id: number) => bff<MandateCeilingView>(`${STAFF_BASE}/${id}/mandate/ceiling`, "GET"),
+
+  /** ADMIN: set (paise) or clear (null) the customer's mandate-ceiling override. Never changes the borrowing limit. */
+  setMandateCeiling: (id: number, ceilingPaise: number | null, note?: string) =>
+    bff<MandateCeilingView>(`${STAFF_BASE}/${id}/mandate/ceiling`, "POST", { ceilingPaise, note }),
+
+  mandateInvite: (id: number) =>
+    bff<{ link: string }>(`${STAFF_BASE}/${id}/mandate/invite`, "POST", {}),
+
+  /**
+   * Switch the account mandates register against: penny-drops it, withdraws every old mandate (outcome per
+   * row) and sends the invite. COLLECTION_HEAD/DISB_HEAD/ADMIN; a note is required.
+   */
+  mandateChangeAccount: (id: number, accountNumber: string, ifsc: string, notes: string) =>
+    bff<{ link: string; outcomes: string[] }>(`${STAFF_BASE}/${id}/mandate/change-account`, "POST", {
+      accountNumber,
+      ifsc,
+      notes,
+    }),
+
   /** The application's uploaded documents (metadata). */
   documents: (id: number) => bff<DocumentView[]>(`${STAFF_BASE}/${id}/documents`, "GET"),
 
@@ -2073,27 +2457,6 @@ export const staffApi = {
         new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new VerificationRetryTimeoutError()), 120_000); }),
       ]);
     } finally { if (timer) clearTimeout(timer); }
-  },
-  /** Pending-API dashboard: cross-application verification overview + tallies (Phase 3.3). */
-  verificationOverview: (filters?: {
-    status?: string;
-    checkType?: string;
-    q?: string;
-    /** Default (undefined/true): only applications that still need a reviewer — the page's own
-     *  "failures" and "awaiting" buckets. `false` returns the whole undecided queue. */
-    needsAttention?: boolean;
-    page?: number;
-    size?: number;
-  }) => {
-    const params = new URLSearchParams();
-    if (filters?.status) params.set("status", filters.status);
-    if (filters?.checkType) params.set("checkType", filters.checkType);
-    if (filters?.q) params.set("q", filters.q);
-    if (filters?.needsAttention === false) params.set("needsAttention", "false");
-    if (filters?.page) params.set("page", String(filters.page));
-    if (filters?.size) params.set("size", String(filters.size));
-    const qs = params.toString();
-    return bff<VerificationOverview>(`${STAFF_BASE}/verifications/overview${qs ? `?${qs}` : ""}`, "GET");
   },
   /** KYC approver / admin nudges the borrower with their pending verification steps (Phase 3.4). */
   sendReminder: (id: number) => bff<ReminderResult>(`${STAFF_BASE}/${id}/send-reminder`, "POST"),
@@ -2141,7 +2504,18 @@ export type CustomerListFilters = {
   /** 1-indexed. */
   page?: number;
   size?: number;
+  /** Server-side sort key (`CustomerBookQuery.SORTS`); omitted = stage date. */
+  sort?: CustomerSortKey;
+  dir?: "asc" | "desc";
+  /**
+   * The column-filter view as the server reads it (`rq.queryParams`: `f.<col>`, and `q`). Merged
+   * UNDER the typed fields above, so a stray `seg`/`page` in here can never override them.
+   */
+  extra?: Record<string, string>;
 };
+
+/** The columns the customer register can sort on — mirrors `CustomerBookQuery.SORTS`. */
+export type CustomerSortKey = "stageDate" | "date" | "name" | "customerId" | "stage" | "mobile" | "pan";
 
 export type CustomerPage = { rows: CustomerSummary[]; page: number; size: number; total: number };
 
@@ -2158,18 +2532,100 @@ export type CustomerSummaryCounts = {
   hold: number;
   rejected: number;
   closed: number;
+  /** Overlay segment; absent until the backend ships it. */
+  reloan?: number;
+  /** Overlay segment: customers with a live block on their mobile. */
+  blocked?: number;
   unallocated: number;
 };
 
 /** A blank or `false` filter must not be sent — the backend treats a present value as a filter. */
-function customerQuery(filters: Record<string, string | number | boolean | undefined>): string {
+function customerQuery(
+  filters: Record<string, string | number | boolean | Record<string, string> | undefined>,
+): string {
   const qs = new URLSearchParams();
-  Object.entries(filters).forEach(([key, value]) => {
+  const { extra, ...typed } = filters as { extra?: Record<string, string> } & Record<string, string | number | boolean | undefined>;
+  Object.entries({ ...extra, ...typed }).forEach(([key, value]) => {
     if (value === undefined || value === null || value === false || String(value).trim() === "") return;
     qs.set(key, String(value));
   });
   const s = qs.toString();
   return s ? `?${s}` : "";
+}
+
+/** Staff-only AI Analyzer (GET /api/customers/{id}/analyzer): rule-based, advisory, never blocks a loan. */
+export interface AnalyzerPointer {
+  key: string;
+  /** CONCERN / OK / UNKNOWN for first-loan pointers; YES / NO / UNKNOWN for informational; null in benchmarks. */
+  state: string | null;
+  value: number | null;
+  withLoans: number;
+  withBad: number;
+  withoutLoans: number;
+  withoutBad: number;
+}
+export interface AnalyzerFacts {
+  salaryPaise: number | null;
+  totalAccounts: number | null;
+  employedAtDeclared: boolean | null;
+  score: number | null;
+  stars: number | null;
+  recommendation: string | null;
+  riskCategory: string | null;
+}
+export interface AnalyzerOwnRecord {
+  loansTaken: number;
+  resolved: number;
+  good: number;
+  bad: number;
+  onTime: number;
+  late1to5: number;
+  openLoans: number;
+  maxOpenDpd: number | null;
+  zeroPaidBad: number;
+  lastClosedDaysEarly: number | null;
+  totalPrincipalPaise: number;
+  totalCollectedPaise: number;
+}
+export interface AnalyzerGroup {
+  key: string;
+  loans: number;
+  customers: number;
+  bad: number;
+  /** The four rupee fields are null for roles without the book-wide money view (counts stay). */
+  principalPaise: number | null;
+  badPrincipalPaise: number | null;
+  paidOutPaise: number | null;
+  collectedPaise: number | null;
+  zeroPaidBad: number;
+}
+export interface AnalyzerBenchmarks {
+  recentStart: string;
+  all: AnalyzerGroup;
+  earlyFirst: AnalyzerGroup;
+  recentFirst: AnalyzerGroup;
+  repeat: AnalyzerGroup;
+  breakEvenBps: number | null;
+  patterns: { pattern: string; customers: number }[];
+  concerns: AnalyzerPointer[];
+  informational: AnalyzerPointer[];
+  pointTable: { points: number; loans: number; bad: number; zeroPaid: number }[];
+  bands: { band: string; loans: number; bad: number }[];
+  incomeUncorroborated: { loans: number; bad: number; zeroPaid: number };
+  repeatEarlyPayer: { earlyLoans: number; earlyBad: number; otherLoans: number; otherBad: number };
+}
+export interface AnalyzerView {
+  asOf: string;
+  mode: "OWN_RECORD" | "FIRST_LOAN" | "NO_DATA";
+  band: "LOWER" | "WATCH" | "HIGH" | null;
+  concernCount: number;
+  unknownCount: number;
+  pointers: AnalyzerPointer[];
+  informational: AnalyzerPointer[];
+  facts: AnalyzerFacts;
+  ownRecord: AnalyzerOwnRecord | null;
+  incomeUncorroborated: boolean;
+  benchmarks: AnalyzerBenchmarks;
 }
 
 export const customersApi = {
@@ -2231,6 +2687,14 @@ export const customersApi = {
   exportAll: (filters: Omit<CustomerListFilters, "page" | "size"> = {}) =>
     bff<CustomerSummary[]>(`${CUSTOMERS_BASE}/export${customerQuery(filters)}`, "GET"),
 
+  /**
+   * The distinct values of one filterable column, for its checklist. `filters` carries the OTHER
+   * columns' `f.*` params (the server ignores `col`'s own), plus search/window/mine — so the options
+   * respect everything else the register is narrowed by, inside the caller's scope.
+   */
+  facets: (column: string, filters: Omit<CustomerListFilters, "seg" | "page" | "size" | "sort" | "dir"> = {}) =>
+    bff<RegisterFacet>(`${CUSTOMERS_BASE}/facets${customerQuery({ ...filters, column })}`, "GET"),
+
   /** One customer's full history (profile + applications + loans + payments). */
   get: (customerId: number) => bff<CustomerDetail>(`${CUSTOMERS_BASE}/${customerId}`, "GET"),
 
@@ -2274,6 +2738,10 @@ export const customersApi = {
   caseFailure: (customerId: number) =>
     bff<CaseFailureDetail>(`${CUSTOMERS_BASE}/${customerId}/failure`, "GET"),
 
+  /** Staff-only AI Analyzer: rule-based summary of comparable past loans. Advisory; never blocks a loan. */
+  analyzer: (customerId: number) =>
+    bff<AnalyzerView>(`${CUSTOMERS_BASE}/${customerId}/analyzer`, "GET"),
+
   /**
    * Chase ONE borrower whose credit report is sitting behind an unanswered bureau security
    * question. ADMIN-only (enforced by the backend service).
@@ -2304,6 +2772,14 @@ export const customersApi = {
   assignOwner: (customerId: number, staffId: number | null) =>
     bff<CustomerDetail>(`${CUSTOMERS_BASE}/${customerId}/owner`, "POST", { staffId }),
 
+  /** ACCOUNTANT / ADMIN — block the customer for future loans (indefinite; reason required, ≤300 chars). */
+  block: (customerId: number, reason: string) =>
+    bff<CustomerBlockView>(`${CUSTOMERS_BASE}/${customerId}/block`, "POST", { reason }),
+
+  /** ADMIN — lift a staff block. */
+  unblock: (customerId: number) =>
+    bff<CustomerBlockView>(`${CUSTOMERS_BASE}/${customerId}/block`, "DELETE"),
+
   /** Staff call logs on a customer, optionally narrowed to one of their loans. */
   callLogs: (customerId: number, loanId?: number) =>
     bff<CallLogView[]>(
@@ -2327,7 +2803,28 @@ export const customersApi = {
   /** Documents across every one of this customer's applications, newest application first. */
   documents: (customerId: number) =>
     bff<ApplicationDocumentGroup[]>(`${CUSTOMERS_BASE}/${customerId}/documents`, "GET"),
+
+  /** ADMIN — whether the customer is barred from re-applying, and any unused manual allowance. */
+  reapplyAllowance: (customerId: number) =>
+    bff<ReapplyAllowanceStatus>(`${CUSTOMERS_BASE}/${customerId}/reapply-allowance`, "GET"),
+
+  /** ADMIN — let a disqualified customer re-apply once (into the normal credit queue). */
+  allowReapplication: (customerId: number, body: { reason: string; documentId: number }) =>
+    bff<ReapplyAllowance>(`${CUSTOMERS_BASE}/${customerId}/reapply-allowance`, "POST", body),
 };
+
+export interface ReapplyAllowance {
+  id: number;
+  customerId: number;
+  reason: string;
+  documentId: number;
+  grantedByName: string | null;
+  grantedAt: string;
+}
+export interface ReapplyAllowanceStatus {
+  disqualified: boolean;
+  allowance: ReapplyAllowance | null;
+}
 
 // ---------------------------------------------------------------------------
 // Loans register (WP4) — routes under /api/staff/loans/*
@@ -2389,6 +2886,19 @@ export interface LoanRegisterRow {
 const LOANS_BASE = "/api/staff/loans";
 
 export const loansApi = {
+  /**
+   * One page of the loan register, narrowed and paged server-side.
+   *
+   * `list()` below enriches EVERY loan in the window on every visit — seven batched lookups plus a
+   * compute-on-read balance per row — which is why this exists. It stays for the callers that need
+   * the whole window (the segment-chip counts, which deliberately do not follow the filters).
+   */
+  page: (p: { filters?: Record<string, string>; page: number; size: number; extra?: Record<string, string> }) =>
+    registerPage<LoanRegisterRow>(LOANS_BASE, p),
+
+  /** The values one register column's filter can offer, inside the caller's own scope. */
+  facet: (column: string, filters: Record<string, string>) => registerFacet(LOANS_BASE, column, filters),
+
   /**
    * The loan register, optionally filtered by free-text `q` (borrower name / mobile / PAN / loan or
    * application id — mirrors `customersApi.list`'s search), an inclusive `range.from`/`range.to`
@@ -2561,11 +3071,10 @@ export interface ImportJobView {
   issueCount: number;
   issues: ImportIssue[];
   /**
-   * S3 key of the uploaded file, kept whatever happens to the import — a list that failed to parse
-   * is still in the bucket and can be fetched back through `storageApi.presignDownload`. Null for
-   * roles without `customer:view` (DSA), since the file is raw contact data.
+   * Whether the uploaded file can be fetched back (`leadsApi.importDownload`). False for roles
+   * without `customer:view` (DSA), since the file is raw contact data. The key is never sent.
    */
-  s3Key: string | null;
+  downloadable: boolean;
   errorMessage: string | null;
   startedAt: string | null;
   finishedAt: string | null;
@@ -2593,6 +3102,19 @@ function leadsQuery(params?: LeadListParams): string {
 }
 
 export const leadsApi = {
+  /**
+   * One page of the lead list with the register's column filters applied server-side.
+   *
+   * Distinct from `list()` below, which takes only the hand-picked params the page had before the
+   * column filters existed. A client-side filter is useless here — the page holds 25 rows out of
+   * tens of thousands, so narrowing what is loaded would read as "no match".
+   */
+  page: (p: { filters?: Record<string, string>; page: number; size: number; extra?: Record<string, string> }) =>
+    registerPage<LeadView>(LEADS_BASE, p),
+
+  /** The values one lead column's filter can offer, under the other columns' filters. */
+  facet: (column: string, filters: Record<string, string>) => registerFacet(LEADS_BASE, column, filters),
+
   /**
    * One page of the telecalling lead list. Paged server-side: a bulk import puts tens of thousands
    * of leads in this table, and the page only ever shows 25 of them.
@@ -2634,6 +3156,10 @@ export const leadsApi = {
   importJob: (id: number) => bff<ImportJobView>(`${LEADS_BASE}/import/jobs/${id}`, "GET"),
 
   importJobs: () => bff<ImportJobView[]>(`${LEADS_BASE}/import/jobs`, "GET"),
+
+  /** Presigned link to the job's original file (uploader or ADMIN only). */
+  importDownload: (id: number) =>
+    bff<{ url: string }>(`${LEADS_BASE}/import/jobs/${id}/download`, "GET"),
 };
 
 // ---------------------------------------------------------------------------
@@ -2697,8 +3223,18 @@ export type OutreachChannel = "SMS" | "EMAIL";
 
 export interface OutreachInput {
   channel: OutreachChannel;
-  subject?: string;
-  body?: string;
+  /** EMAIL only — the key of one of the fixed branded templates. */
+  template?: string;
+  /** EMAIL only — used (and saved onto the lead) when the lead has no email on file. */
+  email?: string;
+}
+
+/** A branded email a DSA may send, rendered server-side for one lead — the preview is the email as sent. */
+export interface DsaEmailTemplate {
+  key: string;
+  name: string;
+  subject: string;
+  html: string;
 }
 
 export interface OutreachResultView {
@@ -2762,6 +3298,8 @@ export const dsaApi = {
 
   outreach: (id: number, body: OutreachInput) =>
     bff<OutreachResultView>(`${DSA_BASE}/leads/${id}/outreach`, "POST", body),
+
+  emailTemplates: (id: number) => bff<DsaEmailTemplate[]>(`${DSA_BASE}/leads/${id}/email-templates`, "GET"),
 
   commissions: () => bff<DsaCommissionView[]>(`${DSA_BASE}/commissions`, "GET"),
 
@@ -2935,7 +3473,8 @@ export type DashMetric =
   | "APPLICATIONS" | "DISBURSED" | "PENDING" | "REJECTED" | "PENDING_SANCTIONED" | "PENDING_DISBURSAL"
   | "CLOSED" | "SETTLED" | "PART_PAID" | "DUE_ON" | "PRECLOSED_ON" | "PENDING_ON" | "RECEIVED_ON"
   | "AUM_BUCKET" | "COLLECTION_MONTH" | "COLLECTION_GROUP" | "RELOAN_RETENTION" | "STATE" | "PINCODE"
-  | "COMPANY" | "CALENDAR_DUE" | "CALENDAR_DISBURSED" | "CALENDAR_BIRTHDAY" | "STAFF_FILES"
+  | "COMPANY" | "CALENDAR_DUE" | "CALENDAR_DISBURSED" | "CALENDAR_BIRTHDAY" | "CALENDAR_ACTIVE"
+  | "CALENDAR_DUE_OPEN" | "STAFF_FILES"
   | "STAFF_CASES" | "PF_RATE" | "ROI_RATE"
   | "POSITION_PRINCIPAL" | "POSITION_NET" | "POSITION_RECEIVABLE" | "POSITION_PENALTY" | "POSITION_RECEIVED"
   | "POSITION_PENDING";
@@ -3119,7 +3658,7 @@ export interface DashTeam {
   heads: { staffId: number; name: string; role: string; score: number | null }[];
 }
 
-export type DashCalendarMode = "DUE" | "DISBURSED" | "BIRTHDAY";
+export type DashCalendarMode = "DUE" | "DISBURSED" | "BIRTHDAY" | "ACTIVE" | "DUE_OPEN";
 export interface DashCalendar {
   month: string;
   mode: string;
@@ -3127,6 +3666,8 @@ export interface DashCalendar {
   daysWithData: number;
   totalCount: number;
   totalAmountPaise: number | null;
+  /** True when the totals are the open book on the month's last day (ACTIVE), not a sum of the days. */
+  snapshot?: boolean;
 }
 
 export interface DashGeoRow {
@@ -3274,6 +3815,34 @@ export interface DashTarget {
   collectionTargetBp: number;
 }
 
+/**
+ * One officer's day on the Collection Head's desk (`GET /dashboard/collections/team`). `staffId` is
+ * null only on the totals row. `calls` is every interaction logged that day; `promisesDue` the cases
+ * whose LATEST promise-to-pay falls on the day (with the cached outstanding on them); `partPayments`
+ * verified partial payments paid that day; `collectedPaise` every verified rupee that day on the
+ * officer's cases; `closed` loans closed that day; `dueCount` live loans falling due that day.
+ */
+export interface DashTeamDayRow {
+  staffId: number | null;
+  name: string;
+  role: string | null;
+  calls: number;
+  promisesDue: number;
+  promisesDuePaise: number;
+  partPayments: number;
+  partPaymentsPaise: number;
+  collectedPaise: number;
+  closed: number;
+  dueCount: number;
+}
+
+export interface DashTeamDay {
+  /** yyyy-MM-dd (IST). */
+  date: string;
+  rows: DashTeamDayRow[];
+  totals: DashTeamDayRow;
+}
+
 const DASH_BASE = "/api/staff/dashboard";
 
 function dashQs(p: DashParams, extra?: Record<string, string | number | undefined | null>): string {
@@ -3299,6 +3868,9 @@ export const dashboardApi = {
   collectionAnalysis: (p: DashParams, date: string | undefined, groupBy: DashGroupBy) =>
     bff<DashCollectionAnalysis>(`${DASH_BASE}/collection-analysis${dashQs(p, { date, groupBy })}`, "GET"),
   team: (p: DashParams) => bff<DashTeam>(`${DASH_BASE}/team${dashQs(p)}`, "GET"),
+  /** The Collection Head's team tracker for one IST day (`date` yyyy-MM-dd; omitted = today). */
+  collectionsTeam: (view: DashView, date?: string) =>
+    bff<DashTeamDay>(`${DASH_BASE}/collections/team${dashQs({ view }, { date })}`, "GET"),
   calendar: (p: DashParams, month: string, mode: DashCalendarMode) =>
     bff<DashCalendar>(`${DASH_BASE}/calendar${dashQs(p, { month, mode })}`, "GET"),
   geo: (p: DashParams) => bff<DashGeo>(`${DASH_BASE}/geo${dashQs(p)}`, "GET"),
@@ -3329,6 +3901,66 @@ export const dashboardApi = {
   putTarget: (month: string, body: { disbursalTargetPaise: number | null; collectionTargetBp: number }) =>
     bff<DashTarget>(`${DASH_BASE}/targets/${month}`, "PUT", body),
 };
+
+// ---------------------------------------------------------------------------
+// Admin reports — routes under /api/staff/reports (ADMIN only, enforced server-side)
+// ---------------------------------------------------------------------------
+
+/** How a report column's raw cell is formatted (MONEY = integer paise, DATE = yyyy-mm-dd, DATETIME = ISO instant). */
+export type ReportColumnType = "TEXT" | "NUMBER" | "MONEY" | "DATE" | "DATETIME" | "BOOL";
+
+export interface ReportColumn {
+  key: string;
+  label: string;
+  type: ReportColumnType;
+}
+
+export type ReportCell = string | number | boolean | null;
+
+/** A headline figure shown above a report's table and written at the top of both downloads. */
+export interface ReportFact {
+  label: string;
+  value: ReportCell;
+  type: ReportColumnType;
+}
+
+/** One entry of the reports catalog. `dateBasis` names the date the period applies to; null = a live snapshot. */
+export interface ReportDef {
+  key: string;
+  category: string;
+  title: string;
+  description: string;
+  dateBasis: string | null;
+}
+
+/** A generated report: the same typed table feeds the on-screen preview, the CSV and the PDF. */
+export interface ReportData extends ReportDef {
+  /** yyyy-mm-dd, inclusive; both null for an all-time or snapshot report. */
+  from: string | null;
+  to: string | null;
+  generatedAt: string;
+  columns: ReportColumn[];
+  rows: ReportCell[][];
+  summary: ReportFact[];
+  notes: string[];
+  truncated: boolean;
+  /** False when summing the money columns would add up unlike things (e.g. the platform summary). */
+  totals: boolean;
+}
+
+const REPORTS_BASE = "/api/staff/reports";
+
+export const reportsApi = {
+  catalog: () => bff<ReportDef[]>(REPORTS_BASE, "GET"),
+  run: (key: string, range?: { from?: string; to?: string }) => {
+    const qs = new URLSearchParams();
+    if (range?.from) qs.set("from", range.from);
+    if (range?.to) qs.set("to", range.to);
+    const s = qs.toString();
+    return bff<ReportData>(`${REPORTS_BASE}/${encodeURIComponent(key)}${s ? `?${s}` : ""}`, "GET");
+  },
+};
+
 
 // ---------------------------------------------------------------------------
 // Admin (IAM) — staff users, invites, fraud blocklist
@@ -3399,10 +4031,17 @@ const ADMIN_INVITES_BASE = "/api/staff/invites";
 const ADMIN_BLOCKLIST_BASE = "/api/admin/blocklist";
 const ADMIN_EXPENSES_BASE = "/api/admin/expenses";
 
+export type OnboardingStatus = { paused: boolean; updatedBy: string | null; updatedAt: string | null };
+
 export const adminApi = {
   /** Onboarding-paused waitlist submissions, newest first (ADMIN only). */
   waitlist: (q?: string) =>
     bff<WaitlistEntry[]>(`/api/staff/onboarding-waitlist${q ? `?q=${encodeURIComponent(q)}` : ""}`, "GET"),
+  /** Whether new-customer onboarding is paused (the `onboarding-paused` flag). */
+  onboardingStatus: () => bff<OnboardingStatus>("/api/staff/onboarding-waitlist/paused", "GET"),
+  /** Pause (true) or resume (false) new-customer onboarding (ADMIN only). */
+  setOnboardingPaused: (paused: boolean) =>
+    bff<OnboardingStatus>("/api/staff/onboarding-waitlist/paused", "PUT", { paused }),
   // --- staff users ---
   listStaff: () => bff<StaffResponse[]>(ADMIN_STAFF_BASE, "GET"),
   getStaff: (id: number) => bff<StaffResponse>(`${ADMIN_STAFF_BASE}/${id}`, "GET"),
@@ -3818,6 +4457,37 @@ export interface SettlementView {
   createdAt: string;
   approvedAt: string | null;
   rejectedAt: string | null;
+  /** The borrower and loan behind the case — null (dpd 0) when the loan cannot be resolved. */
+  loanId: number | null;
+  customerId: number | null;
+  borrowerName: string | null;
+  mobile: string | null;
+  loanStatus: string | null;
+  principalPaise: number | null;
+  outstandingPaise: number | null;
+  dueDate: string | null;
+  dpd: number;
+  bucket: DpdBucket;
+  /** Customer-tab details. */
+  pan: string | null;
+  email: string | null;
+  employer: string | null;
+  employmentStatus: string | null;
+  monthlySalaryPaise: number | null;
+  salaryBank: string | null;
+  accountNumber: string | null;
+  ifsc: string | null;
+  bureauScore: number | null;
+  assignedOfficerName: string | null;
+  /** Loan + itemised dues: grossDue = principal + interest + penalty, before payments or a settlement cap. */
+  disbursedOn: string | null;
+  netDisbursedPaise: number | null;
+  interestPaise: number | null;
+  interestDays: number | null;
+  penaltyPaise: number | null;
+  penaltyDays: number | null;
+  paidPaise: number | null;
+  grossDuePaise: number | null;
 }
 
 /**
@@ -3894,6 +4564,52 @@ export interface UpcomingLoanView {
 const COLLECTIONS_BASE = "/api/staff/collections";
 
 export const collectionsApi = {
+  /** Present a NACH debit now (real money). Omit `amountPaise` for the full outstanding; it may only be lower. */
+  debit: (loanId: number, amountPaise?: number) =>
+    bff<DebitResult>(`${COLLECTIONS_BASE}/loans/${loanId}/debit`, "POST", amountPaise == null ? {} : { amountPaise }),
+
+  /** Every debit presented on this loan, newest attempt first. Read-only; works with the flag off. */
+  debits: (loanId: number) => bff<DebitRecord[]>(`${COLLECTIONS_BASE}/loans/${loanId}/debits`, "GET"),
+
+  /** Re-read one debit's outcome from the bank ("Check status"). Safe to repeat. */
+  reconcileDebit: (loanId: number, debitId: number) =>
+    bff<DebitRecord>(`${COLLECTIONS_BASE}/loans/${loanId}/debits/${debitId}/reconcile`, "POST", {}),
+
+  /** Cancel one in-flight debit; refused (DEBIT_CANCEL_REFUSED) once the bank has picked it up. */
+  cancelDebit: (loanId: number, debitId: number) =>
+    bff<DebitRecord>(`${COLLECTIONS_BASE}/loans/${loanId}/debits/${debitId}/cancel`, "POST", {}),
+
+  /** The refund register: debits that collected money a borrower no longer owed. COLLECTION_HEAD/ADMIN. */
+  overpayments: () => bff<DebitRecord[]>(`${COLLECTIONS_BASE}/debits/overpayments`, "GET"),
+
+  /**
+   * One page of the worklist, narrowed server-side.
+   *
+   * `extra` carries the register's own server params (the `asOf` day); `filters` is the view's
+   * `queryParams`. The whole-worklist `worklist()` above stays for the callers that genuinely want
+   * every row (the bucket cards' counts, which must not follow the column filters).
+   */
+  worklistPage: (p: { filters?: Record<string, string>; page: number; size: number; extra?: Record<string, string> }) =>
+    registerPage<WorklistRow>(`${COLLECTIONS_BASE}/worklist`, p),
+
+  /**
+   * The bucket cards' figures: per-bucket counts and outstanding, over the WHOLE scope.
+   *
+   * The cards are this page's navigation control, so they deliberately do not follow the column
+   * filters — and that is exactly why they must not come from the paged register. Without this the
+   * page had to keep fetching the entire worklist alongside its page just to count it, which is the
+   * cost the server paging exists to remove.
+   */
+  worklistSummary: (extra?: Record<string, string>) =>
+    bff<Array<{ bucket: string; n: number; outstandingPaise: number }>>(
+      `${COLLECTIONS_BASE}/worklist/summary${extra && Object.keys(extra).length ? `?${new URLSearchParams(extra)}` : ""}`,
+      "GET",
+    ),
+
+  /** The values one worklist column's filter can offer, inside the caller's own case scope. */
+  worklistFacet: (column: string, filters: Record<string, string>) =>
+    registerFacet(`${COLLECTIONS_BASE}/worklist`, column, filters),
+
   /** The DPD-bucket worklist: every live loan due within the week or already past due. */
   worklist: () => bff<WorklistRow[]>(`${COLLECTIONS_BASE}/worklist`, "GET"),
   listCases: () => bff<CaseView[]>(`${COLLECTIONS_BASE}/cases`, "GET"),
@@ -4079,6 +4795,265 @@ export function rupeesToPaise(rupees: number): number {
 }
 
 /** Integer paise -> ₹ string, e.g. 500000 -> "₹5,000". */
+// ---------------------------------------------------------------------------
+// Mandates & debits console (COLLECTION_HEAD / ADMIN, read-only)
+// ---------------------------------------------------------------------------
+
+export interface MandateSummary {
+  totalMandates: number;
+  activeMandates: number;
+  activeCustomers: number;
+  activeLimitPaise: number;
+  pendingAuthorisation: number;
+  failed: number;
+  cancelled: number;
+  bankUnsupported: number;
+  totalDebits: number;
+  debitsSucceeded: number;
+  debitedPaise: number;
+  debitsFailed: number;
+  debitsInFlight: number;
+  inFlightPaise: number;
+  debitsCancelled: number;
+  refundsOwedPaise: number;
+  debitedByDay: { date: string; debitedPaise: number; count: number }[];
+}
+
+export interface MandateListRow {
+  id: number;
+  customerId: number;
+  customerName: string | null;
+  mobile: string | null;
+  /** The customer's newest application — what "Open mandate actions" opens. */
+  applicationId: number | null;
+  applicationStatus: string | null;
+  loanId: number | null;
+  attemptNo: number;
+  /** Stored status, or CANCELLED when staff cancelled it. */
+  status: string;
+  umrn: string | null;
+  bankName: string | null;
+  accountLast4: string | null;
+  maximumAmountPaise: number;
+  authSubMode: string | null;
+  rejectReason: string | null;
+  createdAt: string | null;
+  authenticatedAt: string | null;
+  cancelledAt: string | null;
+  cancelledBy: string | null;
+  cancelReason: string | null;
+  debitCount: number;
+  debitsSucceeded: number;
+  debitedPaise: number;
+  debitsInFlight: number;
+  lastDebitAt: string | null;
+}
+
+export interface MandateDebitRow {
+  id: number;
+  mandateId: number;
+  umrn: string | null;
+  loanId: number;
+  customerId: number | null;
+  customerName: string | null;
+  mobile: string | null;
+  applicationId: number | null;
+  attemptNo: number;
+  amountPaise: number;
+  status: string;
+  digioStatus: string | null;
+  failureCode: string | null;
+  failureReason: string | null;
+  utr: string | null;
+  settlementDate: string | null;
+  /** MANUAL (a staffer) or SCHEDULED (the automatic sweep). */
+  trigger: string;
+  actorId: number | null;
+  actorName: string | null;
+  actorRole: string | null;
+  dpdAtAttempt: number | null;
+  presentCount: number;
+  overpayment: boolean;
+  digioTxnId: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
+
+export interface MandateDebitFilters {
+  q?: string;
+  status?: string;
+  trigger?: string;
+  actorId?: number | null;
+  from?: string;
+  to?: string;
+  page?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Admin customer messaging — routes under /api/staff/customer-messages/* (ADMIN only)
+// ---------------------------------------------------------------------------
+
+const MESSAGES_BASE = "/api/staff/customer-messages";
+
+export type MessageChannel = "SMS" | "WHATSAPP" | "EMAIL";
+export type MessageInputType = "TEXT" | "DATE" | "PERCENT";
+export interface MessageTemplate {
+  key: string;
+  label: string;
+  category: "SERVICE" | "MARKETING";
+  channels: MessageChannel[];
+  inputs: { name: string; label: string; type: MessageInputType }[];
+  singleOnly: boolean;
+  rule?: "ANY" | "LIVE" | "OVERDUE" | "WINDOW_1_5" | null;
+  /** Non-null: the sender must tick "confirmed" with this wording. */
+  confirmText: string | null;
+}
+/** Exactly one of the two ids. */
+export type MessageTarget = { applicationId: number } | { customerId: number };
+export interface MessagePreview {
+  customerId: number;
+  recipientName: string | null;
+  maskedMobile: string | null;
+  channels: {
+    channel: MessageChannel;
+    providerTemplate: string;
+    params: string[];
+    skipReason: string | null;
+    /** The rendered message, where the wording is held here; null for provider-held WhatsApp wording. */
+    text?: string | null;
+  }[];
+}
+export interface MessageSendResult {
+  customerId: number;
+  results: { channel: MessageChannel; status: "SENT" | "FAILED" | "SKIPPED"; reason: string | null; messageId: number | null }[];
+}
+export interface MessageLogRow {
+  id: number;
+  customerId: number;
+  customerName?: string | null;
+  applicationId?: number | null;
+  loanId?: number | null;
+  templateKey: string;
+  channel: MessageChannel;
+  /** Last 4 digits only. */
+  mobile: string | null;
+  status: "SENT" | "FAILED" | "SKIPPED";
+  reason: string | null;
+  discountPercent: number | null;
+  repayBy: string | null;
+  sentByName: string | null;
+  createdAt: string;
+}
+export interface MessageLogFilters {
+  page?: number;
+  size?: number;
+  customerId?: number;
+  templateKey?: string;
+  channel?: string;
+  status?: string;
+  from?: string;
+  to?: string;
+}
+export interface MessageSendRequest {
+  target: MessageTarget;
+  templateKey: string;
+  channels: MessageChannel[];
+  inputs: Record<string, string>;
+}
+
+export const customerMessagesApi = {
+  templates: () => bff<MessageTemplate[]>(`${MESSAGES_BASE}/templates`, "GET"),
+  preview: (b: MessageSendRequest) => bff<MessagePreview>(`${MESSAGES_BASE}/preview`, "POST", b),
+  send: (b: MessageSendRequest & { confirmed: boolean }) => bff<MessageSendResult>(`${MESSAGES_BASE}/send`, "POST", b),
+  audience: (group: string) =>
+    bff<{ group: string; count: number; customerIds: number[]; capped: boolean }>(
+      `${MESSAGES_BASE}/audience?group=${encodeURIComponent(group)}`,
+      "GET",
+    ),
+  log: (f: MessageLogFilters) =>
+    bff<{ rows: MessageLogRow[]; total: number; page: number; size: number }>(`${MESSAGES_BASE}/log${qs({ ...f })}`, "GET"),
+};
+
+/** One row of the Admin Templates library. `key` is what the send dialog and send API take. */
+export interface StoredTemplate {
+  id: number;
+  key: string;
+  channel: MessageChannel;
+  name: string;
+  subject: string | null;
+  body: string | null;
+  category: "SERVICE" | "MARKETING";
+  status: "DRAFT" | "SUBMITTED" | "ACTIVE" | "REJECTED";
+  /** SMS: DLT id. WhatsApp: the name SmartChat stored. */
+  providerId: string | null;
+  rejectionReason: string | null;
+  variables: string[];
+  rule: "ANY" | "LIVE" | "OVERDUE";
+  confirmText: string | null;
+  systemManaged: boolean;
+  /** Non-null: why it cannot be sent right now. */
+  unsendableReason: string | null;
+  createdByName: string | null;
+  createdAt: string;
+  updatedAt: string;
+  purpose: TemplatePurpose;
+  label: string | null;
+}
+export type TemplatePurpose = "COLLECTIONS" | "REPAYMENT" | "DISCOUNTS" | "LOAN_UPDATES" | "KYC" | "REFERENCES" | "OTHER";
+/** `status`, `providerId` and `remarks` are honoured for SMS and WhatsApp. */
+export interface StoredTemplateInput {
+  channel: MessageChannel;
+  name: string;
+  subject: string | null;
+  body: string;
+  category: string;
+  rule: string;
+  purpose: string;
+  label?: string;
+  variables: string[];
+  status?: string;
+  providerId?: string;
+  remarks?: string;
+}
+
+const STORED_TEMPLATES_BASE = `${MESSAGES_BASE}/admin-templates`;
+
+export const storedTemplatesApi = {
+  list: (channel: MessageChannel) => bff<StoredTemplate[]>(`${STORED_TEMPLATES_BASE}?channel=${channel}`, "GET"),
+  create: (b: StoredTemplateInput) => bff<StoredTemplate>(STORED_TEMPLATES_BASE, "POST", b),
+  update: (id: number, b: StoredTemplateInput) => bff<StoredTemplate>(`${STORED_TEMPLATES_BASE}/${id}`, "POST", b),
+  remove: (id: number) => bff<void>(`${STORED_TEMPLATES_BASE}/${id}/delete`, "POST"),
+  refreshWhatsApp: () => bff<{ updated: number; notFound: string[] }>(`${STORED_TEMPLATES_BASE}/whatsapp/refresh`, "POST"),
+};
+
+const MANDATES_BASE = "/api/staff/mandates";
+
+function qs(params: Record<string, string | number | null | undefined>): string {
+  const u = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v != null && v !== "") u.set(k, String(v));
+  });
+  const s = u.toString();
+  return s ? `?${s}` : "";
+}
+
+export const mandatesApi = {
+  summary: () => bff<MandateSummary>(`${MANDATES_BASE}/summary`, "GET"),
+  list: (q: string, status: string, page: number) =>
+    bff<{ rows: MandateListRow[]; total: number; page: number; size: number }>(
+      `${MANDATES_BASE}${qs({ q, status, page })}`,
+      "GET",
+    ),
+  debitsFor: (mandateId: number) => bff<MandateDebitRow[]>(`${MANDATES_BASE}/${mandateId}/debits`, "GET"),
+  debits: (f: MandateDebitFilters) =>
+    bff<{ rows: MandateDebitRow[]; total: number; page: number; size: number; succeededCount: number; succeededPaise: number }>(
+      `${MANDATES_BASE}/debits${qs({ q: f.q, status: f.status, trigger: f.trigger, actorId: f.actorId, from: f.from, to: f.to, page: f.page })}`,
+      "GET",
+    ),
+  actors: () => bff<{ id: number; name: string; role: string }[]>(`${MANDATES_BASE}/debits/actors`, "GET"),
+};
+
 export function paiseToINR(paise: number | null | undefined): string {
   if (paise == null) return "—";
   return new Intl.NumberFormat("en-IN", {
@@ -4193,4 +5168,69 @@ const SKIP_TRACE_BASE = "/api/staff/skip-trace";
 export const skipTraceApi = {
   history: (customerId: number) => bff<SkipTraceRun[]>(`${SKIP_TRACE_BASE}/customers/${customerId}`, "GET"),
   run: (customerId: number) => bff<SkipTraceRun>(`${SKIP_TRACE_BASE}/customers/${customerId}`, "POST"),
+};
+
+// ---------------------------------------------------------------------------
+// Bank Statement Analysis — on-demand Signzy BSA (credit). Billed per statement, so it is only ever
+// triggered by the credit desk / ADMIN from the customer's Banking tab; the stored result is free to
+// read for any staff but DSA. Signzy's flow is asynchronous: a run comes back PENDING and the
+// backend advances it on each read, so the UI polls while `status === "PENDING"`.
+// ---------------------------------------------------------------------------
+export type BankAnalysisAccount = {
+  maskedNumber: string | null;
+  type: string | null;
+  txnCount: number | null;
+  status: string | null;
+  ifsc?: string | null;
+  micr?: string | null;
+  facility?: string | null;
+  branch?: string | null;
+  periodFrom?: string | null;
+  periodTo?: string | null;
+  holderName?: string | null;
+  /** Signzy's tampering verdict for the file(s): ORIGINAL | REVIEW | FRAUD SUSPECTED | UNKNOWN. */
+  authenticity?: string | null;
+  openingBalancePaise?: number | null;
+  closingBalancePaise?: number | null;
+};
+export type BankAnalysisView = {
+  id: number;
+  customerId: number;
+  applicationId?: number | null;
+  status: "ANALYSED" | "PENDING" | "FAILED";
+  reportId?: string | null;
+  reportStatus?: string | null;
+  reportStatusDescription?: string | null;
+  bankScore?: string | null;
+  bank: string | null;
+  accounts: BankAnalysisAccount[];
+  /** Salary identification lives in Signzy's downloadable report; null until that is mapped. */
+  salary: {
+    verdict: "ACCEPT" | "REVIEW" | "REJECT";
+    rule: string;
+    primarySource: string;
+    consecutiveMonths: number;
+    minSalaryPaise: number;
+    uniqueCredits: number;
+    employerOnStatement?: string;
+    analysedAt: string;
+  } | null;
+  excelUrl?: string | null;
+  jsonUrl?: string | null;
+  message?: string | null;
+  runByStaffId?: number | null;
+  runByName?: string | null;
+  runByRole?: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
+};
+const BANK_ANALYSIS_BASE = "/api/staff/bank-analysis";
+export const bankAnalysisApi = {
+  /** The latest analysis, or null when none has been run. Advances a still-running report. */
+  get: (customerId: number) =>
+    bff<BankAnalysisView | null>(`${BANK_ANALYSIS_BASE}/customers/${customerId}`, "GET"),
+  history: (customerId: number) =>
+    bff<BankAnalysisView[]>(`${BANK_ANALYSIS_BASE}/customers/${customerId}/history`, "GET"),
+  run: (customerId: number) =>
+    bff<BankAnalysisView>(`${BANK_ANALYSIS_BASE}/customers/${customerId}`, "POST"),
 };

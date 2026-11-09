@@ -242,13 +242,23 @@ public final class ProviderJson {
     /**
      * Hand one finished call to the audit trail. {@code error} is {@code null} on success.
      * Recording is best-effort inside {@link ProviderCallLog} and never throws.
+     *
+     * <p><b>Credentials are stripped before the row is stored.</b> {@code provider_api_execution}
+     * deliberately keeps the payload otherwise verbatim — borrower identifiers included — because it
+     * is the access-controlled record a failing integration is diagnosed from. A <em>credential</em>
+     * is different: a presigned S3 URL is a bearer token for a borrower's bank statement, a
+     * statement PDF password is a borrower secret that never expires, and {@code authToken} is ours.
+     * None of them help diagnose anything, and the ADMIN dashboard renders this row. Scrubbed here,
+     * once, rather than in each of the 20 clients — and the request that went on the wire is
+     * untouched, since {@code body} is serialised separately.
      */
     private static void record(String uri, String requestJson, String responseJson,
                                Integer httpStatus, long startedNanos, String error) {
         long durationMs = (System.nanoTime() - startedNanos) / 1_000_000L;
         ProviderCallLog.record(new ProviderCall(
                 ProviderCallCatalog.providerFor(uri), ProviderCallCatalog.operationFor(uri), uri,
-                requestJson, responseJson, httpStatus, durationMs,
+                ProviderLogRedactor.redactCredentials(requestJson),
+                ProviderLogRedactor.redactCredentials(responseJson), httpStatus, durationMs,
                 error == null ? ProviderCall.SUCCESS : ProviderCall.FAILED, error));
     }
 

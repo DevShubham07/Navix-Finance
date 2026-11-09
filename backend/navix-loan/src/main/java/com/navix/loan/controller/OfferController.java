@@ -9,6 +9,7 @@ import com.navix.loan.dto.OfferDtos.DisbursalAccountRequest;
 import com.navix.loan.dto.OfferDtos.DisbursalAccountView;
 import com.navix.loan.dto.OfferDtos.EsignInitRequest;
 import com.navix.loan.dto.OfferDtos.OfferSummaryView;
+import com.navix.loan.dto.OfferDtos.ReferenceOtpRequest;
 import com.navix.loan.dto.OfferDtos.ReferenceView;
 import com.navix.loan.dto.OfferDtos.ReferencesRequest;
 import com.navix.loan.dto.OfferDtos.SanctionLetterView;
@@ -40,12 +41,13 @@ public class OfferController {
 
     private final OfferService offer;
     private final ApplicationFlowService flow;
+    private final com.navix.loan.service.ReferenceOtpService referenceOtp;
 
     @PostMapping("/amount")
     public ApiResponse<ApplicationView> chooseAmount(@PathVariable Long id,
                                                      @Valid @RequestBody ChooseAmountRequest req) {
         authorize(id);
-        return ApiResponse.ok(ApplicationView.of(offer.chooseAmount(id, req.amountPaise())));
+        return ApiResponse.ok(ApplicationView.of(offer.chooseAmount(id, req.amountPaise())).forReader());
     }
 
     @GetMapping("/references")
@@ -59,6 +61,20 @@ public class OfferController {
                                                            @RequestBody ReferencesRequest req) {
         authorize(id);
         return ApiResponse.ok(offer.saveReferences(id, req.references()));
+    }
+
+    @PostMapping("/references/{slot}/otp")
+    public ApiResponse<Void> sendReferenceOtp(@PathVariable Long id, @PathVariable int slot) {
+        authorize(id);
+        referenceOtp.send(id, slot);
+        return ApiResponse.ok(null);
+    }
+
+    @PostMapping("/references/{slot}/otp/verify")
+    public ApiResponse<List<ReferenceView>> verifyReferenceOtp(@PathVariable Long id, @PathVariable int slot,
+                                                               @Valid @RequestBody ReferenceOtpRequest req) {
+        authorize(id);
+        return ApiResponse.ok(referenceOtp.verify(id, slot, req.otp()));
     }
 
     @GetMapping("/summary")
@@ -89,6 +105,20 @@ public class OfferController {
         return ApiResponse.ok(offer.esignStatus(id));
     }
 
+    /** Register (or reuse) the Digio eMandate — {@code derived.url} is where to send the borrower. */
+    @PostMapping("/mandate/init")
+    public ApiResponse<StepResult> mandateInit(@PathVariable Long id) {
+        authorize(id);
+        return ApiResponse.ok(offer.mandateInit(id));
+    }
+
+    /** Poll the eMandate; a UMRN hands the file to the Disbursement Head. */
+    @GetMapping("/mandate/status")
+    public ApiResponse<StepResult> mandateStatus(@PathVariable Long id) {
+        authorize(id);
+        return ApiResponse.ok(offer.mandateStatus(id));
+    }
+
     /** Fallback: record a signature the borrower drew in the app. */
     @PostMapping("/esign")
     public ApiResponse<StepResult> esign(@PathVariable Long id, @RequestBody ManualEsignRequest req) {
@@ -107,7 +137,7 @@ public class OfferController {
     public ApiResponse<ApplicationView> confirmDisbursalAccount(
             @PathVariable Long id, @Valid @RequestBody DisbursalAccountRequest req) {
         authorize(id);
-        return ApiResponse.ok(ApplicationView.of(offer.confirmDisbursalAccount(id, req)));
+        return ApiResponse.ok(ApplicationView.of(offer.confirmDisbursalAccount(id, req)).forReader());
     }
 
     /** Borrower-only + ownership: a BORROWER may act only on their own application; ADMIN on any. */

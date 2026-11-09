@@ -1,0 +1,151 @@
+/**
+ * Admin Templates: the three tabs, Send locked to sendable templates, the flag switching everything
+ * off, and one variable picker per placeholder on save.
+ */
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/api/applications", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/api/applications")>("@/lib/api/applications");
+  return {
+    ...actual,
+    storedTemplatesApi: { list: vi.fn(), create: vi.fn(), update: vi.fn(), refreshWhatsApp: vi.fn() },
+    featureFlagsApi: { get: vi.fn() },
+    customersApi: { page: vi.fn() },
+    customerMessagesApi: { templates: vi.fn(), preview: vi.fn(), send: vi.fn(), log: vi.fn(), audience: vi.fn() },
+  };
+});
+vi.mock("@/components/staff/live-pipeline", () => ({
+  PermissionGate: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  NoAccessNotice: () => null,
+}));
+vi.mock("@/components/staff/staff-ui", () => ({
+  PageHeader: ({ title }: { title: string }) => <h1>{title}</h1>,
+}));
+
+import * as React from "react";
+import { customerMessagesApi, featureFlagsApi, storedTemplatesApi, type StoredTemplate } from "@/lib/api/applications";
+import AdminTemplatesPage from "./page";
+
+const list = vi.mocked(storedTemplatesApi.list);
+const create = vi.mocked(storedTemplatesApi.create);
+const flags = vi.mocked(featureFlagsApi.get);
+
+const row = (over: Partial<StoredTemplate>): StoredTemplate => ({
+  id: 1,
+  key: "tpl:1",
+  channel: "SMS",
+  name: "DHANBOOST_A",
+  subject: null,
+  body: "Dear {#var#}. - DhanBoost",
+  category: "SERVICE",
+  status: "ACTIVE",
+  providerId: "1777179420408031626",
+  rejectionReason: null,
+  variables: ["name"],
+  rule: "LIVE",
+  confirmText: null,
+  systemManaged: false,
+  unsendableReason: null,
+  createdByName: "Admin",
+  createdAt: "2026-11-09T00:00:00Z",
+  updatedAt: "2026-11-09T00:00:00Z",
+  purpose: "COLLECTIONS",
+  label: null,
+  ...over,
+});
+
+function renderPage() {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={qc}>
+      <AdminTemplatesPage />
+    </QueryClientProvider>,
+  );
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  flags.mockResolvedValue({ "admin-messaging": true });
+  list.mockResolvedValue([]);
+});
+
+describe("Admin Templates", () => {
+  it("has the three channel tabs and loads each channel", async () => {
+    renderPage();
+    await waitFor(() => expect(list).toHaveBeenCalledWith("WHATSAPP"));
+    for (const name of ["SMS", "WhatsApp", "Email"]) expect(screen.getByRole("tab", { name })).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "SMS" }));
+    await waitFor(() => expect(list).toHaveBeenCalledWith("SMS"));
+    fireEvent.click(screen.getByRole("tab", { name: "WhatsApp" }));
+    expect(await screen.getByRole("button", { name: /Refresh status from SmartChat/ })).toBeTruthy();
+  });
+
+  it("shows status and locks Send on an unsendable template", async () => {
+    list.mockResolvedValue([
+      row({}),
+      row({ id: 2, name: "DHANBOOST_B", status: "SUBMITTED", providerId: null, unsendableReason: "Only an Active template can be sent." }),
+    ]);
+    renderPage();
+    const buttons = await screen.findAllByRole("button", { name: "Send" });
+    expect((buttons[0] as HTMLButtonElement).disabled).toBe(false);
+    expect((buttons[1] as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText("Submitted")).toBeTruthy();
+    expect(screen.getByText("Only an Active template can be sent.")).toBeTruthy();
+  });
+
+  it("disables add and send while the flag is off", async () => {
+    flags.mockResolvedValue({ "admin-messaging": false });
+    list.mockResolvedValue([row({})]);
+    renderPage();
+    const send = await screen.findByRole("button", { name: "Send" });
+    await waitFor(() => expect((send as HTMLButtonElement).disabled).toBe(true));
+    expect((screen.getByRole("button", { name: /Add template/ }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("saves one variable per placeholder", async () => {
+    create.mockResolvedValue(row({}));
+    renderPage();
+    fireEvent.click(await screen.findByRole("tab", { name: "SMS" }));
+    const add = await screen.findByRole("button", { name: /Add template/ });
+    await waitFor(() => expect((add as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(add);
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "NEW_T" } });
+    fireEvent.change(screen.getByLabelText("Wording"), { target: { value: "Dear {#var#}, pay {#var#}. - DhanBoost" } });
+    fireEvent.change(screen.getByLabelText("Variable 2"), { target: { value: "amount" } });
+    expect((screen.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText(/^Category/), { target: { value: "COLLECTIONS" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create.mock.calls[0][0]).toMatchObject({ channel: "SMS", name: "NEW_T", purpose: "COLLECTIONS", variables: ["name", "amount"] });
+  });
+
+  it("offers a group only the templates its customers can receive, with the count", async () => {
+    vi.mocked(customerMessagesApi.audience).mockResolvedValue({ group: "DUE_SOON", count: 12, customerIds: [1], capped: false });
+    list.mockResolvedValue([
+      row({ id: 1, name: "OVERDUE_ONLY", rule: "OVERDUE" }),
+      row({ id: 2, name: "LIVE_LOAN", rule: "LIVE" }),
+    ]);
+    renderPage();
+    await screen.findByText("OVERDUE_ONLY");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Due soon" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Due soon" }));
+    expect(await screen.findByRole("button", { name: "Send to 12" })).toBeTruthy();
+    expect(screen.queryByText("OVERDUE_ONLY")).toBeNull();
+    expect(screen.getByText("LIVE_LOAN")).toBeTruthy();
+  });
+
+  it("orders collections first and offers no delete on a system template", async () => {
+    list.mockResolvedValue([
+      row({ id: 1, name: "AN_OFFER", purpose: "DISCOUNTS" }),
+      row({ id: 2, name: "A_REMINDER", purpose: "COLLECTIONS", systemManaged: true, channel: "SMS", unsendableReason: "x", status: "ACTIVE" }),
+      row({ id: 3, name: "CHASE", purpose: "COLLECTIONS" }),
+    ]);
+    renderPage();
+    const headings = (await screen.findAllByRole("heading", { level: 2 })).map((h) => h.textContent);
+    expect(headings).toEqual(["Collections", "Discounts"]);
+    expect(screen.getByRole("button", { name: "Delete CHASE" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Delete A_REMINDER" })).toBeNull();
+  });
+});

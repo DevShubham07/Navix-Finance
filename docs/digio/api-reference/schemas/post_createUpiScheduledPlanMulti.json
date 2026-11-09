@@ -1,0 +1,418 @@
+{
+ "components": {
+  "schemas": {
+   "GenericBadRequestResponse_Client": {
+    "properties": {
+     "code": {
+      "description": "Error code",
+      "type": "string"
+     },
+     "details": {
+      "description": "Details about the exception. Usually contains the exception id for reference.",
+      "type": "string"
+     },
+     "errors": {
+      "description": "Custom errors",
+      "type": "string"
+     },
+     "message": {
+      "description": "Description of the error",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "GenericIdListResponse_Client": {
+    "items": {
+     "type": "string"
+    },
+    "properties": {
+     "empty": {
+      "type": "boolean"
+     }
+    },
+    "type": "array"
+   },
+   "SplitSettlementInfo_Client": {
+    "description": "Any one of corporate_account_number or settlement_config_profile_id or split_settlement_info is required.",
+    "properties": {
+     "settlement_account_number": {
+      "description": "Bank Account Number",
+      "type": "string"
+     },
+     "split_amount_in_paise": {
+      "description": "Amount to be settled in paise",
+      "format": "int32",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "split_amount_in_paise"
+    ],
+    "type": "object"
+   },
+   "UpiMandateExtendedDetail_Client": {
+    "properties": {
+     "amount": {
+      "type": "number"
+     },
+     "amountType": {
+      "enum": [
+       "fixed",
+       "maximum"
+      ],
+      "type": "string"
+     },
+     "authenticationTime": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "corporateConfigId": {
+      "type": "string"
+     },
+     "customerAccountNumber": {
+      "type": "string"
+     },
+     "customerAccountType": {
+      "enum": [
+       "savings",
+       "current",
+       "cc",
+       "sb_nre",
+       "sb_nro",
+       "other"
+      ],
+      "type": "string"
+     },
+     "customerName": {
+      "type": "string"
+     },
+     "customerRefNumber": {
+      "type": "string"
+     },
+     "customerVpa": {
+      "type": "string"
+     },
+     "destinationBankIfsc": {
+      "type": "string"
+     },
+     "digioEnachId": {
+      "type": "string"
+     },
+     "frequency": {
+      "enum": [
+       "ADHO",
+       "INDA",
+       "DAIL",
+       "WEEK",
+       "MNTH",
+       "QURT",
+       "MIAN",
+       "YEAR",
+       "ONETIME",
+       "BIMN"
+      ],
+      "type": "string"
+     },
+     "id": {
+      "type": "string"
+     },
+     "identifier": {
+      "type": "string"
+     },
+     "mandateEndDate": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "mandateRequestId": {
+      "type": "string"
+     },
+     "mandateStartDate": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "merchantCategoryCode": {
+      "type": "string"
+     },
+     "narration": {
+      "type": "string"
+     },
+     "ownerId": {
+      "type": "string"
+     },
+     "partnerBank": {
+      "enum": [
+       "KOTAK",
+       "YESB",
+       "JUSPAY_KOTAK",
+       "MGS_YESB"
+      ],
+      "type": "string"
+     },
+     "schemeRefNumber": {
+      "type": "string"
+     },
+     "serviceProviderName": {
+      "type": "string"
+     },
+     "sponsorBankCode": {
+      "enum": [
+       "KOTAK",
+       "YESB",
+       "JUSPAY_KOTAK",
+       "MGS_YESB"
+      ],
+      "type": "string"
+     },
+     "status": {
+      "enum": [
+       "authenticated",
+       "register_failed",
+       "register_success",
+       "paused",
+       "revoke_initiated",
+       "cancelled",
+       "expired",
+       "revoked"
+      ],
+      "type": "string"
+     },
+     "statusUpdatedAt": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "subUserId": {
+      "type": "string"
+     },
+     "umrn": {
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "UpiScheduledPlanCreateMultiRequest_Client": {
+    "example": "{\n  \"requests\": [\n    {\n      \"umrn\": \"10b3ab554e0e40bfbff7843d4743fe63@upi\",\n      \"amount\": 9.0,\n      \"settlement_date\": \"2019-04-10 14:30:00\",\n      \"corporate_account_number\": \"123456789\",\n      \"unique_key\": \"LAN_EMI_1\",\n      \"narration\": \"TW Loan EMI\"\n    },\n    {\n      <entry-2>\n    },\n    {\n      <entry-3>\n    }\n  ]\n}",
+    "properties": {
+     "requests": {
+      "items": {
+       "$ref": "#/components/schemas/UpiScheduledPlanCreateRequest_Client"
+      },
+      "type": "array"
+     }
+    },
+    "type": "object"
+   },
+   "UpiScheduledPlanCreateRequest_Client": {
+    "properties": {
+     "amount": {
+      "description": "Either  of amount or amount_in_paise is mandatory.",
+      "type": "number"
+     },
+     "amount_in_paise": {
+      "description": "Either  of amount or amount_in_paise is mandatory",
+      "format": "int32",
+      "type": "integer"
+     },
+     "corporate_account_number": {
+      "description": "Any one of corporate_account_number or settlement_config_profile_id or split_settlement_info is required. All numeric",
+      "maxLength": 18,
+      "minLength": 8,
+      "type": "string"
+     },
+     "frequency": {
+      "default": "ONETIME",
+      "enum": [
+       "onetime",
+       "adhoc",
+       "intraday",
+       "daily",
+       "weekly",
+       "monthly",
+       "quarterly",
+       "semiannually",
+       "yearly",
+       "bimonthly"
+      ],
+      "type": "string"
+     },
+     "narration": {
+      "description": " Default: Enterprise name",
+      "maxLength": 20,
+      "minLength": 1,
+      "type": "string"
+     },
+     "optional_attr": {
+      "$ref": "#/components/schemas/UpiTxnOptionalAttr_Client"
+     },
+     "payment_count": {
+      "default": 1,
+      "description": "Should be non-negative and >= 1.  payment_count has to be one if frequency is ONETIME",
+      "format": "int32",
+      "type": "integer"
+     },
+     "settlement_config_profile_id": {
+      "description": "Config of settlement, if already predefined. Any one of corporate_account_number or settlement_config_profile_id or split_settlement_info is required.",
+      "type": "string"
+     },
+     "settlement_date": {
+      "description": "Date for Settlement in yyyy-mm-dd hh:mm:ss\n\nDefault: \n(i) first_collection_date as provided in registered mandate\nOR\n(ii) current date\nNote : Settlement Date should be more than 26 hours from current time\n",
+      "format": "date-time",
+      "type": "string"
+     },
+     "split_settlement_info": {
+      "description": "Any one of corporate_account_number or settlement_config_profile_id or split_settlement_info is required.",
+      "items": {
+       "$ref": "#/components/schemas/SplitSettlementInfo_Client"
+      },
+      "maxItems": 10,
+      "minItems": 2,
+      "type": "array"
+     },
+     "sub_user_identifier": {
+      "description": "Set value to assign it to a sub-user",
+      "type": "string"
+     },
+     "umrn": {
+      "description": "Mandate UMRN created upon successful registration of Mandate",
+      "type": "string"
+     },
+     "unique_key": {
+      "description": "To be used for Corporate\u2019s reference.\nDefault: <umrn>_<count>\nex: <umrn>_1, <umrn>_2\nAllowed chars: a-zA-Z.0-9_\nNote : It should be unique for each created debit.\n",
+      "maxLength": 30,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9-_]*$",
+      "type": "string"
+     },
+     "upi_mandate_extended_detail": {
+      "$ref": "#/components/schemas/UpiMandateExtendedDetail_Client"
+     }
+    },
+    "required": [
+     "frequency",
+     "umrn"
+    ],
+    "type": "object"
+   },
+   "UpiTxnOptionalAttr_Client": {
+    "description": "Please refer below for the additional attributes, that should only be passed by Mutual Fund use case customers",
+    "properties": {
+     "client_id": {
+      "description": "UCC for the said Client.",
+      "type": "string"
+     },
+     "member_id": {
+      "description": "Member ID for whom the PA/ Bank is uploading the file",
+      "type": "string"
+     },
+     "order_id": {
+      "description": "Pass the Order Number for this SIP order",
+      "pattern": "^[A-Za-z0-9]*$",
+      "type": "string"
+     },
+     "pg_bank_ref_number": {
+      "description": "Unique reference number provided by the member for payment to be collected for a unique client.",
+      "type": "string"
+     },
+     "txn_type": {
+      "description": "Type of transaction",
+      "type": "string"
+     }
+    },
+    "required": [
+     "member_id"
+    ],
+    "type": "object"
+   }
+  },
+  "securitySchemes": {
+   "api_auth": {
+    "in": "header",
+    "scheme": "basic",
+    "type": "http"
+   }
+  }
+ },
+ "info": {
+  "contact": {
+   "email": "support@digio.in"
+  },
+  "description": "Getting started with Digio Rest Apis",
+  "title": "Digio Apis",
+  "x-provenance": "Fetched 2026-10-16 from https://documentation.digio.in/swagger/post_createUpiScheduledPlanMulti.json (servers[] replaced with documented hosts)"
+ },
+ "openapi": "3.0.1",
+ "paths": {
+  "/v3/client/upi_payment/scheduled/register_multiple": {
+   "post": {
+    "description": "This API is used to create schedule plan for a multiple UMRN. Max number of presentations which can be created is 500 per api call.",
+    "operationId": "createUpiScheduledPlanMulti",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UpiScheduledPlanCreateMultiRequest_Client"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "examples": {
+         "Success Response": {
+          "description": "Success Response",
+          "value": "[\n    \"NSP1907171443025142M75F7G2JH8THE\",\n    <entry-2 digio generated unique id>,\n    <entry-3 digio generated unique id>\n]\n"
+         }
+        },
+        "schema": {
+         "$ref": "#/components/schemas/GenericIdListResponse_Client"
+        }
+       }
+      }
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "examples": {
+         "Bad Request": {
+          "description": "Bad Request",
+          "value": {
+           "code": "BAD_REQUEST",
+           "details": "EX230000000",
+           "errors": {
+            "15": "Request modification is not allowed. Please check value for customer_account_number",
+            "50": "amount or amount_in_paise cannot be null. ",
+            "6": "Action not allowed in current mandate state"
+           },
+           "message": "Action not allowed in current mandate state"
+          }
+         }
+        },
+        "schema": {
+         "$ref": "#/components/schemas/GenericBadRequestResponse_Client"
+        }
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "api_auth": []
+     }
+    ],
+    "summary": "Create presentation for a multiple UMRNs"
+   }
+  }
+ },
+ "servers": [
+  {
+   "description": "Production",
+   "url": "https://api.digio.in"
+  },
+  {
+   "description": "Sandbox",
+   "url": "https://ext.digio.in:444"
+  }
+ ]
+}

@@ -2,6 +2,7 @@ package com.navix.notification.email;
 
 import com.navix.common.notification.MailPort;
 import com.navix.notification.config.EmailProperties;
+import com.navix.notification.suppression.EmailSuppressionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -21,21 +22,32 @@ public class MailPortEmailAdapter implements MailPort {
     private final EmailClient emailClient;
     private final EmailHtmlRenderer htmlRenderer;
     private final EmailProperties emailProperties;
+    private final EmailSuppressionService suppressionService;
 
     public MailPortEmailAdapter(EmailClient emailClient, EmailHtmlRenderer htmlRenderer,
-                                EmailProperties emailProperties) {
+                                EmailProperties emailProperties, EmailSuppressionService suppressionService) {
         this.emailClient = emailClient;
         this.htmlRenderer = htmlRenderer;
         this.emailProperties = emailProperties;
+        this.suppressionService = suppressionService;
+    }
+
+    @Override
+    public boolean isSuppressed(String email) {
+        return suppressionService.isSuppressed(email);
     }
 
     @Override
     public boolean send(String to, String subject, String textBody) {
+        return sendHtml(to, subject, textBody, htmlRenderer.render(subject, textBody));
+    }
+
+    @Override
+    public boolean sendHtml(String to, String subject, String textBody, String html) {
         if (!Boolean.TRUE.equals(emailProperties.enabled())) {
             log.info("EMAIL disabled — outbound mail via MailPort not sent");
             return false;
         }
-        String html = htmlRenderer.render(subject, textBody);
         EmailResult result = emailClient.send(new EmailMessage(to, subject, textBody, html));
         if (!result.ok()) {
             log.warn("MailPort send failed: {}", result.error());

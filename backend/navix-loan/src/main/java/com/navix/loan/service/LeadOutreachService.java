@@ -17,15 +17,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Sends outreach from a DSA to their own lead — free-text email, or a fixed-template SMS (V55).
+ * Sends outreach from a DSA to their own lead — a fixed branded email ({@link DsaEmailTemplates}), or a
+ * fixed-template SMS (V55).
  * A lead is not a customer/staff recipient, so the notification catalog/dispatcher is not a fit;
  * this follows the same direct-client precedent as {@code ContactService}/{@code EmailOtpService}
  * (navix-app), reaching {@link SmsGateway} directly (already visible from navix-loan) and email via
  * the {@link MailPort} seam (navix-loan does not depend on navix-notification).
  *
- * <p>Abuse controls: free-text email out of the platform's SES domain is a reputation risk, so
- * every send — success or failure — is persisted with its full body (visible to ADMIN), and both a
- * per-lead (3/day) and a per-DSA (50/day) rate limit apply.
+ * <p>Abuse controls: the DSA picks a template and never writes the content; every send — success or
+ * failure — is persisted with its full body (visible to ADMIN), and both a per-lead (3/day) and a per-DSA (50/day) rate limit apply.
  */
 @Service
 @RequiredArgsConstructor
@@ -35,6 +35,8 @@ public class LeadOutreachService {
 
     private static final int MAX_PER_LEAD_PER_DAY = 3;
     private static final int MAX_PER_DSA_PER_DAY = 50;
+    private static final java.util.regex.Pattern EMAIL =
+            java.util.regex.Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
 
     /** The DSA cannot supply SMS text — a fixed, DLT-registered template only. */
     private static final String SMS_TEMPLATE =
@@ -77,17 +79,20 @@ public class LeadOutreachService {
     }
 
     private OutreachResultView sendEmail(Lead lead, Long dsaStaffId, OutreachRequest req) {
-        String subject = req.subject() == null || req.subject().isBlank()
-                ? "A message from your DhanBoost DSA" : req.subject().trim();
-        String body = req.body() == null ? "" : req.body().trim();
-        LeadOutreach row = newRow(lead, dsaStaffId, "EMAIL", lead.getEmail(), subject, body);
+        DsaEmailTemplates.Rendered email = DsaEmailTemplates.render(req.template(), lead.getName());
         if (lead.getEmail() == null || lead.getEmail().isBlank()) {
-            row.setStatus("SKIPPED");
-            row.setError("NO_EMAIL");
-            outreachRepository.save(row);
-            return new OutreachResultView("EMAIL", "SKIPPED", "NO_EMAIL");
+            String typed = req.email() == null ? "" : req.email().trim();
+            if (typed.isEmpty()) {
+                throw new BusinessException("NO_EMAIL", "This lead has no email address — enter one to send");
+            }
+            if (!EMAIL.matcher(typed).matches()) {
+                throw new BusinessException("INVALID_EMAIL", "Enter a valid email address");
+            }
+            lead.setEmail(typed);
         }
-        boolean ok = mailPort.send(lead.getEmail(), subject, body);
+        LeadOutreach row = newRow(lead, dsaStaffId, "EMAIL", lead.getEmail(), email.subject(),
+                "[template " + email.key() + "]\n" + email.text());
+        boolean ok = mailPort.sendHtml(lead.getEmail(), email.subject(), email.text(), email.html());
         row.setStatus(ok ? "SENT" : "FAILED");
         if (!ok) {
             row.setError("delivery failed");

@@ -19,7 +19,7 @@ export const html = `<section class="page active" id="how">
       <div class="fcard reveal"><div class="fico">1</div><h3>Apply online in minutes</h3><p>Tell us how much you need and for how long, then share basic personal and income details. The whole form takes about two minutes on any device.</p></div>
       <div class="fcard reveal d1"><div class="fico">2</div><h3>Instant digital verification</h3><p>Complete paperless KYC with PAN and Aadhaar. Our partner NBFC runs a quick eligibility and affordability check — usually with an instant decision.</p></div>
       <div class="fcard reveal"><div class="fico">3</div><h3>Review &amp; accept your offer</h3><p>See your exact interest, APR and total repayment in a clear Key Fact Statement. Like what you see? E-sign the agreement securely.</p></div>
-      <div class="fcard reveal d1"><div class="fico">4</div><h3>Money in your bank</h3><p>The partner NBFC disburses funds directly to your verified bank account — typically within 24–48 hours. Repay easily via UPI, net-banking or auto-debit.</p></div>
+      <div class="fcard reveal d1"><div class="fico">4</div><h3>Money in your bank</h3><p>The partner NBFC disburses funds directly to your verified bank account — typically within 24–48 hours. Repay easily via UPI or net-banking.</p></div>
     </div>
   </div></div>
 
@@ -49,5 +49,5 @@ export const html = `<section class="page active" id="how">
     </div>
   </div></div></div>
 
-  <div class="sec"><div class="wrap"><div class="ctaband reveal"><h2>It only takes two minutes</h2><p>Check your eligibility now — free, with no impact on your credit score.</p><div class="hero-cta"><a href="/signup/start" class="btn btn-gold btn-lg" data-link="">Apply Now</a><a href="/calculator" class="btn btn-outline-light btn-lg" data-link="">Calculate repayment</a></div></div></div></div>
+  <div class="sec"><div class="wrap"><div class="ctaband reveal"><h2>It only takes two minutes</h2><p>Check your eligibility now — free to apply, with no advance fee.</p><div class="hero-cta"><a href="/signup/start" class="btn btn-gold btn-lg" data-link="">Apply Now</a><a href="/calculator" class="btn btn-outline-light btn-lg" data-link="">Calculate repayment</a></div></div></div></div>
 </section>`;

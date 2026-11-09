@@ -12,7 +12,6 @@ import {
 } from "lucide-react";
 import { Badge, EmptyState, ErrorState, Skeleton, toast } from "@/components/ui";
 import { Field, FieldGrid } from "@/components/ui/field-grid";
-import { Figure, GoalProgress } from "@/components/kit";
 import { Section, docTypeLabel, viewDocument } from "@/components/staff/detail-parts";
 import { formatDpdDays } from "@/components/staff/credit/tradeline-table";
 import { CrifAnalysisPanel } from "@/components/staff/customer-360/crif-analysis-panel";
@@ -133,18 +132,30 @@ function Summary({ rules, counts, reportLine }: { rules: BreRule[]; counts: Reco
               <div className={cn("flex items-center gap-1 text-[8.8px] font-semibold uppercase tracking-wide", OUTCOME[o].text)}>
                 <Icon size={12} /> {OUTCOME[o].label}
               </div>
-              <Figure size="sm" className={OUTCOME[o].text}>{counts[o]}</Figure>
+              <span className={cn("block font-mono text-[1.6rem] font-semibold leading-tight", OUTCOME[o].text)}>{counts[o]}</span>
             </div>
           );
         })}
       </div>
-      <GoalProgress
-        tone="light"
-        className="mt-3"
-        ratio={rules.length === 0 ? 0 : counts.PASS / rules.length}
-        label="Rules validated"
-        trailing={`${counts.PASS} of ${rules.length}${counts.FLAG > 0 ? ` · ${counts.FLAG} flagged` : ""}`}
-      />
+      <div className="mt-3">
+        <div className="mb-1.5 flex justify-between gap-3 text-[10px] text-muted">
+          <span>Rules validated</span>
+          <span>{`${counts.PASS} of ${rules.length}${counts.FLAG > 0 ? ` · ${counts.FLAG} flagged` : ""}`}</span>
+        </div>
+        <div
+          className="h-4 overflow-hidden rounded-full bg-grey-200 p-[3px]"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={rules.length === 0 ? 0 : Math.round((counts.PASS / rules.length) * 100)}
+          aria-label="Rules validated"
+        >
+          <div
+            className="h-full rounded-full bg-gold transition-[width] duration-700"
+            style={{ width: `${rules.length === 0 ? 0 : (counts.PASS / rules.length) * 100}%` }}
+          />
+        </div>
+      </div>
       <div className="staff-table-scroll mt-3">
         <table className="staff-data-table staff-table-fit" aria-label="Business rules overview">
           <thead>
@@ -171,7 +182,7 @@ function Summary({ rules, counts, reportLine }: { rules: BreRule[]; counts: Reco
       </div>
       <p className="mt-2 text-[10.4px] text-muted">
         Flags only — these rules never reject or block a loan. {reportLine} The bank statement analyser is not live yet,
-        so rule 5 reads the CRIF report and rule 9 compares what is on file.
+        so rule 6 reads the CRIF report and rule 10 compares what is on file.
       </p>
     </Section>
   );

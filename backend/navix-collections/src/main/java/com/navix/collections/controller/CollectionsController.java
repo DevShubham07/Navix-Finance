@@ -19,15 +19,19 @@ import com.navix.collections.entity.CollectionPaymentStatus;
 import com.navix.collections.service.CollectionPaymentService;
 import com.navix.collections.service.CollectionsService;
 import com.navix.collections.service.DpdCalculator;
+import com.navix.collections.service.ManualDebitService;
+import com.navix.common.loan.DebitDirectory;
 import com.navix.collections.service.SettlementService;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.loan.LoanSummary;
+import com.navix.common.query.SqlFacets;
 import com.navix.common.staff.StaffSummary;
 import com.navix.common.web.ApiResponse;
 import jakarta.validation.Valid;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -61,6 +65,7 @@ public class CollectionsController {
     private final SettlementService settlementService;
     private final CollectionPaymentService collectionPaymentService;
     private final DpdCalculator dpdCalculator;
+    private final ManualDebitService manualDebitService;
 
     /**
      * The collections worklist — one row per live loan, past due or due within the next week,
@@ -70,6 +75,52 @@ public class CollectionsController {
     public ApiResponse<List<WorklistRow>> worklist(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf) {
         return ApiResponse.ok(collectionsService.worklist(asOf));
+    }
+
+    /**
+     * One page of the worklist, for the register that pages server-side. {@code q} searches (id, name,
+     * mobile, PAN, employer, officer, loan #); {@code from}/{@code to} window the DUE date; {@code bucket}
+     * is a {@code DpdBucket} name (omit for all); {@code f.<column>} are the column filters; {@code sort}
+     * and {@code dir} order it; {@code page} is 1-indexed. Scope (an executive sees only their cases)
+     * is applied server-side. The whole-list {@link #worklist} stays for the bucket cards and the
+     * sidebar badge, which need every row's bucket and balance.
+     */
+    @GetMapping("/worklist/page")
+    public ApiResponse<CollectionsService.WorklistPage> worklistPage(
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(required = false) String bucket,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "25") int size,
+            @RequestParam(required = false) String sort,
+            @RequestParam(required = false) String dir,
+            @RequestParam Map<String, String> all) {
+        return ApiResponse.ok(collectionsService.worklistPage(q, from, to, bucket, asOf, page, size, sort, dir, all));
+    }
+
+    /** The bucket cards: count and derived balance per DPD bucket, in the caller's scope, unfiltered. */
+    @GetMapping("/worklist/summary")
+    public ApiResponse<List<CollectionsService.BucketSummary>> worklistSummary(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf) {
+        return ApiResponse.ok(collectionsService.worklistSummary(asOf));
+    }
+
+    /**
+     * The distinct values one column's filter checklist can offer, inside the caller's scope and under
+     * the OTHER columns' {@code f.*} filters (the column's own is ignored so its dropdown does not collapse).
+     */
+    @GetMapping("/worklist/facets")
+    public ApiResponse<SqlFacets.Facet> worklistFacets(
+            @RequestParam("column") String column,
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(required = false) String bucket,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf,
+            @RequestParam Map<String, String> all) {
+        return ApiResponse.ok(collectionsService.worklistFacet(column, q, from, to, bucket, asOf, all));
     }
 
     /** Loans eligible to open a case against (ACTIVE/OVERDUE, due on or before {@code dueBy}). */
@@ -122,6 +173,40 @@ public class CollectionsController {
     @GetMapping("/cases/by-loan/{loanId}")
     public ApiResponse<CaseDetailView> getCaseByLoan(@PathVariable Long loanId) {
         return ApiResponse.ok(collectionsService.getCaseDetailByLoanId(loanId));
+    }
+
+    /**
+     * Present a NACH debit now. Moves REAL money. Body {@code amountPaise} omitted = full outstanding;
+     * a value may only be lower. Guards live in the loan module; role, assignment and flag in the service.
+     */
+    @PostMapping("/loans/{loanId}/debit")
+    public ApiResponse<DebitDirectory.Result> debit(@PathVariable Long loanId,
+                                                    @RequestBody(required = false) Map<String, Long> body) {
+        return ApiResponse.ok(manualDebitService.debit(loanId, body == null ? null : body.get("amountPaise")));
+    }
+
+    /** Every NACH debit presented on this loan, newest attempt first. Read-only; no provider text. */
+    @GetMapping("/loans/{loanId}/debits")
+    public ApiResponse<java.util.List<DebitDirectory.DebitRecord>> debits(@PathVariable Long loanId) {
+        return ApiResponse.ok(manualDebitService.history(loanId));
+    }
+
+    /** Re-read one debit's outcome from the provider ("Check status"). */
+    @PostMapping("/loans/{loanId}/debits/{debitId}/reconcile")
+    public ApiResponse<DebitDirectory.DebitRecord> reconcileDebit(@PathVariable Long loanId, @PathVariable Long debitId) {
+        return ApiResponse.ok(manualDebitService.reconcile(loanId, debitId));
+    }
+
+    /** Cancel one in-flight debit at the provider; refused once the bank has picked it up. */
+    @PostMapping("/loans/{loanId}/debits/{debitId}/cancel")
+    public ApiResponse<DebitDirectory.DebitRecord> cancelDebit(@PathVariable Long loanId, @PathVariable Long debitId) {
+        return ApiResponse.ok(manualDebitService.cancel(loanId, debitId));
+    }
+
+    /** The refund register: debits that collected money a borrower no longer owed. COLLECTION_HEAD/ADMIN. */
+    @GetMapping("/debits/overpayments")
+    public ApiResponse<java.util.List<DebitDirectory.DebitRecord>> overpayments() {
+        return ApiResponse.ok(manualDebitService.overpayments());
     }
 
     /** Assign a collections officer (a real ACTIVE executive) to a case. */

@@ -6,6 +6,7 @@ import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { Loader2, RefreshCw, ArrowRight, Contact, ChevronDown, ChevronRight as ChevronRightIcon, UserPlus, X as XIcon, Pencil } from "lucide-react";
 import { PaginationBar } from "@/components/staff/pipeline/pagination";
+import { StageSignal } from "@/components/staff/stage-signal";
 import { Badge, EmptyState, ErrorState, Skeleton, StatusBadge } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { SearchBar } from "@/components/staff/search-bar";
@@ -22,6 +23,14 @@ import {
   type RejectMode,
 } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
+import { SendMessageDialog } from "@/components/staff/send-message-dialog";
+import { type FilterColumn } from "@/components/staff/column-filter";
+import { FilterBar } from "@/components/staff/filter-bar";
+import { Th, thBag, describeRegister } from "@/lib/staff/register-th";
+import { istDay } from "@/lib/staff/column-filter-match";
+import { serialiseFilters } from "@/lib/staff/column-filter-params";
+import { useRegisterQuery } from "@/lib/staff/register-query";
+import { useServerRegister } from "@/lib/staff/use-server-register";
 import { CreditBadge } from "@/components/staff/credit-badge";
 import { bureauStateLabel, reportWithoutScoreLabel } from "@/components/staff/bureau-state";
 import {
@@ -41,23 +50,23 @@ import {
   paiseToINR,
   statusLabel,
   type CustomerSummary,
+  type CustomerSortKey,
   type CustomerSummaryCounts,
   type ApplicationStatus,
 } from "@/lib/api/applications";
 import { AmountCell, DueCell, dpdFor } from "@/components/staff/pipeline/cells";
+import { QueueDateFilter } from "@/components/staff/pipeline/queue-date-filter";
+import { useUrlDateWindow } from "@/lib/staff/use-url-date-window";
 import {
-  QueueDateFilter,
-  rangeFor,
-  type QueuePeriod,
-  type QueueRange,
-} from "@/components/staff/pipeline/queue-date-filter";
+  CREDIT_SCORE_BANDS,
+  DPD_BUCKET_OPTIONS,
+  LOAN_AMOUNT_BANDS,
+  RISK_OPTIONS,
+  SALARY_BANDS,
+} from "@/lib/staff/filter-bands";
 import { formatDate, formatDateTime } from "@/lib/utils";
-import { SEGMENTS, SEGMENT_LABEL, type CustomerSegment } from "@/lib/customers/segments";
-import {
-  customerRowTarget,
-  dateWindowChanged,
-  type CustomerRowTarget,
-} from "@/lib/customers/customers-register";
+import { SEGMENTS, SEGMENT_LABEL, segmentOf, type CustomerSegment } from "@/lib/customers/segments";
+import { customerRowTarget, type CustomerRowTarget } from "@/lib/customers/customers-register";
 
 const ZERO_COUNTS: CustomerSummaryCounts = {
   all: 0,
@@ -120,6 +129,55 @@ function notActionableReason(c: CustomerSummary): string | null {
  * paging are all applied server-side; the chip counts come from a separate, cheaper summary call
  * that is allowed to lag the table by up to 30s.
  */
+const SORT_LABEL: Record<CustomerSortKey, string> = {
+  stageDate: "stage date",
+  date: "date",
+  name: "name",
+  customerId: "customer ID",
+  stage: "stage",
+  mobile: "mobile",
+  pan: "PAN",
+};
+
+/** Mirrors `CustomerBookQuery.SORTS` — the server only ever picks a key from its own map. */
+const SORT_KEYS = ["stageDate", "date", "name", "customerId", "stage", "mobile", "pan"] as const;
+
+/**
+ * Columns the server can filter — `CustomerBookQuery.FILTER_COLUMNS`. Only what the book CTE carries
+ * (identity, dates, stage); account / amount / owner are not in it, so they stay plain headers.
+ */
+const FILTER_KEYS = [
+  "name", "mobile", "pan", "date", "stageDate", "stage",
+  "joined", "dpd", "loanAmount", "employer", "salary", "risk", "creditScore", "owner",
+] as const;
+
+/** The dropdown row under the segment tabs; everything else in FILTER_KEYS sits under "More filters". */
+const PINNED = ["stage", "dpd", "loanAmount", "owner", "creditScore", "risk", "employer"] as const;
+
+const COLUMN_LABEL: Record<string, string> = {
+  name: "Customer",
+  mobile: "Mobile",
+  pan: "PAN",
+  date: "Date",
+  stageDate: "Stage date",
+  stage: "Stage",
+  joined: "Joined",
+  dpd: "DPD",
+  loanAmount: "Loan amount",
+  employer: "Employer",
+  salary: "Monthly salary",
+  risk: "Risk",
+  creditScore: "Credit score",
+  owner: "Owner",
+};
+
+/** The server's RAW stage keys → the words the chips and the Stage column use. A filter travels as the key. */
+const FACET_LABELS: Record<string, Record<string, string>> = {
+  stage: SEGMENT_LABEL,
+  // Owners are staff ids (the server sends their names as labels); a customer nobody owns is blank.
+  owner: { __NULL__: "Unallocated" },
+};
+
 export default function CustomersPage() {
   return (
     <React.Suspense fallback={<div className="h-40 animate-pulse rounded bg-grey-100" />}>
@@ -140,77 +198,131 @@ function CustomersPageInner() {
   const can = useCan();
   const qc = useQueryClient();
 
-  // Deep link from the global-search palette's "View all" link (`?q=…`).
-  const [query, setQuery] = React.useState(searchParams.get("q") ?? "");
-  // "Open" goes straight to the row's latest application when it has one; only a customer with
-  // no application on file falls back to the customer view (see customerRowTarget).
+  // The "Joined" window lives in the URL (win / wfrom / wto), so it survives a refresh and a shared link.
+  const { period, custom, range, setPeriod, setCustom, windowKey } = useUrlDateWindow();
+
+  // One owner for search, column filters, sort, page and size. This is the only register on the page,
+  // so it owns the URL (the `?q=` deep link from the global-search palette lands here too); `seg` and
+  // `mine` are the page's own params and ride along untouched. A change to any of them returns to
+  // page 1 in the same update — never in an effect afterwards.
+  const rq = useRegisterQuery({
+    registerId: "customers",
+    staffId: me?.id,
+    sortKeys: SORT_KEYS,
+    filterKeys: FILTER_KEYS,
+    defaults: { sort: { key: "stageDate", dir: "desc" } },
+  });
+  const query = rq.state.q;
+  const sort = rq.state.sort.key as CustomerSortKey;
+  const dir = rq.state.sort.dir;
+  const page = rq.state.page;
+  const pageSize = rq.state.size;
   const [openTarget, setOpenTarget] = React.useState<CustomerRowTarget | null>(null);
-  // Carries the name too, so the failure dialog can title itself without a second fetch.
   const [failureCustomer, setFailureCustomer] =
     React.useState<{ id: number; name: string | null } | null>(null);
   const [editCustomerId, setEditCustomerId] = React.useState<number | null>(null);
-  const [period, setPeriod] = React.useState<QueuePeriod>("ALL");
-  const [custom, setCustom] = React.useState<QueueRange>({});
-  const range = React.useMemo(() => rangeFor(period, custom), [period, custom]);
 
   // Heads + ADMIN see the whole book; everyone else is scoped server-side by CustomerService to
   // customers assigned to them or that they've decided on. This only drives the notice below —
   // the enforcement is the backend's.
   const fullView = me?.role ? can("customer:view:all") : true;
 
-  // Any filter change lands on page 1 — page 7 of a different result set is meaningless. The reset
-  // happens in the same update as the filter change (never in an effect afterwards), so the list
-  // query is never asked for the old page number under the new filter.
-  const [page, setPage] = React.useState(1);
-  const [pageSize, setPageSizeState] = React.useState(25);
-  const setPageSize = React.useCallback((n: number) => {
-    setPageSizeState(n);
-    setPage(1);
-  }, []);
-  const changePeriod = (next: QueuePeriod) => {
-    if (dateWindowChanged(range, rangeFor(next, custom))) setPage(1);
-    setPeriod(next);
-  };
-  const changeCustom = (next: QueueRange) => {
-    if (dateWindowChanged(range, rangeFor(period, next))) setPage(1);
-    setCustom(next);
-  };
   // `seg` and `mine` live in the URL and also change from outside this page's handlers (the sidebar's
-  // segment links, back/forward). A setPage(1) inside setSeg would not help either: router.replace
-  // commits the new URL only after Next resolves the navigation, so the reset would land first and
-  // fetch the OLD segment's page 1. Instead the reset is applied during the render that first sees
-  // the new URL values; React discards that render and re-runs it with page 1 before committing, so
-  // no query is ever issued for the stale page.
-  const urlScope = `${seg}|${mine ? "mine" : "all"}`;
+  // segment links, back/forward). router.replace commits the new URL only after Next resolves the
+  // navigation, so a reset in setSeg would land first and fetch the OLD segment's page 1. Instead the
+  // reset is applied during the render that first sees the new URL values; React discards that render
+  // and re-runs it with page 1 before committing, so no query is issued for the stale page.
+  // The window is in the URL for the same reason, so it joins the scope key.
+  const urlScope = `${seg}|${mine ? "mine" : "all"}|${windowKey}`;
   const [pagedScope, setPagedScope] = React.useState(urlScope);
   if (pagedScope !== urlScope) {
     setPagedScope(urlScope);
-    setPage(1);
+    rq.setPage(1);
   }
 
   const baseFilters = React.useMemo(
-    () => ({ q: query || undefined, from: range.from, to: range.to, mine: mine || undefined }),
-    [query, range.from, range.to, mine],
+    () => ({ from: range.from, to: range.to, mine: mine || undefined }),
+    [range.from, range.to, mine],
   );
 
-  // The range MUST be in the key — without it React Query serves the previous window's rows
-  // when the filter changes. Normalised to "" because undefined is not a stable key boundary.
-  const listQ = useQuery({
-    queryKey: ["customers-page", query, range.from ?? "", range.to ?? "", seg, mine, page, pageSize],
-    queryFn: () =>
-      customersApi.page({ ...baseFilters, seg: seg === "all" ? undefined : seg, page, size: pageSize }),
-    // Keep the previous page on screen while the next one loads instead of flashing a skeleton.
+  // The page, its count and the column facets, under the view `rq` owns. `seg`, `mine` and the window
+  // are page-level, not part of `rq.queryParams`, so they are in the key prefix: without them a chip
+  // change would be answered by the previous chip's cached page. No facet is fetched on mount — a
+  // panel opening calls `cr.requestFacet`, which is the only trigger.
+  const cr = useServerRegister<CustomerSummary>(rq, {
+    key: ["customers-page", seg, mine, range.from ?? "", range.to ?? ""],
+    fetchPage: (params, pg, size) =>
+      customersApi.page({
+        ...baseFilters,
+        // `extra` carries the f.* filters; the typed fields stay explicit so the call reads as before.
+        extra: params,
+        q: params.q,
+        sort: params.sort as CustomerSortKey,
+        dir: params.dir as "asc" | "desc",
+        seg: seg === "all" ? undefined : seg,
+        page: pg,
+        size,
+      }),
+    fetchFacet: (col, params) => customersApi.facets(col, { ...baseFilters, extra: params }),
+    labels: FACET_LABELS,
+  });
+
+  // What each column offers. `raw` is the stored value behind the label: `stage` stores the segment
+  // key and shows its label. A column whose facet came back `truncated` cannot offer a complete
+  // checklist, so it degrades to a text filter instead of a dropdown that silently omits values.
+  const filterColumns = React.useMemo<Array<FilterColumn<CustomerSummary>>>(() => {
+    const cols: Array<FilterColumn<CustomerSummary>> = [
+      { key: "name", kind: "text", value: (c) => c.name ?? "" },
+      { key: "mobile", kind: "text", value: (c) => c.mobile ?? "" },
+      { key: "pan", kind: "text", value: (c) => c.pan ?? "" },
+      { key: "date", kind: "date", value: (c) => (c.createdAt ? formatDateTime(c.createdAt) : "—"), date: (c) => istDay(c.createdAt) },
+      { key: "stageDate", kind: "date", value: (c) => (c.statusChangedAt ? formatDateTime(c.statusChangedAt) : "—"), date: (c) => istDay(c.statusChangedAt) },
+      {
+        key: "stage",
+        facet: true,
+        value: (c) => SEGMENT_LABEL[segmentOf(c)],
+        raw: (c) => segmentOf(c),
+      },
+      // The columns below are filtered on the server only (the row does not carry them all), so these
+      // accessors are never used to match: they declare each column's kind and its choices.
+      { key: "joined", kind: "date", value: () => "", date: () => null },
+      { key: "dpd", fixed: DPD_BUCKET_OPTIONS, value: () => "" },
+      { key: "loanAmount", kind: "num", bands: LOAN_AMOUNT_BANDS, value: (c) => (c.amountPaise != null ? paiseToINR(c.amountPaise) : "—"), num: (c) => (c.amountPaise != null ? c.amountPaise / 100 : null) },
+      { key: "employer", facet: true, lookup: true, value: () => "" },
+      { key: "salary", kind: "num", bands: SALARY_BANDS, value: () => "" },
+      { key: "risk", fixed: RISK_OPTIONS, value: () => "" },
+      { key: "creditScore", kind: "num", bands: CREDIT_SCORE_BANDS, value: (c) => (c.creditScore != null ? String(c.creditScore) : "—"), num: (c) => c.creditScore ?? null },
+      { key: "owner", facet: true, value: (c) => c.ownerName ?? "", raw: (c) => (c.ownerStaffId != null ? String(c.ownerStaffId) : "") },
+    ];
+    // A truncated stage list degrades to text, as before. A `lookup` column (employer) keeps its
+    // checklist and searches the server instead, so it is never cut to its first 500 values.
+    return cols.map((c) =>
+      c.facet && !c.lookup && cr.facetTruncated(c.key) ? { ...c, kind: "text" as const } : c,
+    );
+  }, [cr]);
+  // No `onToggle` override: `thBag` opens a new column in the direction its declared kind implies —
+  // newest-first for the two date columns, A→Z for the text ones — which is the behaviour this
+  // register had before it moved onto the shared hook.
+  const th = thBag(rq, cr, filterColumns, COLUMN_LABEL, cr.requestFacet, {
+    search: cr.searchFacet,
+    truncated: cr.facetTruncated,
+  });
+
+  // Chip counts are a separate, cheap aggregate. They follow search, the window, "mine" and the column
+  // filters, but not the segment chip itself (nor the `stage` column filter, which is the same
+  // dimension — the server drops it). Up to 30s stale is fine: the table is always fresh.
+  const summaryFilters = React.useMemo(() => {
+    const f = serialiseFilters(rq.state.filters);
+    return query ? { ...f, q: query } : f;
+  }, [rq.state.filters, query]);
+  const summaryQ = useQuery({
+    queryKey: ["customers-summary", summaryFilters, range.from ?? "", range.to ?? "", mine],
+    queryFn: () => customersApi.summary({ ...baseFilters, extra: summaryFilters }),
+    staleTime: 30_000,
     placeholderData: keepPreviousData,
   });
-  // Chip counts are a separate, cheap aggregate. Up to 30s stale is fine here (the table itself is
-  // always fresh), and it stops every keystroke re-counting the whole book.
-  const summaryQ = useQuery({
-    queryKey: ["customers-summary", query, range.from ?? "", range.to ?? "", mine],
-    queryFn: () => customersApi.summary(baseFilters),
-    staleTime: 30_000,
-  });
   const refreshAll = () => {
-    listQ.refetch();
+    cr.refetch();
     summaryQ.refetch();
   };
   const invalidateAll = () => {
@@ -218,9 +330,9 @@ function CustomersPageInner() {
     qc.invalidateQueries({ queryKey: ["customers-summary"] });
   };
 
-  const pageRows = React.useMemo(() => listQ.data?.rows ?? [], [listQ.data]);
-  const total = listQ.data?.total ?? 0;
-  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const pageRows = cr.pageRows;
+  const total = cr.total;
+  const pageCount = cr.pageCount;
   const counts: CustomerSummaryCounts = summaryQ.data ?? ZERO_COUNTS;
   const [collapsedDates, setCollapsedDates] = React.useState<Set<string>>(new Set());
   const toggleDate = (key: string) =>
@@ -230,18 +342,21 @@ function CustomersPageInner() {
       else next.add(key);
       return next;
     });
-  // Consecutive rows on the current page grouped by their stage-change (statusChangedAt) date —
-  // the same key the API sorts by, so a run of consecutive rows really does share one date.
+  // Consecutive rows on the current page grouped by the date the list is sorted on, so a run of
+  // consecutive rows really does share one date. Sorted by anything else there is no date to
+  // group on: one flat group, no header row.
+  const grouped = sort === "stageDate" || sort === "date";
   const dateGroups = React.useMemo(() => {
     const list: { key: string; rows: CustomerSummary[] }[] = [];
     for (const c of pageRows) {
-      const key = c.statusChangedAt ? c.statusChangedAt.slice(0, 10) : "unknown";
+      const at = sort === "date" ? c.createdAt : c.statusChangedAt;
+      const key = !grouped ? "all" : at ? at.slice(0, 10) : "unknown";
       const last = list[list.length - 1];
       if (last && last.key === key) last.rows.push(c);
       else list.push({ key, rows: [c] });
     }
     return list;
-  }, [pageRows]);
+  }, [pageRows, sort, grouped]);
 
   // --- Bulk assign / bulk reject (Task 1/2) ---------------------------------------------------
   // The bulk-action target is each row's LATEST application, not the customer id — matching the
@@ -249,7 +364,12 @@ function CustomersPageInner() {
   // rejectable stage are selectable at all, so select-all can never sweep an already-decided or
   // live-loan row into a reject/assign run. Scoped to the page on screen: "select all" means the
   // rows the staffer can see, never the thousands behind the pagination.
-  const { canBulkReject, canBulkAssign } = useBulkRoleFlags();
+  const roleFlags = useBulkRoleFlags();
+  // The Admin working role holds no queue permissions, but the backend lets ADMIN assign and reject.
+  // Offered on this screen only: the queues still keep each working role to its own work.
+  const workingAsAdmin = me?.role === "ADMIN";
+  const canBulkReject = roleFlags.canBulkReject || workingAsAdmin;
+  const canBulkAssign = roleFlags.canBulkAssign || workingAsAdmin;
   // Row-level Reject only (not bulk select / assign): ADMIN may also reject a PRE_APPROVED lead — the
   // manual clean-up for pre-approvals the old reborrow gap minted for customers with no repaid loan.
   // The backend allows PRE_APPROVED → REJECTED for ADMIN alone (ApplicationFlowService.rejectLead).
@@ -288,9 +408,34 @@ function CustomersPageInner() {
 
   const [pendingReject, setPendingReject] = React.useState<{ ids: number[]; mode: RejectMode } | null>(null);
   const [pendingAssign, setPendingAssign] = React.useState<number[] | null>(null);
-  const showBulkColumn = canBulkReject || canBulkAssign;
+  // "Send message" (ADMIN working role, `message:send`) has its own selection keyed on CUSTOMER id and
+  // open to every row on the page — unlike the bulk reject/assign selection above it is not limited to
+  // actionable rows.
+  const canMessage = can("message:send");
+  const msgSel = useQueueSelection(React.useMemo(() => pageRows.map((c) => c.customerId), [pageRows]));
+  const [messaging, setMessaging] = React.useState(false);
+  const messageTargets = pageRows
+    .filter((c) => msgSel.selected.has(c.customerId))
+    .map((c) => ({ customerId: c.customerId, label: `${c.name ?? "Customer"} (#${c.customerId})` }));
+  // Admin also holds bulk assign/reject on this column, so choosing who to message is an explicit mode.
+  const [messageSelect, setMessageSelect] = React.useState(false);
+  const messageMode = canMessage && (messageSelect || !(canBulkReject || canBulkAssign));
+  const showBulkColumn = canBulkReject || canBulkAssign || canMessage;
   // +1 for the Failure column. The date-group header rows span the whole table with this.
-  const colCount = showBulkColumn ? 23 : 22;
+  const colCount = showBulkColumn ? 24 : 23;
+
+  // The "Filtered: …" line in the words on screen (`labels` maps stage keys to their labels), plus the
+  // page-level narrowing that is not a column filter.
+  const exportSubtitle =
+    [
+      seg !== "all" ? `Segment: ${SEGMENT_LABEL[seg]}` : "",
+      mine ? "My customers" : "",
+      query ? `Search: “${query}”` : "",
+      range.from || range.to ? `Joined ${range.from ?? "…"} to ${range.to ?? "…"}` : "",
+      describeRegister(th),
+    ]
+      .filter(Boolean)
+      .join(" · ") || undefined;
 
   function setSeg(next: CustomerSegment) {
     const p = new URLSearchParams(searchParams.toString());
@@ -305,6 +450,7 @@ function CustomersPageInner() {
       <PageHeader title="Customers" subtitle="Every borrower — search by name or ID, then open to see loans, payments and KYC.">
         <ExportMenu
           title="Customers"
+          subtitle={exportSubtitle}
           fileBase="dhanboost-customers"
           columns={[
             { header: "Customer ID", value: (c: CustomerSummary) => c.customerId },
@@ -318,7 +464,7 @@ function CustomersPageInner() {
             { header: "Amount (₹)", value: (c) => (c.amountPaise != null ? (c.amountPaise / 100).toFixed(2) : "") },
             { header: "Amount type", value: (c) => (c.amountPaise == null ? "" : c.amountIsRequested ? "requested" : "eligible limit") },
             { header: "Due date", value: (c) => (c.loanDueDate ? formatDate(c.loanDueDate) : "") },
-            { header: "DPD", value: (c) => (dpdFor(c.loanDueDate) || "") },
+            { header: "DPD", value: (c) => (dpdFor(c.loanDueDate, c.loanStatus) || "") },
             { header: "Owner", value: (c) => c.ownerName ?? "Unallocated" },
             { header: "Applications", value: (c) => c.applicationCount },
             { header: "Loans", value: (c) => c.loanCount },
@@ -334,14 +480,20 @@ function CustomersPageInner() {
             { header: "Collections exec", value: (c) => c.collectionOfficerName ?? "" },
           ]}
           rows={pageRows}
-          getAllRows={() => customersApi.exportAll({ ...baseFilters, seg: seg === "all" ? undefined : seg })}
+          // `rows` is ONE page on a server-paged register, so the menu must say "this page"; the
+          // full set comes from `getAllRows`, which re-asks the server under the same search, window,
+          // chip and column filters (rq.queryParams), so "all" carries exactly what the table shows.
+          scope="page"
+          getAllRows={() =>
+            customersApi.exportAll({ ...baseFilters, extra: rq.queryParams, seg: seg === "all" ? undefined : seg })
+          }
           allLabel="Download all customers (CSV)"
         />
         <button
           onClick={refreshAll}
           className="flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs text-muted hover:bg-grey-100 hover:text-ink"
         >
-          {listQ.isFetching ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Refresh
+          {cr.isPlaceholderData || summaryQ.isFetching ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Refresh
         </button>
       </PageHeader>
 
@@ -361,7 +513,7 @@ function CustomersPageInner() {
               className={`cal-preset${seg === s ? " on" : ""}`}
               onClick={() => setSeg(s)}
             >
-              {SEGMENT_LABEL[s]} (<span data-redact>{counts[s]}</span>)
+              {SEGMENT_LABEL[s]} (<span data-redact>{counts[s] ?? 0}</span>)
             </button>
           ))}
         </div>
@@ -369,21 +521,31 @@ function CustomersPageInner() {
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <SearchBar
             initialValue={query}
-            onSearch={(t) => {
-              setQuery(t);
-              setPage(1);
-            }}
+            onSearch={(t) => rq.setQ(t)}
             placeholder="Name, PAN, mobile, customer or application ID"
             ariaLabel="Search customers"
             inputClassName="w-72"
           />
-          <QueueDateFilter period={period} setPeriod={changePeriod} custom={custom} setCustom={changeCustom} />
+          <QueueDateFilter label="Joined" period={period} setPeriod={setPeriod} custom={custom} setCustom={setCustom} />
           {mine && (
             <span className="rounded-full bg-navy-tint px-2.5 py-0.5 text-xs font-semibold text-navy">
               My customers
             </span>
           )}
-          {showBulkColumn && sel.selected.size > 0 && (
+          {canMessage && (canBulkReject || canBulkAssign) && (
+            <button type="button" className="btn btn-outline btn-sm" onClick={() => setMessageSelect((m) => !m)}>
+              {messageSelect ? "Back to bulk actions" : "Select customers to message"}
+            </button>
+          )}
+          {messageMode && msgSel.selected.size > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-navy">{msgSel.selected.size} selected</span>
+              <button type="button" onClick={() => setMessaging(true)} className="btn btn-sm btn-navy">
+                Send message
+              </button>
+            </div>
+          )}
+          {!messageMode && showBulkColumn && sel.selected.size > 0 && (
             <BulkActionBar
               count={sel.selected.size}
               onAssign={canBulkAssign ? () => setPendingAssign(selectedIds) : undefined}
@@ -401,11 +563,10 @@ function CustomersPageInner() {
               }
             />
           )}
-          {/* The order is fixed server-side (CustomerBookQuery: stage date desc, nulls last) and the
-              register has no sortable headers, so say so rather than leave the reader guessing. */}
+          {/* Sorted server-side over the whole book; the column headers with a caret change it. */}
           <span className="ml-auto text-xs text-muted">
-            Sorted by stage date <span aria-hidden>↓</span>
-            <span className="sr-only">, newest first</span>
+            Sorted by {SORT_LABEL[sort]} <span aria-hidden>{dir === "asc" ? "↑" : "↓"}</span>
+            <span className="sr-only">, {dir === "asc" ? "ascending" : "descending"}</span>
           </span>
         </div>
 
@@ -416,24 +577,27 @@ function CustomersPageInner() {
           </p>
         )}
 
+        {/* `onClear` is setFilters({}), not clearAll(): clearAll also wipes the search box, and "Clear filters" must not. */}
+        <FilterBar th={th} total={total} onClear={() => rq.setFilters({})} pinned={PINNED} />
+
         <div className="rounded border border-line bg-white shadow-sm">
-          {listQ.isLoading ? (
+          {cr.isLoading ? (
             <Skeleton variant="table" rows={8} cols={colCount} />
-          ) : listQ.error ? (
-            <ErrorState error={listQ.error} onRetry={() => void listQ.refetch()} />
+          ) : cr.isError ? (
+            <ErrorState error={cr.error} onRetry={() => cr.refetch()} />
           ) : pageRows.length === 0 ? (
             <EmptyState
               title={`No customers${query ? ` for “${query}”` : ""}${seg !== "all" ? ` in ${SEGMENT_LABEL[seg]}` : ""}${
                 period !== "ALL" ? " in the selected date range" : ""
-              }.`}
+              }${Object.keys(rq.state.filters).length ? " with these column filters" : ""}.`}
             />
           ) : (
             // `staff-register-scroll` bounds the scroller so the sticky `thead` has something to stick
             // to; PaginationBar now sits after it, inside the panel, so it no longer scrolls away.
-            // Offset clears the shell header, PageHeader, the segment-chip strip and the search/date row.
-            <div className="staff-table-scroll staff-register-scroll" style={{ "--register-offset": "28rem" } as React.CSSProperties}>
+            // Offset clears the shell header, PageHeader, the segment-chip strip, the search/date row and the filter-chip strip (`--filter-bar`).
+            <div className={`staff-table-scroll staff-register-scroll${cr.isPlaceholderData ? " opacity-60" : ""}`} aria-busy={cr.isPlaceholderData} style={{ "--register-offset": "calc(28rem + var(--filter-bar))" } as React.CSSProperties}>
             <table className="staff-data-table">
-              <caption className="sr-only">Customers, grouped by stage date, newest first</caption>
+              <caption className="sr-only">Customers, sorted by {SORT_LABEL[sort]}, {dir === "asc" ? "ascending" : "descending"}</caption>
               <thead>
                 {/* Column set deliberately mirrors the live-applications queue (identity, date,
                     contact, PAN, bank, loan, amount, due, credit) so a staffer reads the same row
@@ -445,17 +609,21 @@ function CustomersPageInner() {
                     <th scope="col" className="staff-sticky-identity">
                       <input
                         type="checkbox"
-                        checked={actionableIds.length > 0 && sel.selected.size === actionableIds.length}
-                        onChange={sel.toggleAll}
+                        checked={
+                          messageMode
+                            ? pageRows.length > 0 && msgSel.selected.size === pageRows.length
+                            : actionableIds.length > 0 && sel.selected.size === actionableIds.length
+                        }
+                        onChange={messageMode ? msgSel.toggleAll : sel.toggleAll}
                         aria-label="Select all"
                       />
                     </th>
                   )}
-                  <th scope="col" className={showBulkColumn ? undefined : "staff-sticky-identity"}>Customer</th>
+                  <Th th={th} col="name" className={showBulkColumn ? undefined : "staff-sticky-identity"} />
                   <th scope="col">Signals</th>
-                  <th scope="col" title="Signup / application start date">Date</th>
-                  <th scope="col">Mobile</th>
-                  <th scope="col">PAN</th>
+                  <Th th={th} col="date" />
+                  <Th th={th} col="mobile" />
+                  <Th th={th} col="pan" />
                   <th scope="col">Account</th>
                   <th scope="col">IFSC</th>
                   <th scope="col">Loan</th>
@@ -467,7 +635,8 @@ function CustomersPageInner() {
                   <th scope="col">Bureau</th>
                   <th scope="col" title="Why this file has no usable credit decision yet">Failure</th>
                   <th scope="col">Latest status</th>
-                  <th scope="col" title="When this customer entered their current status">Stage date</th>
+                  <Th th={th} col="stage" />
+                  <Th th={th} col="stageDate" />
                   {/* Who worked the file. "Credit exec" is who DECIDED it, which on a reassigned or
                       Head-decided file is not the same person as Owner. Blank until it happens. */}
                   <th scope="col" title="The credit executive who decided the latest application">Credit exec</th>
@@ -487,7 +656,7 @@ function CustomersPageInner() {
                     });
                     return (
                       <React.Fragment key={group.key}>
-                        <tr>
+                        {grouped && <tr>
                           <td colSpan={colCount} className="bg-grey-50 px-3 py-2">
                             <button
                               type="button"
@@ -499,14 +668,21 @@ function CustomersPageInner() {
                               {group.rows.length === 1 ? "" : "s"}
                             </button>
                           </td>
-                        </tr>
-                        {!isCollapsed &&
+                        </tr>}
+                        {(!grouped || !isCollapsed) &&
                           groupRows.map(({ c, sno }) => (
                   <tr key={c.customerId} className="hover:bg-grey-50">
                     <td className="text-muted">{sno}</td>
                     {showBulkColumn && (
                       <td className="staff-sticky-identity">
-                        {(() => {
+                        {messageMode ? (
+                          <input
+                            type="checkbox"
+                            checked={msgSel.selected.has(c.customerId)}
+                            onChange={() => msgSel.toggle(c.customerId)}
+                            aria-label={`Select ${c.name ?? `customer #${c.customerId}`}`}
+                          />
+                        ) : (() => {
                           const reason = notActionableReason(c);
                           return (
                             <input
@@ -559,7 +735,7 @@ function CustomersPageInner() {
                       </span>
                     </td>
                     <td className="whitespace-nowrap">
-                      <DueCell dueDate={c.loanDueDate} markedPendingAt={c.markedPendingAt} />
+                      <DueCell dueDate={c.loanDueDate} loanStatus={c.loanStatus} markedPendingAt={c.markedPendingAt} />
                     </td>
                     <td className="staff-cell text-ink">{c.ownerName ?? <span className="text-muted">Unallocated</span>}</td>
                     <td className="num text-ink">{c.loanCount} <span className="text-xs text-muted">/ {c.applicationCount} apps</span></td>
@@ -604,6 +780,9 @@ function CustomersPageInner() {
                     </td>
                     <td>
                       {c.latestStatus ? <StatusBadge kind="application" value={c.latestStatus} /> : "—"}
+                    </td>
+                    <td>
+                      <StageSignal compact status={c.latestStatus} loanStatus={c.loanStatus} journeyStep={c.journeyStep} />
                     </td>
                     <td className="whitespace-nowrap text-muted">
                       {c.statusChangedAt ? formatDateTime(c.statusChangedAt) : "—"}
@@ -672,10 +851,10 @@ function CustomersPageInner() {
           <PaginationBar
             page={page}
             pageCount={pageCount}
-            setPage={setPage}
+            setPage={rq.setPage}
             total={total}
             pageSize={pageSize}
-            setPageSize={setPageSize}
+            setPageSize={rq.setSize}
           />
         </div>
       </PermissionGate>
@@ -703,6 +882,7 @@ function CustomersPageInner() {
       {editCustomerId != null && (
         <CustomerEditDialog customerId={editCustomerId} onClose={() => setEditCustomerId(null)} />
       )}
+      <SendMessageDialog open={messaging} onClose={() => setMessaging(false)} targets={messageTargets} />
       {pendingReject && (
         <RejectDialog
           ids={pendingReject.ids}

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { Wallet, Smartphone, Landmark, CheckCircle2, ArrowRight, AlertTriangle, Clock, Paperclip, X } from "lucide-react";
 import { Input } from "@/components/ui";
 import { ZoomableImage } from "@/components/ui/image-lightbox";
@@ -20,6 +20,9 @@ import {
   REJECTION_REASON_LABEL,
   type PaymentMethodName,
   type PaymentView,
+  loanGraceDays,
+  ApplicationApiError,
+  type PayuOrderView,
 } from "@/lib/api/applications";
 import { formatApiError } from "@/lib/api/errors";
 import { compressImage } from "@/lib/compress-image";
@@ -27,7 +30,50 @@ import { formatDate } from "@/lib/utils";
 import { daysBetween } from "@/lib/calc/loan-math";
 import { addIsoCalendarDays } from "@/lib/borrower-flow";
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
+// The Indian calendar date, matching the server. toISOString() is UTC, which between 00:00 and 05:30 IST is
+// yesterday: the page then quotes one day too little interest and "pay in full" leaves a balance behind.
+const todayISO = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
+
+const ORDER_ID_RE = /^[A-Za-z0-9]{1,25}$/;
+const POLL_MS = 3000;
+const POLL_MAX_MS = 120_000;
+const isFinalOrder = (o?: PayuOrderView) => o?.status === "SUCCESS" || o?.status === "FAILED" || o?.status === "EXPIRED";
+
+/** Plain-language text for the refusals the PayU endpoints can return. */
+function payuErrorText(e: unknown): string {
+  if (e instanceof ApplicationApiError) {
+    switch (e.code) {
+      case "PAYU_IN_PROGRESS":
+        return "A payment is already being processed. Please wait a few minutes before paying again.";
+      case "PAYU_PAYMENT_RECEIVED":
+        return "We have just received your payment. Your balance is being updated.";
+      case "MANUAL_PAYMENT_PENDING":
+        return "You have a manual payment awaiting verification. Please wait until it is confirmed before paying online.";
+      case "AMOUNT_EXCEEDS_OUTSTANDING":
+        return "That amount is more than you currently owe. Please refresh and try again.";
+      case "PAYU_EMAIL_REQUIRED":
+        return "Please add an email address to your profile before paying online.";
+    }
+  }
+  return formatApiError(e, "Could not start your payment. Please try again.");
+}
+
+/** Hand the browser to PayU's hosted checkout by POSTing a hidden form. */
+function submitToPayu(action: string, fields: Record<string, string>) {
+  const form = document.createElement("form");
+  form.method = "post";
+  form.action = action;
+  form.style.display = "none";
+  for (const [k, v] of Object.entries(fields)) {
+    const input = document.createElement("input");
+    input.type = "hidden";
+    input.name = k;
+    input.value = v;
+    form.appendChild(input);
+  }
+  document.body.appendChild(form);
+  form.submit();
+}
 
 export default function RepayPage() {
   const mounted = useMounted();
@@ -75,11 +121,67 @@ export default function RepayPage() {
     queryKey: ["payment-settings"],
     queryFn: () => paymentSettingsApi.get(),
   });
-  // The penalty-free pay-by dates: the salary day (the loan's due date) and the day after (the
-  // built-in 1-day grace) — the labels for `schedule`'s `due` / `grace` balances. Grace day adds one
-  // normal-interest day but no late penalty.
+  // The penalty-free pay-by dates: the salary day (the loan's due date) and, on loans written with a
+  // grace day, the day after — the labels for `schedule`'s `due` / `grace` balances. A grace day adds
+  // one normal-interest day but no late penalty; newer loans carry none and show no such column.
   const dueISO = loanQuery.data?.dueDate ?? null;
-  const graceISO = dueISO ? addIsoCalendarDays(dueISO, 1) : null;
+  const graceDays = loanGraceDays(loanQuery.data);
+  const graceISO = dueISO && graceDays > 0 ? addIsoCalendarDays(dueISO, graceDays) : null;
+
+  // PayU. Fail-safe: only a loaded `enabled: true` answer changes the page. While loading, on error
+  // or with the flag off, `payu` is null and the page is exactly the manual-payment page.
+  const quoteDue = schedule.data?.asOf.outstandingPaise ?? loanQuery.data?.outstandingPaise ?? 0;
+  const quoteCustom = rupeesToPaise(Number(custom.replace(/\D/g, "")) || 0);
+  const quoteAmount = mode === "full" ? quoteDue : Math.min(quoteCustom, quoteDue);
+  const payuQuery = useQuery({
+    queryKey: ["payu-state", loanId, quoteAmount],
+    queryFn: () => borrowerApi.payuState(loanId as number, quoteAmount > 0 ? quoteAmount : undefined),
+    enabled: loanId != null && quoteDue > 0,
+    retry: false,
+    placeholderData: keepPreviousData,
+  });
+  const payu = payuQuery.data?.enabled ? payuQuery.data : null;
+  const showManual = !payu || payu.manualAllowed;
+
+  // `?order=<txnid>` is where PayU's return lands. Read off the location (as digilocker does) rather
+  // than useSearchParams(), which would force a Suspense boundary around the whole page.
+  const [orderId, setOrderId] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    const o = new URLSearchParams(window.location.search).get("order");
+    if (o && ORDER_ID_RE.test(o)) setOrderId(o);
+  }, []);
+  const pollStart = React.useRef(Date.now());
+  const orderQuery = useQuery({
+    queryKey: ["payu-order", loanId, orderId],
+    queryFn: () => borrowerApi.payuOrder(loanId as number, orderId as string),
+    enabled: loanId != null && orderId != null,
+    retry: false,
+    refetchInterval: (q) =>
+      isFinalOrder(q.state.data) || Date.now() - pollStart.current > POLL_MAX_MS ? false : POLL_MS,
+  });
+  const orderStatus = orderQuery.data?.status;
+  React.useEffect(() => {
+    if (!orderStatus || !isFinalOrder({ status: orderStatus } as PayuOrderView)) return;
+    qc.invalidateQueries({ queryKey: ["repay-payments", loanId] });
+    qc.invalidateQueries({ queryKey: ["repay-schedule", loanId] });
+    qc.invalidateQueries({ queryKey: ["repay-loan", loanId] });
+    qc.invalidateQueries({ queryKey: ["payu-state", loanId] });
+  }, [orderStatus, qc, loanId]);
+
+  const payuPay = useMutation({
+    mutationFn: async (amount: number) => {
+      const co = await borrowerApi.payuCreateOrder(loanId as number, amount);
+      submitToPayu(co.action, co.fields);
+    },
+    onError: (e) => {
+      if (e instanceof ApplicationApiError && ["PAYU_PAYMENT_RECEIVED", "PAYU_IN_PROGRESS", "MANUAL_PAYMENT_PENDING"].includes(e.code)) {
+        qc.invalidateQueries({ queryKey: ["payu-state", loanId] });
+        qc.invalidateQueries({ queryKey: ["repay-payments", loanId] });
+        qc.invalidateQueries({ queryKey: ["repay-schedule", loanId] });
+        qc.invalidateQueries({ queryKey: ["repay-loan", loanId] });
+      }
+    },
+  });
 
   const record = useMutation({
     mutationFn: async (payload: { amountPaise: number; method: PaymentMethodName; txnRef: string }) => {
@@ -236,6 +338,14 @@ export default function RepayPage() {
         pay interest up to the day you repay.
       </p>
 
+      {orderId && orderQuery.data && <PayuOrderBanner order={orderQuery.data} />}
+      {payuPay.isError && (
+        <div className="mb-6 flex items-start gap-2 rounded border border-error-100 bg-error-50 p-4 text-sm text-error-700">
+          <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" />
+          {payuErrorText(payuPay.error)}
+        </div>
+      )}
+
       {record.isSuccess && (
         <div className="mb-6 flex items-start gap-2 rounded border border-success-100 bg-success-50/60 p-4 text-sm text-success-700">
           <Clock size={16} className="mt-0.5 flex-shrink-0" />
@@ -256,10 +366,10 @@ export default function RepayPage() {
         <div className="mb-6 rounded border border-line bg-white p-6 shadow-sm">
           <h3 className="mb-1 font-serif text-base text-navy">When will you pay?</h3>
           <p className="mb-4 text-xs text-muted">
-            Paying on your salary day or the day after is penalty-free — and prepaying any day costs you
-            less interest. Pick whatever suits you; we&apos;ll remind you before it&apos;s due.
+            {graceISO ? "Paying on your salary day or the day after is penalty-free" : "Paying by your salary day is penalty-free"}
+            {" "}— and prepaying any day costs you less interest. Pick whatever suits you; we&apos;ll remind you before it&apos;s due.
           </p>
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className={`grid gap-3 ${graceISO ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
             <PayByOption
               title="Prepay today"
               date={todayISO()}
@@ -273,12 +383,14 @@ export default function RepayPage() {
               amount={schedule.data?.due?.outstandingPaise ?? loan.totalRepayablePaise}
               note="Penalty-free"
             />
-            <PayByOption
-              title="Day after salary"
-              date={graceISO ?? loan.dueDate}
-              amount={schedule.data?.grace?.outstandingPaise ?? loan.totalRepayablePaise}
-              note="One extra interest day · no late penalty"
-            />
+            {graceISO && (
+              <PayByOption
+                title="Day after salary"
+                date={graceISO}
+                amount={schedule.data?.grace?.outstandingPaise ?? loan.totalRepayablePaise}
+                note="One extra interest day · no late penalty"
+              />
+            )}
           </div>
         </div>
       )}
@@ -371,6 +483,30 @@ export default function RepayPage() {
             />
           )}
 
+          {payu && (
+            <div className="mt-1">
+              <button
+                type="button"
+                onClick={() => payuPay.mutate(amountPaise)}
+                disabled={amountPaise <= 0 || payuPay.isPending}
+                className="btn btn-gold btn-block"
+              >
+                <Wallet size={16} /> {payuPay.isPending ? "Taking you to secure checkout…" : `Pay ${paiseToINR(amountPaise)}`}
+              </button>
+              <p className="mt-2 text-center text-xs text-muted">
+                {payu.creditCardFeePaise != null && payu.creditCardFeePaise > 0
+                  ? `Credit cards carry an additional fee of up to ${paiseToINR(payu.creditCardFeePaise)}, shown at checkout. `
+                  : "Credit cards may carry an additional fee, shown at checkout. "}
+                UPI, net banking and debit cards have no added fee.
+              </p>
+            </div>
+          )}
+
+          {payu && showManual && (
+            <h4 className="mb-2 mt-6 border-t border-grey-200 pt-4 font-serif text-sm text-navy">Or pay manually</h4>
+          )}
+
+          {showManual && (<>
           <div className="mb-2 mt-1 text-sm font-semibold text-ink">Payment method</div>
           <div className="mb-4 grid grid-cols-2 gap-2">
             <button
@@ -472,7 +608,7 @@ export default function RepayPage() {
           )}
 
           <button onClick={pay} disabled={!canPay} className="btn btn-gold btn-block mt-2">
-            <Wallet size={16} /> {record.isPending ? "Uploading & recording…" : `Pay ${paiseToINR(amountPaise)}`}
+            <Wallet size={16} /> {record.isPending ? "Uploading & recording…" : payu ? "Submit payment details" : `Pay ${paiseToINR(amountPaise)}`}
           </button>
           {needsTxnRef && (
             <p className="mt-2 text-center text-xs text-gold-dark">
@@ -487,10 +623,48 @@ export default function RepayPage() {
           <p className="mt-3 text-center text-xs text-muted">
             Payments are confirmed manually by our accounts team — your balance updates once verified.
           </p>
+          </>)}
         </div>
       </div>
 
       <PaymentHelp className="mt-6" />
+    </div>
+  );
+}
+
+function PayuOrderBanner({ order }: { order: PayuOrderView }) {
+  if (order.status === "SUCCESS" && !order.credited) {
+    // Captured by PayU but not on the loan yet: a person confirms it. Never claim the balance moved.
+    return (
+      <div className="mb-6 flex items-start gap-2 rounded border border-gold-100 bg-gold-50/60 p-4 text-sm text-gold-dark">
+        <Clock size={16} className="mt-0.5 flex-shrink-0" />
+        <span>
+          <strong>We&apos;ve received your payment.</strong> Our team is confirming it and your balance will update
+          shortly.
+        </span>
+      </div>
+    );
+  }
+  if (order.status === "SUCCESS") {
+    return (
+      <div className="mb-6 flex items-start gap-2 rounded border border-success-100 bg-success-50/60 p-4 text-sm text-success-700">
+        <CheckCircle2 size={16} className="mt-0.5 flex-shrink-0" />
+        <span><strong>Payment received</strong> — {paiseToINR(order.amountPaise)}. Your balance has been updated.</span>
+      </div>
+    );
+  }
+  if (order.status === "FAILED" || order.status === "EXPIRED") {
+    return (
+      <div className="mb-6 flex items-start gap-2 rounded border border-error-100 bg-error-50 p-4 text-sm text-error-700">
+        <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" />
+        <span>Your payment didn&apos;t go through. Try again, or pay manually below.</span>
+      </div>
+    );
+  }
+  return (
+    <div className="mb-6 flex items-start gap-2 rounded border border-gold bg-gold-50/40 p-4 text-sm text-gold-dark">
+      <Clock size={16} className="mt-0.5 flex-shrink-0" />
+      <span>We&apos;re confirming your payment. Don&apos;t pay again yet.</span>
     </div>
   );
 }
@@ -531,7 +705,7 @@ function PaymentRow({ p }: { p: PaymentView }) {
         <span className="flex items-center gap-2">
           <span className="font-semibold text-ink">{paiseToINR(p.amountPaise)}</span>
           <span className="text-xs text-muted">
-            {p.method === "UPI" ? "UPI" : "Bank"}
+            {p.method === "UPI" ? "UPI" : p.method === "PAYU" ? "PayU" : "Bank"}
             {p.txnRef ? ` · ${p.txnRef}` : ""}
             {p.paidOn ? ` · ${formatDate(p.paidOn)}` : ""}
           </span>

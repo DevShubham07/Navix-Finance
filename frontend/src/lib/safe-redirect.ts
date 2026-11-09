@@ -28,7 +28,9 @@ export function safeNextPath(value: string | null | undefined, fallback: string,
   } catch {
     return fallback;
   }
-  if (url.origin !== PARSE_BASE) {
+  // Dot-segments normalize away: `/.//evil.example` parses to pathname `//evil.example`, which a
+  // browser navigation reads as protocol-relative.
+  if (url.origin !== PARSE_BASE || url.pathname.startsWith("//")) {
     return fallback;
   }
   if (requiredPrefix) {

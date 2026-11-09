@@ -32,6 +32,8 @@ public final class TelecallingDtos {
             int stepsRequired,
             Long ownerStaffId,
             long staleDays,
-            com.navix.common.loan.TrustSignals trust) {
+            com.navix.common.loan.TrustSignals trust,
+            /** Stored journey_step pointer; null if never set. */
+            String journeyStep) {
     }
 }

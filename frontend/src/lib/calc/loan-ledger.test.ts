@@ -25,6 +25,11 @@ describe("buildLedger", () => {
     expect(l.isOverdue).toBe(false);
   });
 
+  it("no grace day on a loan written without one", () => {
+    const l = buildLedger({ loan: loan({ graceDays: 0 }), outstanding: out(), payments: [], today: new Date(2026, 9, 9) });
+    expect(l.graceDay).toBeNull();
+  });
+
   it("overdue: the server figure wins for outstanding", () => {
     const l = buildLedger({
       loan: loan({ status: "OVERDUE" }),

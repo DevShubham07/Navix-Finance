@@ -71,6 +71,8 @@ public class CustomerReviewService {
     private final ProfileChangeLogger changeLogger;
     /** Read-only here: decides whether the Aadhaar number is still editable (see {@link #saveProfile}). */
     private final ApplicationVerificationRepository verificationRepository;
+    /** The OTP-proven login mobile a borrower may keep on their profile (see {@link #saveProfile}). */
+    private final com.navix.common.security.BorrowerIdentityPort borrowerIdentity;
 
     @Transactional
     public CustomerProfile saveProfile(Long appId, ProfileRequest req) {
@@ -99,8 +101,30 @@ public class CustomerReviewService {
                     "This mobile number is already registered with another customer.");
         }
 
+        // A borrower's profile mobile keys the forgot-password lookup and the cooling-off blocks, so it
+        // must be the number they proved by OTP at sign-in, never a free-text value. Staff/ADMIN edits
+        // (CustomerService) are a separate path and are not bound by this.
+        boolean borrower = "BORROWER".equals(ActorContext.get().role());
+        if (borrower && mobile != null && !borrowerIdentity.isLoginMobile(mobile, customerId)) {
+            throw new BusinessException("MOBILE_MISMATCH",
+                    "The mobile number must be the one you signed in with.");
+        }
+
         CustomerProfile p = profileRepository.findByApplicationId(appId).orElseGet(CustomerProfile::new);
+        boolean afterDraft = app.getStatus() != ApplicationStatus.DRAFT;
+        if (borrower && afterDraft) {
+            refuseSalaryRaise(req.monthlySalaryPaise(), p.getMonthlySalaryPaise());
+        }
+        java.util.Set<String> changedFields = new java.util.HashSet<>();
         p.setApplicationId(appId);
+        // Name / PAN / DOB are what verification and the credit decision are recorded against: free to
+        // correct while DRAFT (nothing has been compared yet), frozen once the file has left it.
+        if (borrower && app.getStatus() != ApplicationStatus.DRAFT
+                && (changed(p.getFullName(), trimToNull(req.fullName())) || changed(p.getPan(), pan)
+                || (req.dob() != null && p.getDob() != null && !req.dob().equals(p.getDob())))) {
+            throw new BusinessException("PROFILE_LOCKED",
+                    "Your name, PAN and date of birth can't be changed after you submit. Contact support.");
+        }
         // PARTIAL MERGE: onboarding saves the profile in slices (name on the email step, salary on
         // the salary step, bank on the penny-drop step, …). Only overwrite a field when this request
         // actually provides it, so a later slice never wipes an earlier one — otherwise the profile
@@ -146,31 +170,40 @@ public class CustomerReviewService {
         String address = trimToNull(req.address());
         if (address != null) {
             log(customerId, appId, "address", p.getAddress(), address);
+            if (!address.equals(trimToNull(p.getAddress()))) changedFields.add("address");
             p.setAddress(address);
         }
         String employer = trimToNull(req.employer());
         if (employer != null) {
             log(customerId, appId, "employer", p.getEmployer(), employer);
+            if (!employer.equals(p.getEmployer())) changedFields.add("employer");
             p.setEmployer(employer);
         }
         String employmentStatus = trimToNull(req.employmentStatus());
         if (employmentStatus != null) {
             log(customerId, appId, "employmentStatus", p.getEmploymentStatus(), employmentStatus);
+            if (!employmentStatus.equals(p.getEmploymentStatus())) changedFields.add("employmentStatus");
             p.setEmploymentStatus(employmentStatus);
         }
         if (req.monthlySalaryPaise() != null) {
             log(customerId, appId, "monthlySalaryPaise", str(p.getMonthlySalaryPaise()),
                     req.monthlySalaryPaise().toString());
+            if (!req.monthlySalaryPaise().equals(p.getMonthlySalaryPaise())) changedFields.add("monthlySalaryPaise");
             p.setMonthlySalaryPaise(req.monthlySalaryPaise());
         }
         String salaryBank = trimToNull(req.salaryBank());
         if (salaryBank != null) {
             log(customerId, appId, "salaryBank", p.getSalaryBank(), salaryBank);
+            if (!salaryBank.equals(p.getSalaryBank())) changedFields.add("salaryBank");
             p.setSalaryBank(salaryBank);
         }
         String email = trimToNull(req.email());
         if (email != null) {
             log(customerId, appId, "email", p.getEmail(), email);
+            if (!email.equalsIgnoreCase(p.getEmail())) {
+                p.setPersonalEmailVerified(null); // inbox control was proven for the OLD address
+                changedFields.add("email");
+            }
             p.setEmail(email);
         }
 
@@ -178,17 +211,23 @@ public class CustomerReviewService {
         String officialEmail = trimToNull(req.officialEmail());
         if (officialEmail != null) {
             log(customerId, appId, "officialEmail", p.getOfficialEmail(), officialEmail);
+            if (!officialEmail.equalsIgnoreCase(p.getOfficialEmail())) {
+                p.setOfficialEmailOtpVerified(null); // inbox control was proven for the OLD address
+                changedFields.add("officialEmail");
+            }
             p.setOfficialEmail(officialEmail);
         }
         String accountNumber = trimToNull(req.salaryAccountNumber());
         if (accountNumber != null) {
             log(customerId, appId, "salaryAccountNumber",
                     Masking.maskAccount(p.getSalaryAccountNumber()), Masking.maskAccount(accountNumber));
+            if (!accountNumber.equals(p.getSalaryAccountNumber())) changedFields.add("salaryAccountNumber");
             p.setSalaryAccountNumber(accountNumber);
         }
         String ifsc = trimToNull(req.salaryIfsc());
         if (ifsc != null) {
             log(customerId, appId, "salaryIfsc", p.getSalaryIfsc(), ifsc.toUpperCase());
+            if (!ifsc.toUpperCase().equals(p.getSalaryIfsc())) changedFields.add("salaryIfsc");
             p.setSalaryIfsc(ifsc.toUpperCase());
         }
         String accountMobile = normalizeMobile(req.salaryAccountMobile());
@@ -202,7 +241,8 @@ public class CustomerReviewService {
                     req.annualSalaryPaise().toString());
             p.setAnnualSalaryPaise(req.annualSalaryPaise());
         }
-        if (req.previousSalaryDate() != null) {
+        // After DRAFT a borrower cannot move the salary day: it moves the real due date.
+        if (req.previousSalaryDate() != null && !(borrower && afterDraft)) {
             log(customerId, appId, "previousSalaryDate", str(p.getPreviousSalaryDate()),
                     req.previousSalaryDate().toString());
             p.setPreviousSalaryDate(req.previousSalaryDate());
@@ -223,7 +263,20 @@ public class CustomerReviewService {
                     p.getPepDeclaredAt() != null ? "true" : null, "true");
             p.setPepDeclaredAt(Instant.now());
         }
-        return profileRepository.save(p);
+        CustomerProfile saved = profileRepository.save(p);
+        // ponytail: DRAFT writes don't invalidate, because the wizard steps save around their own checks.
+        if (afterDraft) {
+            verificationInvalidation.invalidateForFields(appId, changedFields);
+        }
+        return saved;
+    }
+
+    /** A borrower past DRAFT may lower salary but not raise it: the raise needs staff to re-verify it. */
+    private static void refuseSalaryRaise(Long requested, Long stored) {
+        if (requested != null && (stored == null || requested > stored)) {
+            throw new BusinessException("SALARY_INCREASE_NEEDS_REVIEW",
+                    "To update your salary, please contact support. We need to verify the new amount first.");
+        }
     }
 
     /**
@@ -256,6 +309,11 @@ public class CustomerReviewService {
         }
     }
 
+    /** True when the request supplies a value that differs from a value already on file. */
+    private static boolean changed(String stored, String requested) {
+        return requested != null && stored != null && !requested.equals(stored);
+    }
+
     private void log(Long customerId, Long appId, String field, String oldVal, String newVal) {
         changeLogger.logIfChanged(customerId, appId, field, oldVal, newVal);
     }
@@ -283,6 +341,9 @@ public class CustomerReviewService {
                 .orElseThrow(() -> new ResourceNotFoundException("CustomerProfile", "application:" + appId));
         Long customerId = app.getCustomerId();
 
+        if (app.getStatus() != ApplicationStatus.DRAFT && "BORROWER".equals(ActorContext.get().role())) {
+            refuseSalaryRaise(req.monthlySalaryPaise(), p.getMonthlySalaryPaise());
+        }
         java.util.Set<String> changed = new java.util.HashSet<>();
         String address = trimToNull(req.address());
         if (address != null && !address.equals(p.getAddress())) {
@@ -321,6 +382,7 @@ public class CustomerReviewService {
         String email = trimToNull(req.email());
         if (email != null && !email.equals(p.getEmail())) {
             logChange(customerId, appId, "email", p.getEmail(), email);
+            p.setPersonalEmailVerified(null); // inbox control was proven for the OLD address
             p.setEmail(email);
             changed.add("email");
         }
@@ -445,6 +507,15 @@ public class CustomerReviewService {
     public ApplicationDocument addDocument(Long appId, DocumentRequest req) {
         requireAnyRole(DOCUMENT_UPLOAD_ROLES);
         requireApplication(appId);
+        String docType = req.docType();
+        if (isBorrower()) {
+            // A borrower may not file evidence under a type the system or the credit team owns
+            // (CREDIT_BRIEF, BUREAU_REPORT, SIGNED_AGREEMENT, SANCTION_LETTER, ...). Staff pick any category.
+            docType = docType == null ? "" : docType.trim().toUpperCase(java.util.Locale.ROOT);
+            if (!ApplicationVerificationService.UPLOADABLE_DOC_TYPES.contains(docType)) {
+                throw new BusinessException("UNSUPPORTED_DOC_TYPE", "Unsupported document type: " + req.docType());
+            }
+        }
         byte[] bytes;
         try {
             bytes = Base64.getDecoder().decode(req.dataBase64());
@@ -459,7 +530,7 @@ public class CustomerReviewService {
         }
         ApplicationDocument d = new ApplicationDocument();
         d.setApplicationId(appId);
-        d.setDocType(req.docType());
+        d.setDocType(docType);
         d.setFileName(req.fileName());
         d.setContentType(safeContentType(req.contentType()));
         d.setSizeBytes((long) bytes.length);
@@ -522,7 +593,8 @@ public class CustomerReviewService {
      * are hidden from a BORROWER here — absent from the list, not-found by id. Staff reads unchanged.
      */
     static final Set<String> STAFF_ONLY_DOC_TYPES =
-            Set.of(CreditBriefService.DOC_TYPE, ApplicationVerificationService.BUREAU_REPORT);
+            Set.of(CreditBriefService.DOC_TYPE, ApplicationVerificationService.BUREAU_REPORT,
+                    "REAPPLY_SUPPORT");
 
     private static boolean isBorrower() {
         return "BORROWER".equals(ActorContext.get().role());

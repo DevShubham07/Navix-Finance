@@ -19,14 +19,18 @@ import { InfoTooltip } from "@/components/ui/tooltip";
 import Link from "next/link";
 import { PeriodPicker } from "@/components/staff/period-picker";
 import { SearchBar } from "@/components/staff/search-bar";
-import { useTableSort, SortableTh } from "@/components/staff/sortable-table";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
 import { rangeFor, presetMatching, type Range } from "@/lib/period";
 import { staffApi, paiseToINR, type DecisionView } from "@/lib/api/applications";
 import { useStaffMe, errMessage } from "@/components/staff/pipeline/hooks";
 import { customerPageHref } from "@/lib/customers/customer-page";
 import { formatDate } from "@/lib/utils";
-import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
+import { PaginationBar } from "@/components/staff/pipeline/pagination";
+import { type FilterColumn } from "@/components/staff/column-filter";
+import { istDay } from "@/lib/staff/column-filter-match";
+import { useRegisterQuery } from "@/lib/staff/register-query";
+import { useClientRegister } from "@/lib/staff/use-client-register";
+import { Th, thBag } from "@/lib/staff/register-th";
 import {
   decisionMatchesSearch,
   placeholderForSameIdentity,
@@ -35,6 +39,19 @@ import {
   type DecisionRow,
 } from "@/lib/staff/decision-history";
 
+/** Sortable + filterable columns. Application id, customer id, PAN and txn ref are identity — the
+ *  search box above the table is how you find one of those, not a dropdown of thousands. */
+const SORT_KEYS = ["atMs", "customerName", "decisionLabel", "toStatus", "amountPaise", "assigneeName"] as const;
+
+const COLUMN_LABEL: Record<string, string> = {
+  atMs: "When",
+  customerName: "Customer",
+  decisionLabel: "Decision",
+  toStatus: "Outcome",
+  amountPaise: "Amount",
+  assigneeName: "Assignee",
+};
+
 export default function MyDecisionsPage() {
   const me = useStaffMe();
   const router = useRouter();
@@ -42,8 +59,6 @@ export default function MyDecisionsPage() {
   const [staffId, setStaffId] = React.useState("");
   const [preset, setPreset] = React.useState("all");
   const [custom, setCustom] = React.useState<Range>({});
-  /** Client-side search over the rows already loaded — application id, customer id, name, PAN. */
-  const [search, setSearch] = React.useState("");
   /** The application whose detail dialog is open in place (there is no `?open=` deep link to use). */
   const [openAppId, setOpenAppId] = React.useState<number | null>(null);
   /** Set once the URL has been read, so the write-back below cannot clobber it with the defaults. */
@@ -135,13 +150,46 @@ export default function MyDecisionsPage() {
   const others = (team.data ?? []).filter((s) => String(s.id) !== String(me.data?.id));
   // Search and sort are client-side: the whole window is already in memory, so a round-trip per
   // keystroke or header click would be slower and no more correct.
+  // Newest first by default — the order the server returns, so an untouched page reads as before.
+  const rq = useRegisterQuery({
+    registerId: "my-decisions",
+    staffId: me.data?.id,
+    sortKeys: SORT_KEYS,
+    filterKeys: SORT_KEYS,
+    defaults: { sort: { key: "atMs", dir: "desc" } },
+  });
+  /** Client-side search over the rows already loaded — application id, customer id, name, PAN. */
+  const search = rq.state.q;
   const matched = React.useMemo(
     () => rows.filter((r) => decisionMatchesSearch(r, search)).map(toDecisionRow),
     [rows, search],
   );
-  // Newest first by default — the order the server returns, so an untouched page reads as before.
-  const { sorted, sortKey, dir, toggle } = useTableSort<DecisionRow>(matched, "atMs", "desc");
-  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(sorted);
+  const filterColumns = React.useMemo<Array<FilterColumn<DecisionRow>>>(
+    () => [
+      // `atMs` is what sorts (an exact instant); the IST business day is what a date filter compares.
+      { key: "atMs", kind: "date", value: (r) => formatDate(r.at), date: (r) => istDay(r.at) },
+      { key: "customerName", kind: "text", value: (r) => r.customerName ?? "" },
+      // The checklist reads "Sanctioned"; the filter travels as the raw event action.
+      { key: "decisionLabel", value: (r) => r.decisionLabel, raw: (r) => r.action },
+      { key: "toStatus", value: (r) => r.toStatus, raw: (r) => r.toStatus },
+      // Rupees: the bound is typed beside a rupee column.
+      { key: "amountPaise", kind: "num", value: (r) => (r.amountPaise != null ? paiseToINR(r.amountPaise) : "—"), num: (r) => (r.amountPaise != null ? r.amountPaise / 100 : null) },
+      {
+        key: "assigneeName",
+        value: (r) => r.assigneeName ?? (r.assigneeId != null ? `#${r.assigneeId}` : "Unassigned"),
+        // Keyed on the id: two staffers can share a display name, and "nobody" is a value people
+        // filter for rather than an absence to hide.
+        raw: (r) => (r.assigneeId != null ? String(r.assigneeId) : ""),
+      },
+    ],
+    [],
+  );
+
+  const cr = useClientRegister(matched, filterColumns, rq);
+  const { pageRows, total, pageCount } = cr;
+  const th = thBag(rq, cr, filterColumns, COLUMN_LABEL);
+  const page = rq.state.page;
+  const pageSize = rq.state.size;
 
   // Name the person on screen: arriving from the performance table you have picked someone
   // specific, and a page headed only "Decision history" gives no confirmation you opened the
@@ -180,10 +228,7 @@ export default function MyDecisionsPage() {
         <PeriodPicker preset={preset} onPreset={setPreset} custom={custom} onCustom={setCustom} />
         <SearchBar
           initialValue={search}
-          onSearch={(term) => {
-            setSearch(term);
-            setPage(1);
-          }}
+          onSearch={rq.setQ}
           placeholder="Application, customer ID, name or PAN"
           ariaLabel="Search decisions by application, customer ID, customer name or PAN"
           inputClassName="w-72"
@@ -191,9 +236,18 @@ export default function MyDecisionsPage() {
       </div>
 
       {/* Totals for whoever is selected. Deliberately the same figures as the performance
-          dashboard: this page is what that page links into, so a reader arrives expecting them. */}
+          dashboard: this page is what that page links into, so a reader arrives expecting them —
+          which is also why they follow the PERIOD only. They are computed server-side over the
+          whole window and do not follow the search or the column filters; the caption says so,
+          rather than leaving a reader to wonder whether a filtered table should have moved them
+          (/staff/performance labels its unfiltered figures the same way). */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <StatCard label="Approved" value={stats ? stats.accepted : "—"} accent="success" />
+        <StatCard
+          label="Approved"
+          value={stats ? stats.accepted : "—"}
+          accent="success"
+          hint="For the period — not narrowed by the search or column filters"
+        />
         <StatCard label="Rejected" value={stats ? stats.rejected : "—"} accent="error" />
         <StatCard
           label="Total actions"
@@ -230,10 +284,14 @@ export default function MyDecisionsPage() {
           <Skeleton variant="table" rows={8} cols={14} />
         ) : rows.length === 0 ? (
           <EmptyState title="No decisions recorded yet." />
-        ) : matched.length === 0 ? (
+        ) : total === 0 ? (
           <EmptyState
-            title={`No decisions match “${search}”.`}
-            hint={`Search covers application ID, customer ID, customer name and PAN. Clear it to see all ${rows.length}.`}
+            title={search ? `No decisions match “${search}”.` : "No decisions match the column filters."}
+            hint={
+              search
+                ? `Search covers application ID, customer ID, customer name and PAN. Clear it to see all ${rows.length}.`
+                : `Clear the column filters to see all ${rows.length}.`
+            }
           />
         ) : (
           <>
@@ -253,24 +311,17 @@ export default function MyDecisionsPage() {
                     column and "Remark" carries only what a human actually typed. */}
                 <tr>
                   <th scope="col">S.No.</th>
-                  <SortableTh label="When" sortKey="atMs" active={sortKey} dir={dir} onToggle={toggle} />
+                  <Th th={th} col="atMs" />
                   <th scope="col">Application</th>
                   <th scope="col">Customer ID</th>
-                  <th scope="col">Customer</th>
+                  <Th th={th} col="customerName" />
                   <th scope="col">Signals</th>
                   <th scope="col">PAN</th>
-                  <SortableTh label="Decision" sortKey="decisionLabel" active={sortKey} dir={dir} onToggle={toggle} />
-                  <th scope="col">Outcome</th>
-                  <SortableTh
-                    label="Amount"
-                    sortKey="amountPaise"
-                    active={sortKey}
-                    dir={dir}
-                    onToggle={toggle}
-                    className="num text-right"
-                  />
+                  <Th th={th} col="decisionLabel" />
+                  <Th th={th} col="toStatus" />
+                  <Th th={th} col="amountPaise" className="num text-right" />
                   <th scope="col">Repayment date</th>
-                  <th scope="col">Assignee</th>
+                  <Th th={th} col="assigneeName" />
                   <th scope="col">Txn ref</th>
                   <th scope="col">Remark</th>
                 </tr>
@@ -352,10 +403,10 @@ export default function MyDecisionsPage() {
           <PaginationBar
             page={page}
             pageCount={pageCount}
-            setPage={setPage}
+            setPage={rq.setPage}
             total={total}
             pageSize={pageSize}
-            setPageSize={setPageSize}
+            setPageSize={rq.setSize}
           />
           </>
         )}

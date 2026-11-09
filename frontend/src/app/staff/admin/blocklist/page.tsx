@@ -8,7 +8,11 @@ import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage, useStaffMe, useCan, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { adminApi, type BlocklistType, type BlocklistResponse } from "@/lib/api/applications";
-import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
+import { PaginationBar } from "@/components/staff/pipeline/pagination";
+import { type FilterColumn } from "@/components/staff/column-filter";
+import { useRegisterQuery } from "@/lib/staff/register-query";
+import { useClientRegister } from "@/lib/staff/use-client-register";
+import { Th, thBag, describeRegister } from "@/lib/staff/register-th";
 
 const TYPES: { value: BlocklistType; label: string }[] = [
   { value: "PAN", label: "PAN" },
@@ -18,9 +22,15 @@ const TYPES: { value: BlocklistType; label: string }[] = [
   { value: "BANK_ACCOUNT", label: "Bank account" },
 ];
 
+/** Type and reason filter; the blocked value is identity (a PAN, a phone, a device id), so it does not. */
+const SORT_KEYS = ["type", "reason"] as const;
+
+const COLUMN_LABEL: Record<string, string> = { type: "Type", reason: "Reason" };
+
 /** Admin · fraud blocklist — list / add / remove blocked identifiers (live /api/admin/blocklist). ADMIN only. */
 export default function AdminBlocklistPage() {
-  const myRole = useStaffMe().data?.role;
+  const me = useStaffMe().data;
+  const myRole = me?.role;
   const can = useCan();
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["admin-blocklist"], queryFn: adminApi.listBlocklist });
@@ -42,8 +52,29 @@ export default function AdminBlocklistPage() {
     },
   });
 
-  const rows = q.data ?? [];
-  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
+  const rows = React.useMemo(() => q.data ?? [], [q.data]);
+
+  const rq = useRegisterQuery({
+    registerId: "blocklist",
+    staffId: me?.id,
+    sortKeys: SORT_KEYS,
+    filterKeys: SORT_KEYS,
+    defaults: { sort: { key: "type", dir: "asc" } },
+  });
+
+  const filterColumns = React.useMemo<Array<FilterColumn<BlocklistResponse>>>(
+    () => [
+      { key: "type", value: (b) => TYPES.find((t) => t.value === b.type)?.label ?? b.type, raw: (b) => b.type },
+      { key: "reason", kind: "text", value: (b) => b.reason ?? "" },
+    ],
+    [],
+  );
+
+  const cr = useClientRegister(rows, filterColumns, rq);
+  const { pageRows, total, pageCount } = cr;
+  const th = thBag(rq, cr, filterColumns, COLUMN_LABEL);
+  const page = rq.state.page;
+  const pageSize = rq.state.size;
 
   if (myRole && !can("staff:manage")) {
     return <NoAccessNotice message="Admin access only." />;
@@ -51,7 +82,12 @@ export default function AdminBlocklistPage() {
 
   return (
     <div>
-      <PageHeader title="Fraud blocklist" subtitle="Blocked PAN, Aadhaar ref, phone, device and bank account identifiers.">
+      <PageHeader
+        title="Fraud blocklist"
+        subtitle={["Blocked PAN, Aadhaar ref, phone, device and bank account identifiers.", describeRegister(th)]
+          .filter(Boolean)
+          .join(" · ")}
+      >
         <ExportMenu
           title="Fraud blocklist"
           fileBase="dhanboost-blocklist"
@@ -61,7 +97,8 @@ export default function AdminBlocklistPage() {
             { header: "Reason", value: (b) => b.reason ?? "" },
             { header: "Active", value: (b) => (b.active ? "yes" : "no") },
           ]}
-          rows={rows}
+          rows={cr.rows}
+          scope="all"
         />
         <button
           onClick={() => q.refetch()}
@@ -95,9 +132,9 @@ export default function AdminBlocklistPage() {
               <thead>
                 <tr>
                   <th>S.No.</th>
-                  <th>Type</th>
+                  <Th th={th} col="type" />
                   <th>Value</th>
-                  <th>Reason</th>
+                  <Th th={th} col="reason" />
                   <th className="text-right">Action</th>
                 </tr>
               </thead>
@@ -116,13 +153,17 @@ export default function AdminBlocklistPage() {
                     </td>
                   </tr>
                 ))}
-                {rows.length === 0 && (
-                  <EmptyState title="No active blocklist entries." inTable={5} />
+                {total === 0 && (
+                  // In-table so the headers survive an emptying filter and it can still be cleared.
+                  <EmptyState
+                    title={rq.activeCount > 0 && rows.length > 0 ? "No blocklist entries match the column filters." : "No active blocklist entries."}
+                    inTable={5}
+                  />
                 )}
               </tbody>
             </table>
           </div>
-          <PaginationBar page={page} pageCount={pageCount} setPage={setPage} total={total} pageSize={pageSize} setPageSize={setPageSize} />
+          <PaginationBar page={page} pageCount={pageCount} setPage={rq.setPage} total={total} pageSize={pageSize} setPageSize={rq.setSize} />
         </div>
       )}
     </div>

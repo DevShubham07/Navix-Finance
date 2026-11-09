@@ -6,7 +6,11 @@ import { Loader2, RefreshCw } from "lucide-react";
 import { PageHeader, StatCard } from "@/components/staff/staff-ui";
 import { useStaffMe, useCan, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { dsaApi, paiseToINR, type DsaCommissionStatus } from "@/lib/api/applications";
-import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
+import { PaginationBar } from "@/components/staff/pipeline/pagination";
+import { type FilterColumn } from "@/components/staff/column-filter";
+import { useRegisterQuery } from "@/lib/staff/register-query";
+import { useClientRegister } from "@/lib/staff/use-client-register";
+import { Th, thBag } from "@/lib/staff/register-th";
 import { EmptyState, ErrorState, Skeleton } from "@/components/ui";
 
 const STATUS_TONE: Record<DsaCommissionStatus, string> = {
@@ -16,20 +20,59 @@ const STATUS_TONE: Record<DsaCommissionStatus, string> = {
   VOID: "bg-red-50 text-red-800",
 };
 
+/** Sortable + filterable columns. PAN and mobile are identity, so they get no dropdown — a DSA
+ *  looking for one lead reads the name. */
+const SORT_KEYS = ["name", "netDisbursedPaise", "amountPaise", "status"] as const;
+
+const COLUMN_LABEL: Record<string, string> = {
+  name: "Name",
+  netDisbursedPaise: "Net disbursed",
+  amountPaise: "Commission",
+  status: "Status",
+};
+
+/** ACCRUED → "Accrued": the badge shouts in uppercase, a filter checklist should not. */
+const statusLabel = (v: DsaCommissionStatus) => v[0] + v.slice(1).toLowerCase();
+
 /**
  * DSA portal · My earnings — summary tiles (leads, converted, accrued/payable/paid) plus the
  * commission ledger for this DSA's own leads. Own data only (server-scoped off the JWT).
  */
 export default function DsaEarningsPage() {
-  const myRole = useStaffMe().data?.role;
+  const me = useStaffMe().data;
+  const myRole = me?.role;
   const can = useCan();
 
   const summary = useQuery({ queryKey: ["dsa-earnings"], queryFn: dsaApi.earnings });
   const commissions = useQuery({ queryKey: ["dsa-commissions"], queryFn: dsaApi.commissions });
 
-  const rows = commissions.data ?? [];
+  const rows = React.useMemo(() => commissions.data ?? [], [commissions.data]);
   const s = summary.data;
-  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
+
+  const rq = useRegisterQuery({
+    registerId: "dsa-earnings",
+    staffId: me?.id,
+    sortKeys: SORT_KEYS,
+    filterKeys: SORT_KEYS,
+    defaults: { sort: { key: "amountPaise", dir: "desc" } },
+  });
+
+  const filterColumns = React.useMemo<Array<FilterColumn<(typeof rows)[number]>>>(
+    () => [
+      { key: "name", kind: "text", value: (c) => c.name ?? "" },
+      // Rupees on both money columns: the bound is typed beside a rupee figure.
+      { key: "netDisbursedPaise", kind: "num", value: (c) => paiseToINR(c.netDisbursedPaise), num: (c) => c.netDisbursedPaise / 100 },
+      { key: "amountPaise", kind: "num", value: (c) => paiseToINR(c.amountPaise), num: (c) => c.amountPaise / 100 },
+      { key: "status", value: (c) => statusLabel(c.status), raw: (c) => c.status },
+    ],
+    [],
+  );
+
+  const cr = useClientRegister(rows, filterColumns, rq);
+  const { pageRows, total, pageCount } = cr;
+  const th = thBag(rq, cr, filterColumns, COLUMN_LABEL);
+  const page = rq.state.page;
+  const pageSize = rq.state.size;
 
   if (myRole && !can("dsa:portal")) {
     return <NoAccessNotice message="DSA access required." />;
@@ -81,11 +124,11 @@ export default function DsaEarningsPage() {
             <tr>
               <th>S.No.</th>
               <th>PAN</th>
-              <th>Name</th>
+              <Th th={th} col="name" />
               <th>Mobile</th>
-              <th className="num text-right">Net disbursed</th>
-              <th className="num text-right">Commission</th>
-              <th>Status</th>
+              <Th th={th} col="netDisbursedPaise" className="num text-right" />
+              <Th th={th} col="amountPaise" className="num text-right" />
+              <Th th={th} col="status" />
             </tr>
           </thead>
           <tbody>
@@ -99,6 +142,9 @@ export default function DsaEarningsPage() {
               ) : (
                 <EmptyState inTable={7} title="No commissions yet — they accrue once a lead's loan disburses." />
               ))}
+            {rows.length > 0 && total === 0 ? (
+              <EmptyState inTable={7} title="No commissions match the column filters." />
+            ) : null}
             {pageRows.map((c, i) => (
               <tr key={c.id}>
                 <td className="text-navy/60">{(page - 1) * pageSize + i + 1}</td>
@@ -119,10 +165,10 @@ export default function DsaEarningsPage() {
         <PaginationBar
           page={page}
           pageCount={pageCount}
-          setPage={setPage}
+          setPage={rq.setPage}
           total={total}
           pageSize={pageSize}
-          setPageSize={setPageSize}
+          setPageSize={rq.setSize}
         />
       </div>
     </div>

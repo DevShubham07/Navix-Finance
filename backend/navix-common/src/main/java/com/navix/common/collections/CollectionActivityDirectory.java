@@ -2,6 +2,7 @@ package com.navix.common.collections;
 
 import java.time.Instant;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -29,4 +30,21 @@ public interface CollectionActivityDirectory {
      * @return staff id → interaction count, only for staff with at least one
      */
     Map<Long, Long> callCountsByStaff(Collection<Long> staffIds, Instant from, Instant to);
+
+    /**
+     * One staffer's collections work, plus the instant of every action behind it so the caller can
+     * fold collections activity into its own "active days" / first-last / per-day figures.
+     */
+    record StaffActivity(CollectionStaffStats stats, List<Instant> activityAt) {
+    }
+
+    /**
+     * Full collections tallies for each of {@code staffIds} over the half-open window
+     * {@code [from, to)} — interactions by outcome, payments recorded and recovered, settlements
+     * proposed/decided, Accountant validations — plus each staffer's live open-case count. Staff with
+     * no collections footprint at all are absent from the map.
+     *
+     * @param staffIds the staff ids to tally; an empty collection yields an empty map
+     */
+    Map<Long, StaffActivity> statsByStaff(Collection<Long> staffIds, Instant from, Instant to);
 }

@@ -18,11 +18,13 @@ import com.navix.collections.repository.CollectionCaseRepository;
 import com.navix.collections.repository.SettlementRepository;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.loan.LoanDirectory;
+import com.navix.common.loan.LoanSummary;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
 import com.navix.common.staff.StaffDirectory;
 import com.navix.common.staff.StaffSummary;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -133,6 +135,19 @@ class SettlementServiceTest {
     }
 
     @Test
+    void approveRecomputesTheLoanSoAPaidUpSettlementClosesIt() {
+        ActorContext.set(HEAD);
+        when(settlementRepository.findById(settlementId)).thenReturn(Optional.of(proposedByOfficer()));
+        when(settlementRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        when(caseRepository.findById(caseId)).thenReturn(Optional.of(caseWithLoan()));
+        when(loanDirectory.findLoan(2L)).thenReturn(Optional.empty());
+
+        service.approve(settlementId);
+
+        verify(loanDirectory).recomputeOutstanding(2L);
+    }
+
+    @Test
     void approveBySameActorWhoProposedViolatesSod() {
         // A Collection Head may also propose; if that same head then approves, SoD must block it
         // (the role guard passes, so we reach the proposer≠approver check).
@@ -170,6 +185,7 @@ class SettlementServiceTest {
 
         SettlementView rejected = service.reject(settlementId);
 
+        verify(loanDirectory, never()).recomputeOutstanding(anyLong());
         assertThat(rejected.status()).isEqualTo("REJECTED");
         assertThat(rejected.rejectedBy()).isEqualTo(8L);
         assertThat(rejected.rejectedByName()).isEqualTo("Arjun Patel");
@@ -202,6 +218,7 @@ class SettlementServiceTest {
 
     @Test
     void listAllResolvesNamesInOneBatchedCall() {
+        ActorContext.set(HEAD);
         Settlement proposedOnly = proposedByOfficer(); // PROPOSED — approvedBy/rejectedBy are null
         Settlement approved = proposedByOfficer();
         approved.setId(UUID.randomUUID());
@@ -221,6 +238,43 @@ class SettlementServiceTest {
         assertThat(views.get(1).approvedByName()).isEqualTo("Arjun Patel");
         verify(staffDirectory, times(1)).namesFor(any());
         verify(staffDirectory, never()).findStaff(anyLong());
+    }
+
+    @Test
+    void listAllCarriesTheBorrowerAndLoanBehindEachCase() {
+        ActorContext.set(HEAD);
+        when(settlementRepository.findAll(any(org.springframework.data.domain.Sort.class)))
+                .thenReturn(java.util.List.of(proposedByOfficer()));
+        when(staffDirectory.namesFor(any())).thenReturn(java.util.Map.of(9L, "Sana Khan"));
+        CollectionCase c = new CollectionCase();
+        c.setId(caseId);
+        c.setLoanId(42L);
+        when(caseRepository.findAllById(any())).thenReturn(java.util.List.of(c));
+        when(loanDirectory.findLoans(any())).thenReturn(java.util.Map.of(42L, new LoanSummary(
+                42L, 7L, 1L, "OVERDUE", 1_000_000L, 882_000L, 1_270_000L, 1_300_000L,
+                LocalDate.now().minusDays(40), LocalDate.now().minusDays(10), "Ravi Kumar",
+                "ABXXXXX34F", "9876543210", "Acme Corp", "SALARIED", 4_000_000L, "HDFC", false)));
+
+        when(loanDirectory.findDues(any())).thenReturn(java.util.Map.of(42L, new com.navix.common.loan.LoanDues(
+                42L, 270_000L, 27, 200_000L, 10, 170_000L, 1_470_000L, null,
+                "ravi@example.com", "1234567890", "HDFC0000001", 742L)));
+
+        SettlementView v = service.listAll().get(0);
+
+        assertThat(v.loanId()).isEqualTo(42L);
+        assertThat(v.customerId()).isEqualTo(7L);
+        assertThat(v.borrowerName()).isEqualTo("Ravi Kumar");
+        assertThat(v.mobile()).isEqualTo("9876543210");
+        assertThat(v.outstandingPaise()).isEqualTo(1_300_000L);
+        assertThat(v.dpd()).isGreaterThan(0);
+        assertThat(v.penaltyPaise()).isEqualTo(200_000L);
+        assertThat(v.paidPaise()).isEqualTo(170_000L);
+        assertThat(v.grossDuePaise()).isEqualTo(1_470_000L);
+        assertThat(v.pan()).isEqualTo("ABXXXXX34F");
+        assertThat(v.accountNumber()).isEqualTo("1234567890");
+        verify(loanDirectory, times(1)).findLoans(any());
+        verify(loanDirectory, times(1)).findDues(any());
+        verify(loanDirectory, never()).findLoan(anyLong());
     }
 
     /**
@@ -248,6 +302,18 @@ class SettlementServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("Staff role required");
 
+        verify(settlementRepository, never()).findAll(any(org.springframework.data.domain.Sort.class));
+    }
+
+    /** The rows carry PAN, account, email and bureau score — so non-collections staff are refused. */
+    @Test
+    void listAllRejectsNonCollectionsStaff() {
+        for (String role : java.util.List.of("TELECALLER", "ACCOUNTANT", "CREDIT_EXECUTIVE", "DISBURSEMENT_HEAD")) {
+            ActorContext.set(new CurrentActor("40", "Someone", role));
+            assertThatThrownBy(() -> service.listAll())
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("COLLECTION_HEAD");
+        }
         verify(settlementRepository, never()).findAll(any(org.springframework.data.domain.Sort.class));
     }
 

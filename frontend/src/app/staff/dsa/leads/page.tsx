@@ -19,12 +19,30 @@ import {
   type CreateDsaLeadInput,
   type OutreachChannel,
 } from "@/lib/api/applications";
-import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
-import { OutcomeChip } from "@/components/staff/lead-outcome";
+import { PaginationBar } from "@/components/staff/pipeline/pagination";
+import { OutcomeChip, OUTCOME_LABEL } from "@/components/staff/lead-outcome";
+import { type FilterColumn } from "@/components/staff/column-filter";
+import { useRegisterQuery } from "@/lib/staff/register-query";
+import { useClientRegister } from "@/lib/staff/use-client-register";
+import { Th, thBag } from "@/lib/staff/register-th";
 
 const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
 
 const STATUSES: DsaLeadStatus[] = ["NOT_APPLIED", "APPLIED", "IN_PROGRESS", "DISBURSED", "REPAID", "DECLINED"];
+
+/** Sortable + filterable columns. PAN and mobile are identity, so they get no dropdown. Status is
+ *  absent on purpose: the Status select above the table already narrows it (server-side), and two
+ *  controls for one field is a trap. */
+const SORT_KEYS = ["name", "uploaded", "leadOutcome", "dsaNote", "netDisbursedPaise", "commissionPaise"] as const;
+
+const COLUMN_LABEL: Record<string, string> = {
+  name: "Name",
+  uploaded: "Source",
+  leadOutcome: "Outcome",
+  dsaNote: "Note from us",
+  netDisbursedPaise: "Net disbursed",
+  commissionPaise: "Commission",
+};
 
 /** The fixed SMS template every DSA lead invite goes out as — the DSA cannot change the wording. */
 const SMS_TEMPLATE = (name: string) =>
@@ -37,7 +55,17 @@ const SMS_TEMPLATE = (name: string) =>
  * and (once disbursed) the net disbursed amount + commission.
  */
 export default function DsaLeadsPage() {
-  const myRole = useStaffMe().data?.role;
+  // useRegisterQuery reads the URL, which needs a Suspense boundary above it.
+  return (
+    <React.Suspense fallback={<div className="h-40 animate-pulse rounded border border-line bg-white" />}>
+      <DsaLeadsPageInner />
+    </React.Suspense>
+  );
+}
+
+function DsaLeadsPageInner() {
+  const me = useStaffMe().data;
+  const myRole = me?.role;
   const can = useCan();
   const qc = useQueryClient();
   const [q, setQ] = React.useState("");
@@ -51,8 +79,35 @@ export default function DsaLeadsPage() {
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["dsa-leads"] });
 
-  const rows = list.data ?? [];
-  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
+  const rows = React.useMemo(() => list.data ?? [], [list.data]);
+
+  const rq = useRegisterQuery({
+    registerId: "dsa-leads",
+    staffId: me?.id,
+    sortKeys: SORT_KEYS,
+    filterKeys: SORT_KEYS,
+    defaults: { sort: { key: "name", dir: "asc" } },
+  });
+
+  const filterColumns = React.useMemo<Array<FilterColumn<DsaLeadView>>>(
+    () => [
+      { key: "name", kind: "text", value: (l) => l.name },
+      // The chip reads "Entered"/"Uploaded"; the filter travels as ENTERED/UPLOADED, not the label.
+      { key: "uploaded", value: (l) => (l.uploaded ? "Uploaded" : "Entered"), raw: (l) => (l.uploaded ? "UPLOADED" : "ENTERED") },
+      { key: "leadOutcome", value: (l) => OUTCOME_LABEL[l.leadOutcome] ?? l.leadOutcome, raw: (l) => l.leadOutcome },
+      { key: "dsaNote", kind: "text", value: (l) => l.dsaNote ?? "" },
+      // Rupees on both money columns, null (not yet disbursed) stays null rather than 0.
+      { key: "netDisbursedPaise", kind: "num", value: (l) => paiseToINR(l.netDisbursedPaise), num: (l) => (l.netDisbursedPaise != null ? l.netDisbursedPaise / 100 : null) },
+      { key: "commissionPaise", kind: "num", value: (l) => paiseToINR(l.commissionPaise), num: (l) => (l.commissionPaise != null ? l.commissionPaise / 100 : null) },
+    ],
+    [],
+  );
+
+  const cr = useClientRegister(rows, filterColumns, rq);
+  const { pageRows, total, pageCount } = cr;
+  const th = thBag(rq, cr, filterColumns, COLUMN_LABEL);
+  const page = rq.state.page;
+  const pageSize = rq.state.size;
 
   if (myRole && !can("dsa:portal")) {
     return <NoAccessNotice message="DSA access required." />;
@@ -82,7 +137,8 @@ export default function DsaLeadsPage() {
           initialValue={q}
           onSearch={(t) => {
             setQ(t);
-            setPage(1);
+            // The query key changed, so "what matches" did — back to page 1, filters untouched.
+            rq.apply({});
           }}
           placeholder="Name, PAN or mobile"
           ariaLabel="Search"
@@ -91,7 +147,10 @@ export default function DsaLeadsPage() {
           label="Status"
           className="!mb-0"
           value={status}
-          onChange={(e) => setStatus(e.target.value as DsaLeadStatus | "")}
+          onChange={(e) => {
+            setStatus(e.target.value as DsaLeadStatus | "");
+            rq.apply({});
+          }}
         >
           <option value="">All</option>
           {STATUSES.map((s) => (
@@ -109,15 +168,15 @@ export default function DsaLeadsPage() {
           <thead>
             <tr>
               <th>S.No.</th>
-              <th>Name</th>
-              <th>Source</th>
+              <Th th={th} col="name" />
+              <Th th={th} col="uploaded" />
               <th>PAN</th>
               <th>Mobile</th>
               <th>Status</th>
-              <th>Outcome</th>
-              <th>Note from us</th>
-              <th className="num text-right">Net disbursed</th>
-              <th className="num text-right">Commission</th>
+              <Th th={th} col="leadOutcome" />
+              <Th th={th} col="dsaNote" />
+              <Th th={th} col="netDisbursedPaise" className="num text-right" />
+              <Th th={th} col="commissionPaise" className="num text-right" />
               <th className="text-right">Actions</th>
             </tr>
           </thead>
@@ -132,6 +191,9 @@ export default function DsaLeadsPage() {
               ) : (
                 <EmptyState inTable={11} title="No leads yet — add one above." />
               ))}
+            {rows.length > 0 && total === 0 ? (
+              <EmptyState inTable={11} title="No leads match the column filters." />
+            ) : null}
             {pageRows.map((row, i) => (
               <tr key={row.id}>
                 <td className="text-navy/60">{(page - 1) * pageSize + i + 1}</td>
@@ -175,10 +237,10 @@ export default function DsaLeadsPage() {
         <PaginationBar
           page={page}
           pageCount={pageCount}
-          setPage={setPage}
+          setPage={rq.setPage}
           total={total}
           pageSize={pageSize}
-          setPageSize={setPageSize}
+          setPageSize={rq.setSize}
         />
       </div>
 
@@ -312,23 +374,33 @@ function NewDsaLeadForm({ onCreated }: { onCreated: () => void }) {
 }
 
 function OutreachDialog({ lead, onClose }: { lead: DsaLeadView; onClose: () => void }) {
+  const qc = useQueryClient();
   const [channel, setChannel] = React.useState<OutreachChannel>("EMAIL");
-  const [subject, setSubject] = React.useState("");
-  const [body, setBody] = React.useState("");
+  const [template, setTemplate] = React.useState<string>("");
+  // Only asked when the lead has no email on file; the backend saves it onto the lead.
+  const [email, setEmail] = React.useState("");
+
+  const templates = useQuery({
+    queryKey: ["dsa-email-templates", lead.id],
+    queryFn: () => dsaApi.emailTemplates(lead.id),
+  });
+  const chosen = templates.data?.find((t) => t.key === template) ?? templates.data?.[0];
 
   const send = useMutation({
     mutationFn: () =>
       dsaApi.outreach(lead.id, {
         channel,
-        subject: channel === "EMAIL" ? subject.trim() : undefined,
-        body: channel === "EMAIL" ? body.trim() : undefined,
+        template: channel === "EMAIL" ? chosen?.key : undefined,
+        email: channel === "EMAIL" && !lead.email ? email.trim() : undefined,
       }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["dsa-leads"] }),
   });
 
-  const canSend = channel === "SMS" || (subject.trim().length > 0 && body.trim().length > 0);
+  const emailOk = !!lead.email || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
+  const canSend = channel === "SMS" || (!!chosen && emailOk);
 
   return (
-    <Dialog open onClose={onClose} aria-labelledby="dsa-outreach-title">
+    <Dialog open onClose={onClose} aria-labelledby="dsa-outreach-title" size="lg">
       <DialogHeader>
         <DialogTitle id="dsa-outreach-title">Contact {lead.name}</DialogTitle>
         <p className="text-sm text-navy/60">{lead.mobile}{lead.email ? ` · ${lead.email}` : ""}</p>
@@ -352,17 +424,53 @@ function OutreachDialog({ lead, onClose }: { lead: DsaLeadView; onClose: () => v
 
       {channel === "EMAIL" ? (
         <div className="mt-4 space-y-3">
-          <Input label="Subject" required value={subject} onChange={(e) => setSubject(e.target.value)} className="!mb-0" />
-          <div className="field !mb-0">
-            <label htmlFor="dsa-outreach-body">Body</label>
-            <textarea
-              id="dsa-outreach-body"
-              rows={6}
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              placeholder="Write your message to this lead…"
+          {!lead.email && (
+            <Input
+              label="Lead's email"
+              required
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="name@example.com"
+              helperText="This lead has no email on file — it will be saved to the lead."
+              className="!mb-0"
             />
-          </div>
+          )}
+          {templates.isLoading ? (
+            <Skeleton variant="table" rows={3} cols={3} />
+          ) : templates.isError ? (
+            <ErrorState error={templates.error} onRetry={() => void templates.refetch()} className="py-4" />
+          ) : (
+            <>
+              <div className="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Email template">
+                {templates.data?.map((t) => (
+                  <button
+                    key={t.key}
+                    type="button"
+                    role="radio"
+                    aria-checked={chosen?.key === t.key}
+                    onClick={() => setTemplate(t.key)}
+                    className={`rounded-lg border p-3 text-left transition ${
+                      chosen?.key === t.key
+                        ? "border-navy bg-navy/5 ring-2 ring-gold"
+                        : "border-navy/15 hover:border-navy/40"
+                    }`}
+                  >
+                    <span className="block text-sm font-semibold text-navy">{t.name}</span>
+                    <span className="mt-0.5 block text-xs text-navy/60">{t.subject}</span>
+                  </button>
+                ))}
+              </div>
+              {chosen && (
+                <iframe
+                  title={`Preview: ${chosen.name}`}
+                  srcDoc={chosen.html}
+                  sandbox=""
+                  className="h-[26rem] w-full rounded-lg border border-navy/10 bg-white"
+                />
+              )}
+            </>
+          )}
         </div>
       ) : (
         <div className="mt-4">
@@ -377,8 +485,10 @@ function OutreachDialog({ lead, onClose }: { lead: DsaLeadView; onClose: () => v
 
       {send.isError && <p className="mt-3 text-sm text-red-700">{errMessage(send.error)}</p>}
       {send.isSuccess && (
-        <p className="mt-3 text-sm text-emerald-700">
-          {send.data.status === "SENT" ? "Sent." : `${send.data.status}${send.data.error ? ` — ${send.data.error}` : ""}`}
+        <p className={`mt-3 text-sm ${send.data.status === "SENT" ? "text-emerald-700" : "text-red-700"}`}>
+          {send.data.status === "SENT"
+            ? "Sent."
+            : `Not sent (${send.data.status.toLowerCase()})${send.data.error ? ` — ${send.data.error}` : ""}`}
         </p>
       )}
 

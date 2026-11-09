@@ -11,7 +11,7 @@ import { BRAND } from "@/lib/brand";
 const FAQ: { q: string; a: string }[] = [
   {
     q: "Is DhanBoost a lender?",
-    a: "No. DhanBoost is a digital lending platform. All loans are sanctioned and disbursed by our RBI-registered NBFC partners, who are the lender of record and remain regulated by the RBI.",
+    a: "No. DhanBoost is a digital lending platform. All loans are sanctioned and disbursed by our NBFC partner, MLB Securities Private Limited, which is registered with the Reserve Bank of India and is the lender of record.",
   },
   {
     q: "How quickly can I get a loan?",
@@ -19,7 +19,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: "Will applying affect my credit score?",
-    a: "When you submit your application, we check your credit report with a credit bureau as part of our review. Repaying on time, on your salary day, is the best way to keep your score healthy.",
+    a: "Using the calculator does not involve a credit check. When you submit an application, a credit report is obtained from a credit bureau with your consent, before any offer is made. This may show as an enquiry on your credit report.",
   },
   {
     q: "What documents do I need?",
@@ -35,7 +35,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: "Are there any hidden charges or advance fees?",
-    a: "Never. DhanBoost does not charge any advance or upfront fee. All applicable interest and charges are disclosed in the Key Fact Statement before you accept the offer.",
+    a: "You never pay anything before your loan is disbursed. A processing fee of 10% of the loan amount plus 18% GST on that fee is deducted from the amount disbursed. All interest and charges are disclosed in the Key Fact Statement before you accept the offer.",
   },
   {
     q: "Can I repay my loan early?",
@@ -43,7 +43,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: "What happens if I miss a payment?",
-    a: "Late payments attract a late-payment fee of 2% per day on the overdue principal (capped at 30 days), as set out in your Key Fact Statement, and can affect your credit score. If you're struggling, contact us early and we'll help you find a way forward respectfully.",
+    a: "Late payments attract a late-payment fee of 2% per day on the overdue principal (capped at 30 days), as set out in your Key Fact Statement. The lender may report your repayment history, including late payments, to credit bureaus, and this can lower your credit score. If you're struggling, contact us early — we'll help you find a way forward respectfully.",
   },
   {
     q: "Is my data safe with DhanBoost?",

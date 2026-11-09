@@ -37,8 +37,6 @@ public class PaymentReminderScheduler {
 
     /** Start nudging this many days before the due date. */
     private static final int REMINDER_WINDOW_DAYS = 7;
-    /** The day after salary is still penalty-free (mirrors {@code LoanMath.SALARY_GRACE_DAYS}). */
-    private static final int GRACE_DAYS = 1;
     /** Keep nudging for this many days after the grace day, then collections owns it (T0–T7). */
     private static final int OVERDUE_BUCKET_DAYS = 7;
 
@@ -94,15 +92,16 @@ public class PaymentReminderScheduler {
         }
         long daysToDue = ChronoUnit.DAYS.between(today, loan.getDueDate()); // >0 before due, <0 once past
         long daysOverdue = -daysToDue;
+        int graceDays = loan.getGraceDays(); // the loan's own penalty-free days after due (0 or 1)
 
-        if (daysToDue <= REMINDER_WINDOW_DAYS && daysToDue >= -GRACE_DAYS) {
-            // 7 days before due → the grace day: penalty-free countdown ("due in N days").
+        if (daysToDue <= REMINDER_WINDOW_DAYS && daysToDue >= -graceDays) {
+            // 7 days before due → the last grace day (if any): penalty-free countdown ("due in N days").
             int days = (int) Math.max(0L, daysToDue);
             events.publishEvent(new PaymentReminderEvent(loan.getId(), loan.getCustomerId(), false, outstanding, days));
             return true;
         }
-        if (daysOverdue > GRACE_DAYS && daysOverdue <= GRACE_DAYS + OVERDUE_BUCKET_DAYS) {
-            // Past the grace day, for the first 7 overdue days: "overdue, pay now".
+        if (daysOverdue > graceDays && daysOverdue <= graceDays + OVERDUE_BUCKET_DAYS) {
+            // Past the grace (if any), for the first 7 overdue days: "overdue, pay now".
             events.publishEvent(new PaymentReminderEvent(loan.getId(), loan.getCustomerId(), true, outstanding, (int) daysOverdue));
             return true;
         }

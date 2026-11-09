@@ -27,7 +27,8 @@ public class StaffSessionInvalidator {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onStaffAccount(StaffAccountEvent e) {
-        if (e.changeType() == StaffAccountEvent.ChangeType.DISABLED) {
+        if (e.changeType() == StaffAccountEvent.ChangeType.DISABLED
+                || e.changeType() == StaffAccountEvent.ChangeType.ROLE_CHANGED) {
             staffSessionRegistry.invalidate(e.staffId());
         }
     }

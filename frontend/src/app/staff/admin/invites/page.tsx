@@ -9,16 +9,27 @@ import { errMessage, useStaffMe, useCan, NoAccessNotice } from "@/components/sta
 import { ExportMenu } from "@/components/staff/export-menu";
 import { adminApi, type StaffRoleName, type InviteResponse } from "@/lib/api/applications";
 import { formatDateTime } from "@/lib/utils";
-import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
+import { PaginationBar } from "@/components/staff/pipeline/pagination";
+import { type FilterColumn } from "@/components/staff/column-filter";
+import { istDay } from "@/lib/staff/column-filter-match";
+import { useRegisterQuery } from "@/lib/staff/register-query";
+import { useClientRegister } from "@/lib/staff/use-client-register";
+import { Th, thBag, describeRegister } from "@/lib/staff/register-th";
 
 const ROLES: StaffRoleName[] = [
   "CREDIT_EXECUTIVE", "CREDIT_HEAD", "DISBURSEMENT_HEAD",
   "ACCOUNTANT", "COLLECTION_HEAD", "COLLECTION_EXECUTIVE", "TELECALLER", "DSA", "ADMIN",
 ];
 
+/** Email and token are identity (and the token is a secret), so only role and expiry filter. */
+const SORT_KEYS = ["role", "expiresAt"] as const;
+
+const COLUMN_LABEL: Record<string, string> = { role: "Role", expiresAt: "Expires" };
+
 /** Admin · invites — issue an invite (returns a one-time token) and list invites. ADMIN only. */
 export default function AdminInvitesPage() {
-  const myRole = useStaffMe().data?.role;
+  const me = useStaffMe().data;
+  const myRole = me?.role;
   const can = useCan();
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["admin-invites"], queryFn: adminApi.listInvites });
@@ -33,8 +44,29 @@ export default function AdminInvitesPage() {
     },
   });
 
-  const rows = q.data ?? [];
-  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
+  const rows = React.useMemo(() => q.data ?? [], [q.data]);
+
+  const rq = useRegisterQuery({
+    registerId: "invites",
+    staffId: me?.id,
+    sortKeys: SORT_KEYS,
+    filterKeys: SORT_KEYS,
+    defaults: { sort: { key: "expiresAt", dir: "desc" } },
+  });
+
+  const filterColumns = React.useMemo<Array<FilterColumn<InviteResponse>>>(
+    () => [
+      { key: "role", value: (i) => i.role, raw: (i) => i.role },
+      { key: "expiresAt", kind: "date", value: (i) => istDay(i.expiresAt) ?? "—", date: (i) => istDay(i.expiresAt) },
+    ],
+    [],
+  );
+
+  const cr = useClientRegister(rows, filterColumns, rq);
+  const { pageRows, total, pageCount } = cr;
+  const th = thBag(rq, cr, filterColumns, COLUMN_LABEL);
+  const page = rq.state.page;
+  const pageSize = rq.state.size;
 
   if (myRole && !can("staff:manage")) {
     return <NoAccessNotice message="Admin access only." />;
@@ -42,7 +74,12 @@ export default function AdminInvitesPage() {
 
   return (
     <div>
-      <PageHeader title="Staff invites" subtitle="Issue a one-time invite token; the invitee activates on /staff/activate.">
+      <PageHeader
+        title="Staff invites"
+        subtitle={["Issue a one-time invite token; the invitee activates on /staff/activate.", describeRegister(th)]
+          .filter(Boolean)
+          .join(" · ")}
+      >
         <ExportMenu
           title="Staff invites"
           fileBase="dhanboost-invites"
@@ -52,7 +89,8 @@ export default function AdminInvitesPage() {
             { header: "Token", value: (i) => i.token },
             { header: "Expires", value: (i) => (i.expiresAt ? formatDateTime(i.expiresAt) : "") },
           ]}
-          rows={q.data ?? []}
+          rows={cr.rows}
+          scope="all"
         />
         <button
           onClick={() => q.refetch()}
@@ -94,9 +132,9 @@ export default function AdminInvitesPage() {
               <tr>
                 <th>S.No.</th>
                 <th>Email</th>
-                <th>Role</th>
+                <Th th={th} col="role" />
                 <th>Token</th>
-                <th>Expires</th>
+                <Th th={th} col="expiresAt" />
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
@@ -109,18 +147,22 @@ export default function AdminInvitesPage() {
                   <td className="text-muted">{inv.expiresAt ? formatDateTime(inv.expiresAt) : "—"}</td>
                 </tr>
               ))}
-              {rows.length === 0 && (
-                <EmptyState title="No invites yet." inTable={5} />
+              {total === 0 && (
+                // In-table so the headers survive an emptying filter and it can still be cleared.
+                <EmptyState
+                  title={rq.activeCount > 0 && rows.length > 0 ? "No invites match the column filters." : "No invites yet."}
+                  inTable={5}
+                />
               )}
             </tbody>
           </table>
           <PaginationBar
             page={page}
             pageCount={pageCount}
-            setPage={setPage}
+            setPage={rq.setPage}
             total={total}
             pageSize={pageSize}
-            setPageSize={setPageSize}
+            setPageSize={rq.setSize}
           />
         </div>
       )}

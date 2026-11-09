@@ -11,6 +11,7 @@ import { PaymentProofLink } from "@/components/ui/payment-proof-link";
 import { Section } from "@/components/staff/detail-parts";
 import { AdminLogPaymentButton } from "@/components/staff/admin-log-payment";
 import { RejectDialog } from "@/components/staff/repayment-verify-queue";
+import { PostVerifyBlockDialog, type PostVerifyTarget } from "@/components/staff/post-verify-block-dialog";
 import {
   FinancialSummaryStrip,
   LoanCardHeader,
@@ -41,7 +42,7 @@ import {
 import { can as rbacCan, type Permission } from "@/lib/auth/rbac";
 
 const inr = (p: number | null | undefined) => (p == null ? null : paiseToINR(p));
-const METHOD_LABEL: Record<string, string> = { UPI: "UPI", BANK_TRANSFER: "Bank transfer", NACH: "NACH" };
+const METHOD_LABEL: Record<string, string> = { UPI: "UPI", BANK_TRANSFER: "Bank transfer", NACH: "NACH", PAYU: "PayU" };
 const TH = "py-2 pr-3 text-[9.2px] font-semibold uppercase tracking-wide";
 
 export function RepaymentTab(ctx: TabCtx) {
@@ -53,12 +54,44 @@ export function RepaymentTab(ctx: TabCtx) {
     <div className="space-y-4">
       <Section title="Repayment">
         <div className="space-y-3">
+          <RepaymentDate loan={loan} />
           <LoanSelector loans={ctx.detail.loans} value={loan.id} onChange={setLoanId} />
           <LoanCardHeader ctx={ctx} loan={loan} collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} />
           {!collapsed && <FinancialSummaryStrip loan={loan} outstanding={outstanding} />}
         </div>
       </Section>
       <PaymentsPanel ctx={ctx} loan={loan} />
+    </div>
+  );
+}
+
+/** The date the money is due, first — every figure below is "as of" it. */
+function RepaymentDate({ loan }: { loan: LoanView }) {
+  const due = isoDayToLocalDate(loan.dueDate);
+  const today = istCalendarToday();
+  const days = due ? daysBetween(today, due) : null;
+  const overdue = loan.status !== "CLOSED" && days != null && days < 0;
+  return (
+    <div
+      aria-label="Repayment date"
+      className={`rounded border-2 px-4 py-3 ${overdue ? "border-error-600 bg-error-50" : "border-info-500 bg-white"}`}
+    >
+      <div className={`text-[9.2px] font-semibold uppercase tracking-wide ${overdue ? "text-error-700" : "text-info-500"}`}>
+        Repayment date
+      </div>
+      <div className={`font-mono text-[1.6rem] font-bold leading-tight ${overdue ? "text-error-700" : "text-navy"}`}>
+        {due ? formatDate(due) : "—"}
+      </div>
+      <div className="text-[10.4px] text-ink">
+        On the borrower&apos;s salary day
+        {loan.status === "CLOSED" || days == null
+          ? ""
+          : overdue
+            ? ` · ${-days} ${days === -1 ? "day" : "days"} overdue`
+            : days === 0
+              ? " · due today"
+              : ` · in ${days} ${days === 1 ? "day" : "days"}`}
+      </div>
     </div>
   );
 }
@@ -72,6 +105,8 @@ function PaymentsPanel({ ctx, loan }: { ctx: TabCtx; loan: LoanView }) {
   const canRecord = role != null && can("customer:manage");
   const [addOpen, setAddOpen] = React.useState(false);
   const [rejectTarget, setRejectTarget] = React.useState<PaymentView | null>(null);
+  // Set by a successful verify: the "should they borrow again?" prompt (PostVerifyBlockDialog).
+  const [postVerify, setPostVerify] = React.useState<PostVerifyTarget | null>(null);
   const { outstanding } = useLoanData(ctx, loan.id);
   const closed = loan.status === "CLOSED";
   const settled = outstanding?.settledAmountPaise ?? null;
@@ -92,7 +127,13 @@ function PaymentsPanel({ ctx, loan }: { ctx: TabCtx; loan: LoanView }) {
     qc.invalidateQueries({ queryKey: ["staff-transactions"] });
     ctx.onChanged();
   };
-  const verify = useMutation({ mutationFn: (p: PaymentView) => staffApi.verifyRepayment(loan.id, p.id), onSuccess: done });
+  const verify = useMutation({
+    mutationFn: (p: PaymentView) => staffApi.verifyRepayment(loan.id, p.id),
+    onSuccess: () => {
+      done();
+      setPostVerify({ customerId: ctx.customerId, customerName: ctx.detail.profile?.fullName });
+    },
+  });
   const reject = useMutation({
     mutationFn: (v: { p: PaymentView; reason: RejectionReasonCode; note: string }) =>
       staffApi.rejectRepayment(loan.id, v.p.id, { reason: v.reason, note: v.note.trim() || undefined }),
@@ -143,7 +184,7 @@ function PaymentsPanel({ ctx, loan }: { ctx: TabCtx; loan: LoanView }) {
           <Field label="Days to due date" tone={ledger.isOverdue ? "error" : "ink"}>
             {ledger.daysToDue == null ? null : ledger.isOverdue ? `${ledger.daysOverdue} days overdue` : `${ledger.daysToDue} days`}
           </Field>
-          <Field label="Grace day" caption="no penalty">{ledger.graceDay ? formatDate(ledger.graceDay) : null}</Field>
+          {ledger.graceDay && <Field label="Grace day" caption="no penalty">{formatDate(ledger.graceDay)}</Field>}
         </FieldGrid>
         {loan.status === "ACTIVE" && !ledger.isOverdue && settled == null && (
           <div className="mt-3 flex items-start gap-2 rounded bg-success-50 px-3 py-2 text-[10.4px] text-success-700">
@@ -278,6 +319,7 @@ function PaymentsPanel({ ctx, loan }: { ctx: TabCtx; loan: LoanView }) {
         onClose={() => setRejectTarget(null)}
         onSubmit={(reason, note) => rejectTarget && reject.mutate({ p: rejectTarget, reason, note })}
       />
+      <PostVerifyBlockDialog target={postVerify} onClose={() => setPostVerify(null)} onBlocked={ctx.onChanged} />
     </>
   );
 }

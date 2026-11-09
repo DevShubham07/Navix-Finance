@@ -10,6 +10,9 @@ import com.navix.common.notification.event.BureauQuestionPendingEvent;
 import com.navix.common.notification.event.VerificationStepLinkEvent;
 import com.navix.common.notification.event.KycReminderEvent;
 import com.navix.common.notification.event.WaitlistSubmittedEvent;
+import com.navix.common.notification.event.MandateBankUnsupportedEvent;
+import com.navix.common.notification.event.MandateCancelledEvent;
+import com.navix.common.notification.event.MandateInviteEvent;
 import com.navix.common.notification.event.PaymentReminderEvent;
 import com.navix.common.notification.event.ProviderHealthEvent;
 import com.navix.common.notification.event.ReferralPayoutCreatedEvent;
@@ -377,6 +380,52 @@ public class NotificationEventListener {
                         .put("paymentAmount", NotificationFormat.inr(e.amountPaise()))
                         .put("remarks", e.remarks() != null ? e.remarks() : "no reason given")
                         .build());
+    }
+
+    /**
+     * A borrower's bank cannot do an API eMandate — page the Disbursement Heads, who are the ones the
+     * borrower's "our team will be in touch" promises.
+     */
+    @Async("notificationExecutor")
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onMandateBankUnsupported(MandateBankUnsupportedEvent e) {
+        dispatcher.dispatch(NotificationType.MANDATE_BANK_UNSUPPORTED, NotificationContext.builder()
+                .customerId(e.customerId())
+                .applicationId(e.applicationId())
+                .put("bankName", e.bankName() == null ? "The borrower's bank" : e.bankName())
+                .put("applicationId", String.valueOf(e.applicationId()))
+                .build());
+    }
+
+    /**
+     * Staff invited a customer to set up auto-repayment out of band. Goes on every channel we have,
+     * because the recipient is by definition not in the app right now.
+     */
+    @Async("notificationExecutor")
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onMandateInvite(MandateInviteEvent e) {
+        dispatcher.dispatch(NotificationType.MANDATE_SETUP_INVITE, NotificationContext.builder()
+                .customerId(e.customerId())
+                .applicationId(e.applicationId())
+                .put("name", e.name() == null || e.name().isBlank() ? "Customer" : e.name())
+                .put("link", e.link())
+                .build());
+    }
+
+    /** Staff cancelled the borrower's live mandate — tell them auto-repayment has stopped. */
+    @Async("notificationExecutor")
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onMandateCancelled(MandateCancelledEvent e) {
+        dispatcher.dispatch(NotificationType.MANDATE_CANCELLED, NotificationContext.builder()
+                .customerId(e.customerId())
+                .applicationId(e.applicationId())
+                .put("name", e.name() == null || e.name().isBlank() ? "Customer" : e.name())
+                .put("bankName", e.bankName() == null || e.bankName().isBlank() ? "your bank" : e.bankName())
+                .put("accountLast4", e.accountLast4() == null ? "----" : e.accountLast4())
+                .put("why", e.customerRequested()
+                        ? "This was done at your request."
+                        : "Our team may contact you to set up a new mandate.")
+                .build());
     }
 
     /** A referral qualified at disbursement — nudge the Disbursement Heads to settle the two payouts. */

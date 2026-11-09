@@ -125,6 +125,17 @@ public class AuthController {
     /** Lead sentence only — {@link AttemptLimiter} appends the real remaining wait. */
     private static final String TOO_MANY_RESETS = "Too many reset requests.";
 
+    /** A real hash at the encoder's own cost, so an unknown account costs the same BCrypt as a known one. */
+    private volatile String dummyHash;
+
+    private String dummyHash() {
+        String h = dummyHash;
+        if (h == null) {
+            dummyHash = h = passwordEncoder.encode(java.util.UUID.randomUUID().toString());
+        }
+        return h;
+    }
+
     @PostMapping("/staff/login")
     public ApiResponse<AuthResponse> staffLogin(@Valid @RequestBody StaffLoginRequest req) {
         // Ahead of the limiter on purpose: a bot that cannot answer the challenge must not be able
@@ -135,17 +146,15 @@ public class AuthController {
         // Before the lookup AND before BCrypt — otherwise the endpoint is an unbounded password oracle.
         limiter.hit(limitKey, MAX_LOGIN_ATTEMPTS, LOGIN_WINDOW, LOGIN_COOLOFF, TOO_MANY_LOGINS);
         StaffUser staff = staffRepository.findByEmail(req.email().trim()).orElse(null);
-        if (staff == null) {
-            log.warn("staff login failed reason=INVALID_CREDENTIALS email={}", maskedEmail);
-            throw new BusinessException("INVALID_CREDENTIALS", "Invalid email or password");
-        }
-        if (staff.getStatus() != StaffStatus.ACTIVE) {
-            log.warn("staff login failed reason=INACTIVE_STAFF staffId={} email={}", staff.getId(), maskedEmail);
-            throw new BusinessException("INACTIVE_STAFF", "This staff account is not active");
-        }
-        if (staff.getPasswordHash() == null
-                || !passwordEncoder.matches(req.password(), staff.getPasswordHash())) {
-            log.warn("staff login failed reason=INVALID_CREDENTIALS staffId={} email={}", staff.getId(), maskedEmail);
+        // One answer and one BCrypt cost for unknown, inactive and wrong-password alike, so neither
+        // the message nor the timing says whether the account exists (the reason stays in the log).
+        boolean real = staff != null && staff.getStatus() == StaffStatus.ACTIVE && staff.getPasswordHash() != null;
+        boolean passwordOk = passwordEncoder.matches(req.password(),
+                real ? staff.getPasswordHash() : dummyHash());
+        if (!real || !passwordOk) {
+            log.warn("staff login failed reason={} staffId={} email={}",
+                    staff == null ? "UNKNOWN" : staff.getStatus() != StaffStatus.ACTIVE ? "INACTIVE" : "BAD_PASSWORD",
+                    staff == null ? null : staff.getId(), maskedEmail);
             throw new BusinessException("INVALID_CREDENTIALS", "Invalid email or password");
         }
         // Right password: the three strikes are three WRONG ones, so wipe the slate.
@@ -203,8 +212,7 @@ public class AuthController {
             Long id = Long.valueOf(actorId);
             staffRepository.findById(id).ifPresent(s -> {
                 if (tokenSessionId != null && tokenSessionId.equals(s.getActiveSessionId())) {
-                    s.setActiveSessionId(null);
-                    s.setActiveSessionAt(null);
+                    s.revokeSessions(); // never null: a null sid re-validates every old token
                     staffRepository.save(s);
                     staffSessionRegistry.invalidate(id);
                 }
@@ -234,6 +242,7 @@ public class AuthController {
             s.setActiveSessionId(sessionId);
             s.setActiveSessionAt(java.time.Instant.now());
             staffRepository.save(s);
+            staffSessionRegistry.invalidate(s.getId());
         });
         String token = jwtService.issue(id, staff.name(), staff.role().name(),
                 JwtService.AUDIENCE_STAFF, sessionId);
@@ -266,13 +275,19 @@ public class AuthController {
     @PostMapping("/borrower/password-login")
     public ApiResponse<AuthResponse> borrowerPasswordLogin(@Valid @RequestBody BorrowerPasswordLoginRequest req) {
         captcha.verify(req.captchaToken(), ACTION_BORROWER_LOGIN); // ahead of the limiter — see staffLogin
-        String limitKey = "pw:" + req.mobile().replaceAll("\\D", "");
+        // One normalised number for the limiter, the claim check and the lookup: a "+91"/"0" prefix
+        // used to give the same account a fresh limiter key per spelling.
+        String mobile = tenDigits(req.mobile());
+        if (mobile.length() != 10) {
+            throw new BusinessException("INVALID_MOBILE", "Enter a 10-digit mobile number");
+        }
+        String limitKey = "pw:" + mobile;
         limiter.hit(limitKey, MAX_LOGIN_ATTEMPTS, LOGIN_WINDOW, LOGIN_COOLOFF, TOO_MANY_LOGINS);
         // Read-only until the password matches: writing the mobile→id claim here, before any
         // credential check, let an unauthenticated caller squat the id of a number they don't hold and
         // lock its real owner out with CUSTOMER_ID_COLLISION. A collision with an existing claim is
         // still refused up front, so a colliding number never gets to test this id's password.
-        long customerId = checkCustomerIdClaim(req.mobile());
+        long customerId = checkCustomerIdClaim(mobile);
         BorrowerCredential cred = credentialRepository.findById(customerId).orElse(null);
         if (cred == null) {
             log.warn("borrower password login failed reason=NO_PASSWORD_SET customerId={}", customerId);
@@ -284,8 +299,8 @@ public class AuthController {
             throw new BusinessException("INVALID_CREDENTIALS", "Invalid mobile or password");
         }
         limiter.clear(limitKey); // as on staff login: only wrong passwords count toward the three
-        claimCustomerId(req.mobile()); // first successful sign-in records the claim, as before
-        String name = resolveBorrowerName(null, req.mobile());
+        claimCustomerId(mobile); // first successful sign-in records the claim, as before
+        String name = resolveBorrowerName(null, mobile);
         String id = String.valueOf(customerId);
         String token = jwtService.issue(id, name, "BORROWER", JwtService.AUDIENCE_BORROWER);
         log.info("borrower password login ok customerId={}", customerId);

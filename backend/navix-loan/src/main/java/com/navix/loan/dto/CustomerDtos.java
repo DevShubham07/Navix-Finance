@@ -14,6 +14,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -118,7 +119,20 @@ public final class CustomerDtos {
             String failureSeverity,
             boolean failureRetryable,
             /** Bureau / UAN / work-email trust stars (tri-state), batch-enriched; null when not computed. */
-            com.navix.common.loan.TrustSignals trust) {
+            com.navix.common.loan.TrustSignals trust,
+            /** The latest application's stored {@code journey_step} pointer (JourneyService.Step /
+             *  OfferStep name); null when never set. May lag the borrower by one screen. */
+            String journeyStep,
+            /** Returning borrower: the latest (non-DRAFT) application was created after one of this
+             *  customer's loans CLOSED — same rule as the dashboard's RELOAN segment. */
+            boolean reloan,
+            /** A live block on the customer's mobile in the rejection register ({@code blocked_until}
+             *  in the future) — a staff block or a still-running cooling-off. The borrower cannot
+             *  start a new application while it holds. */
+            boolean blocked,
+            /** The staff-entered reason when {@link #blocked} comes from a staff block; the reason
+             *  code otherwise; null when not blocked. */
+            String blockedReason) {
     }
 
     /**
@@ -175,7 +189,11 @@ public final class CustomerDtos {
             long hold,
             long rejected,
             long closed,
-            long unallocated) {
+            long unallocated,
+            /** Overlay like {@code unallocated}: customers whose latest file is a reloan. */
+            long reloan,
+            /** Overlay like {@code unallocated}: customers with a live block on their mobile. */
+            long blocked) {
     }
 
     /** How many of the caller's loans sit in each days-past-due band. Counts of loans, not money. */
@@ -274,7 +292,19 @@ public final class CustomerDtos {
              *  keyed by loan id — the same figures {@code GET /api/loan/{id}/outstanding} returns,
              *  computed in the one batched pass that already priced {@link #loans}. Lets the Loans
              *  tab render the full breakdown per loan card without one call per card. */
-            Map<Long, LoanDtos.OutstandingView> outstandingByLoanId) {
+            Map<Long, LoanDtos.OutstandingView> outstandingByLoanId,
+            /** Same rule as {@link CustomerSummary#blocked()}: a live rejection-register block on the
+             *  customer's mobile. */
+            boolean blocked,
+            String blockedReason) {
+    }
+
+    /** Body of {@code POST /api/customers/{id}/block}: why the customer may not borrow again. */
+    public record BlockCustomerRequest(@NotBlank @Size(max = 300) String reason) {
+    }
+
+    /** The customer's block state after a block / unblock. */
+    public record CustomerBlockView(Long customerId, boolean blocked, String blockedReason) {
     }
 
     /**

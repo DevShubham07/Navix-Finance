@@ -89,7 +89,10 @@ export function QueueDateFilter({
   setPeriod,
   custom,
   setCustom,
+  label,
 }: {
+  /** What the window filters ("Joined", "Disbursed on", "Applied on"), shown before the choices. */
+  label?: string;
   period: QueuePeriod;
   setPeriod: (p: QueuePeriod) => void;
   custom: QueueRange;
@@ -97,6 +100,7 @@ export function QueueDateFilter({
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
+      {label && <span className="text-xs font-semibold text-muted">{label}</span>}
       <div className="flex flex-wrap gap-1 rounded border border-line bg-grey-50 p-1">
         {PERIODS.map((p) => (
           <button

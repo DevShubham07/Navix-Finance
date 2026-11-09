@@ -3,6 +3,7 @@ package com.navix.whatsapp;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.navix.common.whatsapp.WhatsAppGateway;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -49,6 +50,38 @@ public class SmartChatWhatsAppClient implements WhatsAppGateway {
         Map<String, Object> body = base(number, props.otpTemplate());
         body.put("otp_code", code);
         return post("send_template_message_auth", body);
+    }
+
+    /** GET carries the token as a query param, so the transport exception's URL must never be surfaced. */
+    @Override
+    public List<TemplateInfo> listTemplates() {
+        if (props.mock()) {
+            return List.of();
+        }
+        if (!props.live()) {
+            throw new WhatsAppException("WhatsApp disabled or token not configured");
+        }
+        try {
+            return parseTemplates(rest.get()
+                    .uri(uri -> uri.path("get_view_template").queryParam("token", "{token}").build(props.token()))
+                    .retrieve()
+                    .body(JsonNode.class));
+        } catch (RestClientException e) {
+            throw new WhatsAppException("WhatsApp template list could not be read");
+        }
+    }
+
+    /** {@code get_view_template} is a JSON array; an error envelope or anything else is a failure. */
+    static List<TemplateInfo> parseTemplates(JsonNode resp) {
+        if (resp == null || !resp.isArray()) {
+            throw new WhatsAppException("Unexpected WhatsApp template list response");
+        }
+        List<TemplateInfo> out = new ArrayList<>();
+        for (JsonNode t : resp) {
+            out.add(new TemplateInfo(t.path("template_name").asText(null), t.path("template_status").asText(null),
+                    t.path("rejected_reason").asText(null)));
+        }
+        return out;
     }
 
     private static Map<String, Object> base(String number, String templateName) {

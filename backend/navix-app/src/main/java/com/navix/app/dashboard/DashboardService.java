@@ -1,11 +1,13 @@
 package com.navix.app.dashboard;
 
+import com.navix.app.dashboard.BusinessQueries.CompanyPerfAgg;
 import com.navix.app.dashboard.BusinessQueries.CompanyUsersAgg;
 import com.navix.app.dashboard.BusinessQueries.GeoAgg;
 import com.navix.app.dashboard.BusinessQueries.MonthCollection;
 import com.navix.app.dashboard.CollectionQueries.AnalysisAgg;
 import com.navix.app.dashboard.CollectionQueries.CaseRow;
 import com.navix.app.dashboard.CollectionQueries.Collected;
+import com.navix.app.dashboard.CollectionQueries.CountAmount;
 import com.navix.app.dashboard.CollectionQueries.PtpTotals;
 import com.navix.app.dashboard.DashboardDtos.*;
 import com.navix.app.dashboard.MetricQueries.Agg;
@@ -68,6 +70,11 @@ public class DashboardService {
     private final StaffDirectory staffDirectory;
     private final RepaymentService repayments;
     private final LoanRepository loanRepository;
+
+    /** The collection SQL, for the integration test that pins each day query against the real schema. */
+    CollectionQueries collection() {
+        return collection;
+    }
 
     // ---- scope & period ---------------------------------------------------------------------
 
@@ -136,6 +143,50 @@ public class DashboardService {
     private static long owed(Map<Long, OutstandingBreakdown> priced, long loanId) {
         OutstandingBreakdown b = priced.get(loanId);
         return b == null ? 0 : b.outstandingPaise();
+    }
+
+    /**
+     * What a loan actually had to pay — the denominator of every collection %.
+     *
+     * <p>Not {@code loan.total_repayable}: that is fixed at disbursal as principal + interest to the
+     * due date, so a loan prepaid early (interest stops on the day it is paid) reads as under-collected
+     * even when fully repaid, and a late one (any grace-day interest + 2%/day penalty) reads as over 100%.
+     * <ul>
+     *   <li>Closed: principal + interest + penalty accrued up to the day it closed (frozen there). A
+     *       settlement waiver is not subtracted, so a settled loan shows the shortfall it really had.</li>
+     *   <li>Open: the larger of the contractual figure (what falls due on the due date) and what has
+     *       accrued so far (past due: penalty, plus grace-day interest on older loans, on top).</li>
+     * </ul>
+     */
+    static long dueAmount(Loan l, OutstandingBreakdown b) {
+        long accrued = l.getPrincipal() + b.interestPaise() + b.penaltyPaise();
+        if (l.getClosedOn() != null) {
+            return accrued;
+        }
+        long contractual = l.getTotalRepayable() == null ? 0 : l.getTotalRepayable();
+        return Math.max(contractual, accrued);
+    }
+
+    /** Σ {@link #dueAmount} per group, and the count of loans per group that owe nothing today. */
+    private record Due(Map<String, Long> byGroup, Map<String, Long> settledByGroup) {
+    }
+
+    /** Prices every loan once (as of today) and sums per group; "owe nothing" = closed or fully paid. */
+    private Due dueByGroup(List<GroupLoan> groupLoans) {
+        List<Loan> loans = loadLoans(groupLoans.stream().map(GroupLoan::loanId).toList());
+        Map<Long, Loan> byId = new HashMap<>();
+        loans.forEach(l -> byId.put(l.getId(), l));
+        Map<Long, OutstandingBreakdown> priced = price(loans, today());
+        Map<String, Long> due = new HashMap<>();
+        Map<String, Long> settled = new HashMap<>();
+        for (GroupLoan gl : groupLoans) {
+            Loan l = byId.get(gl.loanId());
+            OutstandingBreakdown b = priced.get(gl.loanId());
+            if (l == null || b == null) continue;
+            due.merge(gl.grp(), dueAmount(l, b), Long::sum);
+            if (l.getClosedOn() != null || b.outstandingPaise() == 0) settled.merge(gl.grp(), 1L, Long::sum);
+        }
+        return new Due(due, settled);
     }
 
     // ---- snapshot ---------------------------------------------------------------------------
@@ -233,13 +284,18 @@ public class DashboardService {
         YearMonth first = last.minusMonths(n - 1L);
 
         Map<String, MonthCollection> byMonth = business.monthlyCollection(scope, first.atDay(1), last.atEndOfMonth());
+        // What those loans actually had to pay, not the contractual total_repayable (see dueAmount).
+        Map<String, Long> dueByMonth = dueByGroup(
+                metrics.groupLoans(Metric.COLLECTION_MONTH, scope, first.atDay(1), last.atEndOfMonth(), null)).byGroup();
         Map<String, TargetRow> targets = targetMap(first, last);
         boolean admin = scope.orgWide();
         Map<String, Long> disbursed = admin ? business.disbursedByMonth(first.atDay(1), last.atEndOfMonth()) : Map.of();
 
         List<MonthRow> rows = new ArrayList<>();
         for (YearMonth m = first; !m.isAfter(last); m = m.plusMonths(1)) {
-            MonthCollection c = byMonth.getOrDefault(m.toString(), new MonthCollection(0, 0, 0, 0));
+            MonthCollection sql = byMonth.getOrDefault(m.toString(), new MonthCollection(0, 0, 0, 0));
+            MonthCollection c = new MonthCollection(sql.due(), dueByMonth.getOrDefault(m.toString(), 0L),
+                    sql.collected(), sql.preclosed());
             TargetRow t = targets.get(m.toString());
             int bp = t.collectionTargetBp();
             Double pct = ScoreFormulas.ratio(c.collected(), c.repayable());
@@ -323,6 +379,7 @@ public class DashboardService {
         LocalDate from = anchor.plusDays(1);
         LocalDate to = anchor.plusDays(7);
         Map<String, Agg> due = metrics.aggregateByGrp(Metric.DUE_ON, scope, from, to);
+        Map<String, Long> dueAmountByDay = dueByGroup(metrics.groupLoans(Metric.DUE_ON, scope, from, to, null)).byGroup();
         Map<String, Agg> pre = metrics.aggregateByGrp(Metric.PRECLOSED_ON, scope, from, to);
         Map<String, Agg> pend = metrics.aggregateByGrp(Metric.PENDING_ON, scope, from, to);
         Map<String, Agg> recv = metrics.aggregateByGrp(Metric.RECEIVED_ON, scope, from, to);
@@ -339,7 +396,7 @@ public class DashboardService {
         long[] t = new long[8];
         for (LocalDate d = from; !d.isAfter(to); d = d.plusDays(1)) {
             String k = d.toString();
-            long[] v = {due.getOrDefault(k, Agg.ZERO).count(), due.getOrDefault(k, Agg.ZERO).amount(),
+            long[] v = {due.getOrDefault(k, Agg.ZERO).count(), dueAmountByDay.getOrDefault(k, 0L),
                     pre.getOrDefault(k, Agg.ZERO).count(), pre.getOrDefault(k, Agg.ZERO).amount(),
                     pend.getOrDefault(k, Agg.ZERO).count(), owedByDay.getOrDefault(k, 0L),
                     recv.getOrDefault(k, Agg.ZERO).count(), recv.getOrDefault(k, Agg.ZERO).amount()};
@@ -396,6 +453,10 @@ public class DashboardService {
         }
         LocalDate d = date != null ? date : today();
         List<AnalysisAgg> raw = collection.analysis(scope, gb, d);
+        // Re-key grp "EXEC:<id>:<date>" / "STATE:<name>:<date>" to the analysis key (its middle part).
+        List<GroupLoan> dueLoans = metrics.groupLoans(Metric.COLLECTION_GROUP, scope, d, d, null, gb).stream()
+                .map(g -> new GroupLoan(g.grp().split(":", 3)[1], g.loanId())).toList();
+        Due due = dueByGroup(dueLoans);
         Map<Long, String> names = gb.equals("EXEC")
                 ? staffDirectory.namesFor(raw.stream().map(AnalysisAgg::key).filter(k -> k.matches("\\d+"))
                         .map(Long::valueOf).toList())
@@ -406,8 +467,10 @@ public class DashboardService {
                 label = a.key().matches("\\d+") ? names.getOrDefault(Long.valueOf(a.key()), "Staff " + a.key())
                         : "Unassigned";
             }
-            return new AnalysisRow(a.key(), label, a.loans(), a.principal(), a.repayable(), a.collectedCount(),
-                    a.collected(), average(a.principal(), a.loans()), ScoreFormulas.ratio(a.collected(), a.repayable()));
+            long owedTotal = due.byGroup().getOrDefault(a.key(), 0L);
+            return new AnalysisRow(a.key(), label, a.loans(), a.principal(), owedTotal,
+                    due.settledByGroup().getOrDefault(a.key(), 0L), a.collected(), average(a.principal(), a.loans()),
+                    ScoreFormulas.ratio(a.collected(), owedTotal));
         }).toList();
         return new CollectionAnalysis(d.toString(), gb, rows);
     }
@@ -440,22 +503,40 @@ public class DashboardService {
             case "DUE" -> Metric.CALENDAR_DUE;
             case "DISBURSED" -> Metric.CALENDAR_DISBURSED;
             case "BIRTHDAY" -> Metric.CALENDAR_BIRTHDAY;
-            default -> throw new BusinessException("INVALID_MODE", "mode must be DUE, DISBURSED or BIRTHDAY");
+            case "ACTIVE" -> Metric.CALENDAR_ACTIVE;
+            case "DUE_OPEN" -> Metric.CALENDAR_DUE_OPEN;
+            default -> throw new BusinessException("INVALID_MODE",
+                    "mode must be DUE, DUE_OPEN, DISBURSED, BIRTHDAY or ACTIVE");
         };
-        boolean money = m != Metric.CALENDAR_BIRTHDAY;
+        // Birthdays and the open-book count are counts only; every other mode carries money.
+        boolean money = m != Metric.CALENDAR_BIRTHDAY && m != Metric.CALENDAR_ACTIVE;
+        // ACTIVE is a daily snapshot of the open book: summing its days would count one loan once per
+        // day it was open, so the month's totals are the figure on its last day (today, this month).
+        boolean snapshot = m == Metric.CALENDAR_ACTIVE;
+        LocalDate anchor = ym.equals(YearMonth.from(today())) ? today() : ym.atEndOfMonth();
         Map<String, Agg> byDay = metrics.aggregateByGrp(m, scope, ym.atDay(1), ym.atEndOfMonth());
+        // DUE_OPEN: what those open loans still owe today (penalty-aware), not their contract amount.
+        Map<String, Long> owedByDay = new HashMap<>();
+        if (m.owedSum()) {
+            List<GroupLoan> due = metrics.groupLoans(m, scope, ym.atDay(1), ym.atEndOfMonth(), null);
+            Map<Long, OutstandingBreakdown> priced = price(loadLoans(due.stream().map(GroupLoan::loanId).toList()), today());
+            for (GroupLoan gl : due) owedByDay.merge(gl.grp(), owed(priced, gl.loanId()), Long::sum);
+        }
         List<CalendarDay> days = new ArrayList<>();
         long withData = 0;
         long totalCount = 0;
         long totalAmount = 0;
         for (LocalDate d = ym.atDay(1); !d.isAfter(ym.atEndOfMonth()); d = d.plusDays(1)) {
             Agg a = byDay.getOrDefault(d.toString(), Agg.ZERO);
+            long amount = m.owedSum() ? owedByDay.getOrDefault(d.toString(), 0L) : a.amount();
             if (a.count() > 0) withData++;
-            totalCount += a.count();
-            totalAmount += a.amount();
-            days.add(new CalendarDay(d.toString(), a.count(), money ? a.amount() : null));
+            if (!snapshot || d.equals(anchor)) {
+                totalCount += a.count();
+                totalAmount += amount;
+            }
+            days.add(new CalendarDay(d.toString(), a.count(), money ? amount : null));
         }
-        return new Calendar(ym.toString(), md, days, withData, totalCount, money ? totalAmount : null);
+        return new Calendar(ym.toString(), md, days, withData, totalCount, money ? totalAmount : null, snapshot);
     }
 
     // ---- geo & companies --------------------------------------------------------------------
@@ -486,9 +567,15 @@ public class DashboardService {
         long totalUsers = business.distinctUsers(from, to);
         List<CompanyUsers> users = all.stream().limit(TOP_COMPANIES).map(c -> new CompanyUsers(titleCase(c.company()),
                 c.users(), ScoreFormulas.ratio(c.users(), totalUsers), c.avgSalary(), c.employmentType())).toList();
-        List<CompanyPerformance> performance = business.companyPerformance(scope, from, to, TOP_COMPANIES).stream()
-                .map(c -> new CompanyPerformance(titleCase(c.company()), c.disbursed(), c.principal(), c.repayable(),
-                        c.collected(), ScoreFormulas.ratio(c.collected(), c.repayable()))).toList();
+        List<CompanyPerfAgg> top = business.companyPerformance(scope, from, to, TOP_COMPANIES);
+        java.util.Set<String> names = new java.util.HashSet<>(top.stream().map(CompanyPerfAgg::company).toList());
+        Map<String, Long> dueByCompany = dueByGroup(metrics.groupLoans(Metric.COMPANY, scope, from, to, null).stream()
+                .filter(g -> names.contains(g.grp())).toList()).byGroup();
+        List<CompanyPerformance> performance = top.stream().map(c -> {
+            long owedTotal = dueByCompany.getOrDefault(c.company(), 0L);
+            return new CompanyPerformance(titleCase(c.company()), c.disbursed(), c.principal(), owedTotal,
+                    c.collected(), ScoreFormulas.ratio(c.collected(), owedTotal));
+        }).toList();
         return new Companies(all.size(), totalUsers, users, performance);
     }
 
@@ -557,6 +644,64 @@ public class DashboardService {
 
     private static AllocRow allocRow(Long id, String name, long[] v) {
         return new AllocRow(id, name, v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7]);
+    }
+
+    // ---- collection head desk: team today / tomorrow ----------------------------------------
+
+    /**
+     * One day of the collections team, for the Head's desk: every active Collection Executive always
+     * has a row (a zero day is information), and a Head appears only when they hold figures of their
+     * own that day. The roster is the whole collections team for a COLLECTION_HEAD view -- they are a
+     * Head -- narrowed by an explicit {@code staffIds} request the way the allocation table is.
+     */
+    public TeamDay collectionsTeamDay(DashboardScope scope, LocalDate date) {
+        scope.require("ADMIN", "COLLECTION_HEAD");
+        List<StaffSummary> executives = scope.filterStaff(staffDirectory.listActive("COLLECTION_EXECUTIVE"),
+                StaffSummary::id);
+        List<StaffSummary> heads = scope.filterStaff(staffDirectory.listActive("COLLECTION_HEAD"), StaffSummary::id);
+
+        Map<Long, Long> calls = collection.callsLoggedByOfficer(scope, date);
+        Map<Long, CountAmount> promises = collection.promisesDueByOfficer(scope, date);
+        Map<Long, CountAmount> parts = collection.partPaymentsByOfficer(scope, date);
+        Map<Long, Long> collected = new HashMap<>();
+        for (Collected c : collection.collectedByOfficer(scope, date, date)) {
+            collected.merge(c.staffId(), c.paise(), Long::sum);
+        }
+        Map<Long, Long> closed = collection.closedByOfficer(scope, date, date);
+        Map<Long, Long> due = collection.dueOnByOfficer(scope, date);
+
+        List<TeamDayRow> rows = new ArrayList<>();
+        for (StaffSummary s : executives) rows.add(teamDayRow(s, calls, promises, parts, collected, closed, due));
+        for (StaffSummary s : heads) {
+            TeamDayRow r = teamDayRow(s, calls, promises, parts, collected, closed, due);
+            if (r.calls() + r.promisesDue() + r.partPayments() + r.collectedPaise() + r.closed() + r.dueCount() > 0) {
+                rows.add(r);
+            }
+        }
+        rows.sort(java.util.Comparator.comparing(TeamDayRow::name, String.CASE_INSENSITIVE_ORDER));
+        long[] t = new long[8];
+        for (TeamDayRow r : rows) {
+            t[0] += r.calls();
+            t[1] += r.promisesDue();
+            t[2] += r.promisesDuePaise();
+            t[3] += r.partPayments();
+            t[4] += r.partPaymentsPaise();
+            t[5] += r.collectedPaise();
+            t[6] += r.closed();
+            t[7] += r.dueCount();
+        }
+        TeamDayRow totals = new TeamDayRow(null, "Total", null, t[0], t[1], t[2], t[3], t[4], t[5], t[6], t[7]);
+        return new TeamDay(date.toString(), rows, totals);
+    }
+
+    private static TeamDayRow teamDayRow(StaffSummary s, Map<Long, Long> calls, Map<Long, CountAmount> promises,
+                                         Map<Long, CountAmount> parts, Map<Long, Long> collected, Map<Long, Long> closed,
+                                         Map<Long, Long> due) {
+        CountAmount p = promises.getOrDefault(s.id(), new CountAmount(0, 0));
+        CountAmount pp = parts.getOrDefault(s.id(), new CountAmount(0, 0));
+        return new TeamDayRow(s.id(), s.name(), s.role(), calls.getOrDefault(s.id(), 0L), p.count(), p.paise(),
+                pp.count(), pp.paise(), collected.getOrDefault(s.id(), 0L), closed.getOrDefault(s.id(), 0L),
+                due.getOrDefault(s.id(), 0L));
     }
 
     // ---- leaderboard ------------------------------------------------------------------------
@@ -805,8 +950,11 @@ public class DashboardService {
     }
 
     private RoleView accountantView(DashboardScope scope, LocalDate from, LocalDate to, LocalDate[] prev) {
-        Map<String, long[]> now = team.paymentsByStatus(from, to);
-        Map<String, long[]> before = team.paymentsByStatus(prev[0], prev[1]);
+        // A real accountant sees the payments they decided; ADMIN (working as Accountant) sees the whole desk.
+        // Pending verification stays desk-wide: that queue belongs to no one until someone decides it.
+        Long decidedBy = "ACCOUNTANT".equals(scope.realRole()) ? scope.selfId() : null;
+        Map<String, long[]> now = team.paymentsByStatus(from, to, decidedBy);
+        Map<String, long[]> before = team.paymentsByStatus(prev[0], prev[1], decidedBy);
         long[] zero = new long[2];
         long[] pending = team.pendingVerification();
         List<RoleCard> cards = List.of(
@@ -857,6 +1005,8 @@ public class DashboardService {
             Long amount = r.amount();
             if (pricedPosition(m) && l != null && priced.get(l.getId()) != null) {
                 amount = figure(m, l, priced.get(l.getId()));
+            } else if (m.dueAmount() && l != null && priced.get(l.getId()) != null) {
+                amount = dueAmount(l, priced.get(l.getId()));
             }
             rows.add(new RecordRow(r.applicationId(), r.loanId(), d == null ? null : d.customerId(),
                     d == null ? null : d.fullName(), d == null ? null : last4(d.mobile()), d == null ? null : d.status(),
@@ -868,7 +1018,15 @@ public class DashboardService {
                     d == null ? null : d.state()));
         }
         long sum = p.sum();
-        if (m.owedSum()) {
+        if (m.dueAmount()) {
+            List<Loan> all = loadLoans(p.loanIds());
+            Map<Long, OutstandingBreakdown> allPriced = price(all, asOf);
+            sum = 0;
+            for (Loan l : all) {
+                OutstandingBreakdown b = allPriced.get(l.getId());
+                if (b != null) sum += dueAmount(l, b);
+            }
+        } else if (m.owedSum()) {
             List<Loan> all = loadLoans(p.loanIds());
             Map<Long, OutstandingBreakdown> allPriced = price(all, asOf);
             sum = 0;

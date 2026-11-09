@@ -1,0 +1,581 @@
+{
+ "components": {
+  "schemas": {
+   "ExternalMandate_Client": {
+    "properties": {
+     "access_token": {
+      "$ref": "#/components/schemas/GatewayToken_Client"
+     },
+     "auth_sub_mode": {
+      "description": "In case of API mandate, sub auth mode type",
+      "enum": [
+       "net_banking",
+       "debit",
+       "aadhaar"
+      ],
+      "type": "string"
+     },
+     "created_at": {
+      "description": "Timestamp at which mandate was created",
+      "format": "date-time",
+      "type": "string"
+     },
+     "id": {
+      "description": "Unique ID to identify mandates provided by Digio.",
+      "type": "string"
+     },
+     "mandate_details": {
+      "$ref": "#/components/schemas/MandateDetails_Client"
+     },
+     "mandate_id": {
+      "description": "Unique ID to identify mandates provided by Digio.",
+      "type": "string"
+     },
+     "mode": {
+      "description": "Mode of mandate authentication",
+      "enum": [
+       "api",
+       "esign",
+       "physical",
+       "any",
+       "upi"
+      ],
+      "type": "string"
+     },
+     "npci_auth_failed_error": {
+      "description": "Failure reason if shared by NPCI after rejecting a request at NPCI gateway level",
+      "type": "string"
+     },
+     "npci_auth_reject_reason": {
+      "description": "Failure reason if shared by bank post NPCI gateway acceptence",
+      "type": "string"
+     },
+     "service_provider_details": {
+      "$ref": "#/components/schemas/PublicCorporateConfigData_Client"
+     },
+     "state": {
+      "description": "'partial': \n'signed': \n'expired': \n'auth_success': \n'auth_failed': \n'cancelled': \n'revoked': \n",
+      "enum": [
+       "partial",
+       "complete",
+       "signed",
+       "expired",
+       "auth_success",
+       "auth_failed",
+       "cancelled",
+       "revoked"
+      ],
+      "type": "string"
+     },
+     "sub_user": {
+      "$ref": "#/components/schemas/ExternalSubUser_Client"
+     },
+     "type": {
+      "description": "Use case of mandate",
+      "enum": [
+       "CREATE",
+       "AMEND"
+      ],
+      "type": "string"
+     },
+     "umrn": {
+      "description": "UMRN of the mandate registered",
+      "type": "string"
+     },
+     "updated_at": {
+      "description": "Last modification timestamp of the mandate",
+      "format": "date-time",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "ExternalSubUser_Client": {
+    "properties": {
+     "email_id": {
+      "description": "Sub-user's email id, if registered",
+      "type": "string"
+     },
+     "id": {
+      "description": "Unique ID for sub-user",
+      "type": "string"
+     },
+     "identifier": {
+      "description": "This denotes what type of identifier was used",
+      "enum": [
+       "email",
+       "mobile",
+       "unknown"
+      ],
+      "type": "string"
+     },
+     "identifier_value": {
+      "description": "Identifier for sub-user, this is generally emailID or mobile number",
+      "type": "string"
+     },
+     "mobile": {
+      "description": "Subuser's mobile number",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "GatewayToken_Client": {
+    "properties": {
+     "created_at": {
+      "description": "'yyyy-mm-dd hh:mm:ss': Timestamp of generation",
+      "format": "date-time",
+      "type": "string"
+     },
+     "entity_id": {
+      "description": "Unique identifier of the parent entity the access token belongs to",
+      "type": "string"
+     },
+     "id": {
+      "description": "Unique identifier referencing an access token",
+      "type": "string"
+     },
+     "valid_till": {
+      "description": "DateTime at which the access token expires. New token can be generated when expired with the access token generation API mentioned in the document.",
+      "format": "date-time",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "GenericBadRequestResponse_Client": {
+    "properties": {
+     "code": {
+      "description": "Error code",
+      "type": "string"
+     },
+     "details": {
+      "description": "Details about the exception. Usually contains the exception id for reference.",
+      "type": "string"
+     },
+     "message": {
+      "description": "Description of the error",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "MandateCreateFormRequest_Client": {
+    "example": {
+     "auth_mode": "upi",
+     "corporate_config_id": "<config_id>",
+     "customer_identifier": "<customer_mobile/email>",
+     "mandate_data": {
+      "first_collection_date": "2023-10-27",
+      "maximum_amount": "1"
+     },
+     "mandate_type": "create"
+    },
+    "properties": {
+     "auth_mode": {
+      "description": " Authentication mode for mandate. Possible values are:\n'upi'",
+      "enum": [
+       "upi"
+      ],
+      "type": "string"
+     },
+     "corporate_config_id": {
+      "description": "Corporate profile created from dashboard has below info and is auto populated during user authentication.\nUtility Code\nService provider name\nSponsor bank name\nSponsor bank \nSponsor bank ifsc\n",
+      "type": "string"
+     },
+     "customer_identifier": {
+      "description": "User email or mobile",
+      "type": "string"
+     },
+     "expire_in_days": {
+      "description": "Please pass this value to allow the end user to be able to submit the mandate image (in case of physical mandate) or perform eSign authentication within \u2018X\u2019 days. X you can pass as the value",
+      "format": "int32",
+      "maximum": 90,
+      "minimum": 1,
+      "type": "integer"
+     },
+     "generate_access_token": {
+      "default": false,
+      "description": "If true, will receive an access_token object in response. access_token used to bypass first factor authentication in SDKs.",
+      "type": "boolean"
+     },
+     "include_authentication_url": {
+      "description": "Pass True if authentication link is required in response payload based on above customer\u2019s identifier",
+      "enum": [
+       true,
+       false
+      ],
+      "type": "boolean"
+     },
+     "mandate_data": {
+      "$ref": "#/components/schemas/MandateMeta_Client"
+     },
+     "mandate_type": {
+      "description": "Type of mandate to be created: \n'create': \n'amend':",
+      "enum": [
+       "CREATE",
+       "AMEND"
+      ],
+      "type": "string"
+     },
+     "notify_customer": {
+      "description": "Set true to send notification to customer with a gateway link to authenticate/sign the mandate. Else, false",
+      "enum": [
+       true,
+       false
+      ],
+      "type": "boolean"
+     },
+     "sub_user_identifier": {
+      "description": "If mandate needs to be reflected to specific sub-user",
+      "type": "string"
+     }
+    },
+    "required": [
+     "corporate_config_id",
+     "mandate_data",
+     "mandate_type"
+    ],
+    "type": "object"
+   },
+   "MandateDetails_Client": {
+    "description": "Details of mandate",
+    "properties": {
+     "auth_type": {
+      "description": "Mode of authentication used for mandate",
+      "enum": [
+       "api",
+       "esign",
+       "physical",
+       "any",
+       "upi"
+      ],
+      "type": "string"
+     },
+     "authentication_time": {
+      "description": "Timestamp of mandate authentication",
+      "format": "date-time",
+      "type": "string"
+     },
+     "collection_amount": {
+      "description": "For fixed amount mandate, this denotes the amount",
+      "type": "number"
+     },
+     "customer_account_number": {
+      "description": "Masked account number of customer",
+      "type": "string"
+     },
+     "customer_account_type": {
+      "description": "Type of bank account of customer",
+      "enum": [
+       "savings",
+       "current",
+       "cc",
+       "sb_nre",
+       "sb_nro",
+       "other"
+      ],
+      "type": "string"
+     },
+     "customer_email": {
+      "description": "Customer email number",
+      "type": "string"
+     },
+     "customer_identifier": {
+      "description": "Identifier for customer, could be email or mobile number",
+      "type": "string"
+     },
+     "customer_mobile": {
+      "description": "Mobile number of customer",
+      "type": "string"
+     },
+     "customer_name": {
+      "description": "Name of customer",
+      "type": "string"
+     },
+     "customer_ref_number": {
+      "description": "Unique Reference Number identifier the customer",
+      "type": "string"
+     },
+     "destination_bank_id": {
+      "description": "IFSC code of customer's bank account",
+      "type": "string"
+     },
+     "destination_bank_name": {
+      "description": "Name of customer's bank",
+      "type": "string"
+     },
+     "file_name": {
+      "description": "Name of file shared with the bank",
+      "type": "string"
+     },
+     "final_collection_date": {
+      "description": "Date of last debit",
+      "format": "date-time",
+      "type": "string"
+     },
+     "first_collection_date": {
+      "description": "Date of first debit",
+      "format": "date-time",
+      "type": "string"
+     },
+     "frequency": {
+      "description": "In case of recurring mandate, denotes the frequency.",
+      "enum": [
+       "ADHO",
+       "INDA",
+       "DAIL",
+       "WEEK",
+       "MNTH",
+       "QURT",
+       "MIAN",
+       "YEAR",
+       "ONETIME",
+       "BIMN"
+      ],
+      "type": "string"
+     },
+     "is_recurring": {
+      "description": "Denotes whether it is a recurring mandate or not",
+      "type": "boolean"
+     },
+     "maximum_amount": {
+      "description": "Maximum amount that may be collected from the customer's account",
+      "type": "number"
+     },
+     "npci_txn_id": {
+      "description": "Transaction ID in reference to NPCI",
+      "type": "string"
+     },
+     "scheme_ref_number": {
+      "description": "Unique number maintained by Corporate for the reconciliation",
+      "type": "string"
+     },
+     "sponsor_bank_name": {
+      "description": "Name of sponsor's bank account",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "MandateMeta_Client": {
+    "description": "Data attributes of mandate.",
+    "properties": {
+     "account_validation": {
+      "default": false,
+      "description": "Set to true if mandate should be auto revoked in case the customer\u2019s account number shared by merchant in \u201ccustomer_account_number\u201d is different then the account number used by customer to authenticate the UPI mandate.",
+      "enum": [
+       true,
+       false
+      ],
+      "type": "boolean"
+     },
+     "auto_debit_amount_in_paise": {
+      "description": "Default 100 ( 1 Rs Auto Debit) Note: Only applicable in case auto debit amount needs to be customized. It should be less than maximum_amount",
+      "format": "int32",
+      "type": "integer"
+     },
+     "collection_amount": {
+      "description": "Collection amount for the mandate",
+      "maximum": 100000,
+      "minimum": 1,
+      "type": "number"
+     },
+     "customer_account_number": {
+      "description": "Customer bank account number<br>Min len = 8 Max len = 18<br>All numeric<br>",
+      "maxLength": 34,
+      "minLength": 0,
+      "type": "string"
+     },
+     "customer_email": {
+      "description": "Customer Email address",
+      "maxLength": 50,
+      "minLength": 0,
+      "type": "string"
+     },
+     "customer_mobile": {
+      "description": "Customer Mobile number",
+      "maxLength": 34,
+      "minLength": 0,
+      "type": "string"
+     },
+     "customer_name": {
+      "description": "Recommended that the name is same as per Destination Bank records <br>Max len = 100<br>",
+      "maxLength": 100,
+      "minLength": 0,
+      "pattern": "^[0-9A-Za-z]{1,}[0-9A-Za-z\\s.]{0,}$",
+      "type": "string"
+     },
+     "customer_ref_number": {
+      "description": "Reference number maintained by Corporate <br>e.g.: Customer_id, Loan account number, Folio number, Insurance policy number etc<br>Max len = 20, ALPHA and NUMERIC allowed<br>Note :  Please pass this attribute unique for each mandate created, as many sponsor banks consider it as a unique identifier at their end. <br>",
+      "maxLength": 20,
+      "minLength": 0,
+      "pattern": "^[0-9A-Za-z]{0,}$",
+      "type": "string"
+     },
+     "customer_vpa": {
+      "description": "Virtual address of the customer",
+      "type": "string"
+     },
+     "final_collection_date": {
+      "description": "Date for Last Debit in yyyy-mm-dd",
+      "format": "date-time",
+      "type": "string"
+     },
+     "first_collection_date": {
+      "description": "Date for First Debit in yyyy-mm-dd ; means the date from which you want the mandate to be registered Note : Ideally it should be the current date on which the mandate is created. So auto debit can be successful",
+      "format": "date-time",
+      "type": "string"
+     },
+     "frequency": {
+      "default": "ADHO",
+      "description": "If is_recurring : true, pass debit frequency. <br><br>Note: Choose one from below, commensurate with your use case category (Management Category Code) eg: 7322 (Loan Installment should have a defined frequency that is commensurate with the EMI schedule agreed upon with the customer eg: Monthly). Incorrect frequency passed for a management category, may lead to mandate registration failure.<br>Adhoc  [means \u201cAs on when presented\u201d]<br>IntraDay<br>Daily<br>Weekly<br>Monthly<br>BiMonthly<br>Quarterly<br>Semiannually<br>Yearly<br>",
+      "enum": [
+       "ADHO",
+       "INDA",
+       "DAIL",
+       "WEEK",
+       "MNTH",
+       "QURT",
+       "MIAN",
+       "YEAR",
+       "ONETIME",
+       "BIMN"
+      ],
+      "type": "string"
+     },
+     "include_upi_url": {
+      "default": false,
+      "description": "This is used if intent url is required in the response",
+      "type": "boolean"
+     },
+     "is_recurring": {
+      "description": "True / False<br>Pass False if its a one-time debit<br>",
+      "type": "boolean"
+     },
+     "maximum_amount": {
+      "description": "Maximum amount that may be collected from the customer's account, per instruction eg: 4500.50<br><br>Note: Either of collection_amount or maximum_amount is mandatory. <br><br> UPI AutoPay Additional Factor of Authentication (AFA) (viz. UPI PIN) limit has been relaxed from 15,000/- to 2,00,000/- for the below Merchant Category Codes (MCC).<br><b>MCC</b>&nbsp;&nbsp;<b>Description</b><br>5413: Credit Card Bill Payments<br>5960:  Direct Marketing Insurance Services<br>6012:  Financial Institutions Merchandise and Services<br>6211:  Securities brokers and dealers<br>6300:  Insurance sales, underwriting and premiums<br>6381:  Insurance Premiums<br>6399:  Insurance<br>6529:  LIC <br><br>",
+      "maximum": 200000,
+      "minimum": 1,
+      "type": "number"
+     },
+     "scheme_ref_number": {
+      "description": "Additional Reference number maintained by Corporate for the reconciliation<br>E.g:  Loan account number, Folio number, Insurance policy number etc<br>Max len = 20, ALPHA and NUMERIC allowed<br>",
+      "maxLength": 20,
+      "minLength": 0,
+      "pattern": "^[0-9A-Za-z]{0,}$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "collection_amount",
+     "customer_account_number",
+     "customer_name",
+     "first_collection_date",
+     "final_collection_date",
+     "frequency",
+     "is_recurring",
+     "maximum_amount"
+    ],
+    "type": "object"
+   },
+   "PublicCorporateConfigData_Client": {
+    "description": "Details of service provider",
+    "properties": {
+     "is_enabled_for_aadhaar_auth": {
+      "description": "It is only applicable for API mandate and it returns true/false. If the sponsor bank supports authentication using aadhaar then it returns true, else it returns false.",
+      "type": "boolean"
+     },
+     "service_provider_name": {
+      "description": "Service provider name",
+      "type": "string"
+     },
+     "service_provider_utility_code": {
+      "description": "Utility code of service provider",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   }
+  },
+  "securitySchemes": {
+   "api_auth": {
+    "in": "header",
+    "scheme": "basic",
+    "type": "http"
+   }
+  }
+ },
+ "info": {
+  "contact": {
+   "email": "support@digio.in"
+  },
+  "description": "Getting started with Digio Rest Apis",
+  "title": "Digio Apis",
+  "x-provenance": "Fetched 2026-10-16 from https://documentation.digio.in/swagger/final_post_createMandateForm_upi.json (servers[] replaced with documented hosts)"
+ },
+ "openapi": "3.0.1",
+ "paths": {
+  "/v3/client/mandate/create_form": {
+   "post": {
+    "description": "This API is used to create a upi mandate request",
+    "operationId": "createMandateForm",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/MandateCreateFormRequest_Client"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ExternalMandate_Client"
+        }
+       }
+      }
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "examples": {
+         "Bad Request": {
+          "description": "Bad Request",
+          "value": {
+           "code": "REQUEST_VALIDATION_FAILED",
+           "details": "EX23297402937402",
+           "message": "Request Validation Failed"
+          }
+         }
+        },
+        "schema": {
+         "$ref": "#/components/schemas/GenericBadRequestResponse_Client"
+        }
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "api_auth": []
+     }
+    ],
+    "summary": "Create Mandate Request"
+   }
+  }
+ },
+ "servers": [
+  {
+   "description": "Production",
+   "url": "https://api.digio.in"
+  },
+  {
+   "description": "Sandbox",
+   "url": "https://ext.digio.in:444"
+  }
+ ]
+}

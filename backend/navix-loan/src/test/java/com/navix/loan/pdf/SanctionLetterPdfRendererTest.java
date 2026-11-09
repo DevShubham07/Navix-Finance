@@ -38,6 +38,41 @@ class SanctionLetterPdfRendererTest {
     }
 
     @Test
+    void namesTheLenderAndStatesTheAllInApr() throws Exception {
+        // ₹15,000 over 30 days, GST excluded: 13,500 after fee, total 19,500 → 6,000 / 13,500 × 365 / 30 = 540.7%.
+        SanctionLetterPdfRenderer.Facts f = new SanctionLetterPdfRenderer.Facts(
+                54L, "Asha Kumari", "AZKPQ3156X", "9811100948",
+                1_500_000L, 150_000L, 27_000L, 1_323_000L, 450_000L, 1_950_000L, 30,
+                LocalDate.of(2026, 8, 7), LocalDate.of(2026, 9, 6), "•••• 9012",
+                "Lalit Kumar", "9716760246", "grievance@dhanboost.com");
+
+        PdfReader reader = new PdfReader(renderer.render(f));
+        String text = new PdfTextExtractor(reader).getTextFromPage(1);
+        reader.close();
+
+        assertThat(text.replaceAll("\\s+", " ")).contains("MLB Securities Private Limited", "14.00526", "540.7% per year", "excluding GST",
+                "credit information companies");
+    }
+
+    @Test
+    void discountRowAppearsOnlyWhenADiscountApplies() throws Exception {
+        // 5% of Rs 10,000: discount 500, fee 500, GST 90, net 9,410.
+        SanctionLetterPdfRenderer.Facts with = new SanctionLetterPdfRenderer.Facts(
+                54L, "Asha Kumari", null, null, 1_000_000L, 50_000L, 9_000L, 941_000L, 270_000L, 1_270_000L, 27,
+                LocalDate.of(2026, 8, 7), LocalDate.of(2026, 9, 3), null, null, null, null, 50_000L);
+        SanctionLetterPdfRenderer.Facts without = new SanctionLetterPdfRenderer.Facts(
+                54L, "Asha Kumari", null, null, 1_000_000L, 100_000L, 18_000L, 882_000L, 270_000L, 1_270_000L, 27,
+                LocalDate.of(2026, 8, 7), LocalDate.of(2026, 9, 3), null, null, null, null);
+
+        PdfReader a = new PdfReader(renderer.render(with));
+        PdfReader b = new PdfReader(renderer.render(without));
+        assertThat(new PdfTextExtractor(a).getTextFromPage(1)).contains("Repayment discount applied");
+        assertThat(new PdfTextExtractor(b).getTextFromPage(1)).doesNotContain("Repayment discount applied");
+        a.close();
+        b.close();
+    }
+
+    @Test
     void rendersWhenIdentityAndAccountAreNotYetKnown() {
         SanctionLetterPdfRenderer.Facts f = new SanctionLetterPdfRenderer.Facts(
                 1L, null, null, null,
@@ -67,6 +102,7 @@ class SanctionLetterPdfRendererTest {
 
         PdfReader reader = new PdfReader(pdf);
         String text = new PdfTextExtractor(reader).getTextFromPage(1);
+        assertThat(reader.getNumberOfPages()).isEqualTo(1);
         assertThat(text).contains("Borrower signature", "Signed by Asha Kumari",
                 "9 Aug 2026", "IST", "Application #54");
         assertThat(reader.getPageN(1).getAsDict(com.lowagie.text.pdf.PdfName.RESOURCES)

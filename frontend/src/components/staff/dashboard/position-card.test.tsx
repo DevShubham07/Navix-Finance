@@ -31,4 +31,14 @@ describe("PositionCard", () => {
       metric="POSITION_PENALTY" definition="d" onOpen={() => {}} />);
     expect(screen.getByRole("button", { name: /^Total penalty: ₹0/ })).toBeInTheDocument();
   });
+
+  it("prints its caption and explanation on the card itself — phones cannot hover", () => {
+    render(<PositionCard title="Net disbursed" tone="teal" icon={Banknote} paise={882_000} loans={1}
+      metric="POSITION_NET" caption="Cash sent to customers' banks"
+      definition="A ₹100 loan puts ₹88.20 in the customer's account." onOpen={() => {}} />);
+    const card = screen.getByRole("button", { name: /^Net disbursed:/ });
+    expect(card).toHaveTextContent("Cash sent to customers' banks");
+    expect(card).toHaveTextContent("A ₹100 loan puts ₹88.20 in the customer's account.");
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  });
 });

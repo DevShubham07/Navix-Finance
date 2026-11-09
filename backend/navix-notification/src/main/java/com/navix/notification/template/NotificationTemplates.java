@@ -158,8 +158,9 @@ public class NotificationTemplates {
 
         inApp(NotificationType.LOAN_SANCTIONED, "Your loan is sanctioned",
                 "Application #{applicationId} is sanctioned — finish the remaining steps to receive it.");
+        // DLT refused "sanctioned" as promotional, so this shares DHANBOOST_REBORROW_APPROVED_V1's wording and id.
         sms(NotificationType.LOAN_SANCTIONED,
-                "Dear {name}, your DhanBoost loan application {applicationId} is sanctioned. Complete the "
+                "Dear {name}, your DhanBoost application {applicationId} is approved. Complete the "
                         + "remaining steps at https://dhanboost.com/login. - DhanBoost");
         email(NotificationType.LOAN_SANCTIONED, "Your DhanBoost loan is sanctioned",
                 "Hi {name},\n\nGood news — loan application #{applicationId} has been sanctioned by our "
@@ -203,6 +204,31 @@ public class NotificationTemplates {
                 "Hi {name},\n\nUnfortunately your loan application #{applicationId} was declined at the "
                         + "disbursement stage.\n\n— DhanBoost");
 
+        inApp(NotificationType.MANDATE_SETUP_INVITE, "Set up auto-repayment",
+                "Set up auto-repayment for your DhanBoost loan so your instalment is collected "
+                        + "automatically. It takes a minute: {link}");
+        // Rs. not the rupee glyph, and the URL must be portal-whitelisted (CLAUDE.md section 14).
+        // GO-LIVE: this wording needs DLT approval before it can send at all.
+        sms(NotificationType.MANDATE_SETUP_INVITE,
+                "Dear {name}, set up auto-repayment for your DhanBoost loan so we can collect your "
+                        + "instalment automatically. Complete it here: {link} - DhanBoost");
+        email(NotificationType.MANDATE_SETUP_INVITE, "Set up auto-repayment for your DhanBoost loan",
+                "Hi {name},\n\nYou can now set up auto-repayment (eMandate) for your DhanBoost loan. "
+                        + "Once it is in place your instalment is collected from your bank account "
+                        + "automatically on the due date, so you do not have to remember to pay.\n\n"
+                        + "Set it up here: {link}\n\nYou authorise it with your bank, and you can cancel "
+                        + "it with your bank at any time.\n\n— DhanBoost");
+
+        inApp(NotificationType.MANDATE_CANCELLED, "Auto-repayment cancelled",
+                "Your auto-repayment mandate on {bankName} account ending {accountLast4} has been cancelled. "
+                        + "{why} Any amount due must now be paid manually from the Repay page.");
+        email(NotificationType.MANDATE_CANCELLED, "Your DhanBoost auto-repayment has been cancelled",
+                "Hi {name},\n\nYour auto-repayment mandate (eMandate) on your {bankName} account ending "
+                        + "{accountLast4} has been cancelled. {why}\n\nNothing more will be collected "
+                        + "automatically under this mandate. If you have a loan with an amount due, please "
+                        + "repay it from the Repay page in the app before the due date.\n\nIf you did not "
+                        + "expect this, contact our support team.\n\n— DhanBoost");
+
         inApp(NotificationType.LOAN_DISBURSED, "Money on the way",
                 "Your loan is disbursed: {netDisbursed} credited. Repay {totalRepayable} by {dueDate}.");
         sms(NotificationType.LOAN_DISBURSED,
@@ -244,16 +270,16 @@ public class NotificationTemplates {
                         + "again — or reach out if you think this is a mistake.\n\n— DhanBoost");
 
         inApp(NotificationType.PAYMENT_DUE_SOON, "Payment due soon",
-                "Your payment of {amount} is due in {daysToDue} day(s) (by {dueDate}). Pay on your salary "
-                        + "day or the day after — no penalty. Prepay anytime to save on interest.");
+                "Your payment of {amount} is due in {daysToDue} day(s) (by {dueDate}). Pay by your due "
+                        + "date to avoid a late penalty. Prepay anytime to save on interest.");
         sms(NotificationType.PAYMENT_DUE_SOON,
                 "Dear {name}, repayment of {amount} on your DhanBoost loan {loanId} is due on {dueDate}. "
                         + "Pay at https://dhanboost.com/login. - DhanBoost");
         email(NotificationType.PAYMENT_DUE_SOON, "Your DhanBoost payment is due soon",
                 "Hi {name},\n\nYour payment of {amount} on application #{applicationId} is due in "
-                        + "{daysToDue} day(s), by {dueDate}. You can pay on your salary day or the day "
-                        + "after with no penalty — or prepay anytime to save on interest (you only pay "
-                        + "interest up to the day you repay).\n\n— DhanBoost");
+                        + "{daysToDue} day(s), by {dueDate}. Pay by your due date to avoid a late penalty "
+                        + "— or prepay anytime to save on interest (you only pay interest up to the day "
+                        + "you repay).\n\n— DhanBoost");
 
         inApp(NotificationType.PAYMENT_OVERDUE, "Payment overdue",
                 "Your payment of {amount} is overdue by {daysOverdue} day(s). Please pay now — a late "
@@ -329,6 +355,11 @@ public class NotificationTemplates {
                         + "(Admin → API dashboard) and read the newest row's response payload.\n\n"
                         + "— DhanBoost");
 
+        inApp(NotificationType.MANDATE_BANK_UNSUPPORTED, "eMandate needs manual setup",
+                "{bankName} cannot register an eMandate online for application {applicationId}. The borrower "
+                        + "has been told we will be in touch. Set the mandate up with them, then override the "
+                        + "mandate gate on the application's Mandate tab.");
+
         // ---------------- REFERRAL ----------------
         inApp(NotificationType.REFERRAL_PAYOUT_PENDING, "Referral reward to pay",
                 "A referral qualified — two rewards of {amount} each are pending payout. Settle them in Referral payouts.");
@@ -370,6 +401,8 @@ public class NotificationTemplates {
                 "name", "applicationId", "amount", "previousAmount");
         whatsapp(NotificationType.LOAN_LIMIT_REVISED, "db_limit_increased", "name", "limit");
         whatsapp(NotificationType.DISBURSEMENT_REJECTED, "db_disbursal_declined", "name", "applicationId");
+        // Template name must already exist and be approved at Meta; the wording lives there, not here.
+        whatsapp(NotificationType.MANDATE_SETUP_INVITE, "db_mandate_invite", "name", "link");
         whatsapp(NotificationType.LOAN_DISBURSED, "db_loan_disbursed",
                 "name", "netDisbursed", "totalRepayable", "dueDate");
         whatsapp(NotificationType.SANCTION_LETTER_SIGNED, "db_sanction_letter_signed", "name", "applicationId");

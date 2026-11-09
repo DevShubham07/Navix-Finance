@@ -64,10 +64,37 @@ public class EmailHtmlRenderer {
 
     /** Render the branded HTML for a notification. {@code subject}/{@code body} are HTML-escaped. */
     public String render(String subject, String body) {
+        return wrap(subject, toHtmlParagraphs(body));
+    }
+
+    /**
+     * A one-time code email: the code in a large, spaced, monospace box so it can be read at a glance and
+     * copied without the surrounding sentence. {@code intro} is the line above the code. All inputs are
+     * HTML-escaped.
+     */
+    public String renderOtp(String subject, String intro, String code, int validMinutes) {
+        String body = "<p style=\"margin:0 0 20px;\">" + escape(intro == null ? "" : intro) + "</p>"
+                + "<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"margin:0 0 20px;\">"
+                + "<tr><td align=\"center\" style=\"background-color:#FDFBF6;border:1px dashed #E9B53A;border-radius:12px;"
+                + "padding:18px 28px;font-family:'IBM Plex Mono',SFMono-Regular,Menlo,Consolas,'Courier New',monospace;"
+                + "font-size:32px;font-weight:700;letter-spacing:10px;color:#0C2540;\">"
+                + escape(code == null ? "" : code)
+                + "</td></tr></table>"
+                + "<p style=\"margin:0 0 14px;\">This code expires in <strong style=\"color:#0C2540;\">"
+                + validMinutes + " minutes</strong>.</p>"
+                + "<p style=\"margin:0 0 14px;padding:12px 14px;background-color:#fff8e6;border-radius:8px;"
+                + "font-size:13px;line-height:1.55;color:#6b5418;\">"
+                + "<strong>Never share this code</strong> with anyone &mdash; DhanBoost staff will never ask for it. "
+                + "If you didn&rsquo;t request it, you can safely ignore this email.</p>";
+        return wrap(subject, body);
+    }
+
+    /** The branded shell around an already-safe HTML body. */
+    private static String wrap(String subject, String bodyHtml) {
         String safeSubject = escape(subject == null || subject.isBlank() ? "DhanBoost" : subject);
         return TEMPLATE
                 .replace("{{SUBJECT}}", safeSubject)
-                .replace("{{BODY}}", toHtmlParagraphs(body))
+                .replace("{{BODY}}", bodyHtml)
                 .replace("{{YEAR}}", String.valueOf(LocalDate.now().getYear()));
     }
 

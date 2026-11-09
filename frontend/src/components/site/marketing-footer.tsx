@@ -14,7 +14,7 @@ import {
   Phone,
   Timer,
 } from "lucide-react";
-import { BRAND } from "@/lib/brand";
+import { BRAND, NBFC_PARTNER } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 import { CalendarTile, FloatTile, IconTile, InsetPanel } from "./landing/primitives";
 
@@ -41,6 +41,12 @@ const COLUMNS = [
       { href: "/terms", label: "Terms & Conditions" },
       { href: "/fair-practices", label: "Fair Practices Code" },
       { href: "/grievance", label: "Grievance Redressal" },
+      { href: "/refund-policy", label: "Refund & Cancellation" },
+      { href: "/interest-rate-policy", label: "Interest Rate Policy" },
+      { href: "/kyc-aml-policy", label: "KYC & AML Policy" },
+      { href: "/risk-management", label: "Risk Management" },
+      { href: "/corporate-governance", label: "Corporate Governance" },
+      { href: "https://sachet.rbi.org.in", label: "RBI Sachet Portal" },
       { href: "/faq", label: "FAQs" },
     ],
   },
@@ -174,10 +180,12 @@ export function MarketingFooter() {
             CIN: <b className="font-semibold text-ink">U64990HR2026PTC144926</b>
           </p>
           <p className="m-0">
-            <b className="font-semibold text-ink">Disclaimer:</b> DhanBoost (NAVIX Finance Private Limited) operates a digital
-            lending platform offering salary-linked personal loans. Loan approval is subject to DhanBoost&apos;s credit policy
-            and eligibility assessment. DhanBoost does not charge any advance fee for loan processing. Representative APR and
-            all charges are disclosed before you accept any offer. Please borrow responsibly.
+            <b className="font-semibold text-ink">NBFC Partner :</b> {NBFC_PARTNER.name}.
+            <br />
+            <b className="font-semibold text-ink">Disclaimer:</b> {NBFC_PARTNER.disclaimer} DhanBoost (NAVIX Finance Private Limited) is a
+            digital lending platform and does not charge any advance fee for loan processing.
+            Representative APR and all charges are disclosed before you accept any offer. Please borrow
+            responsibly.
           </p>
         </div>
         <div className="flex flex-col gap-4 border-t border-line py-6 text-[13px] text-slate sm:flex-row sm:items-center sm:justify-between">

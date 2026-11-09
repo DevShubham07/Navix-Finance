@@ -18,12 +18,16 @@ import { AppRow } from "@/components/staff/pipeline/app-row";
 import { AssignActions, CreditDecisionActions } from "@/components/staff/pipeline/actions";
 import { useStaffMe } from "@/components/staff/pipeline/hooks";
 import { useQueueRange, useQueueQuery } from "@/components/staff/pipeline/queue-date-filter";
-import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
+import { PaginationBar } from "@/components/staff/pipeline/pagination";
 import { useBulkQueue, BulkActionBar, type QueueSelection, type RejectMode } from "@/components/staff/pipeline/bulk-actions";
+import { QUEUE_PINNED, useQueueRegister, type QueueRegister } from "@/components/staff/pipeline/queue-register";
+import { FilterBar } from "@/components/staff/filter-bar";
+import { Th } from "@/lib/staff/register-th";
 import { bulkSelectionHint } from "@/lib/staff/queue-bulk";
 
 export function StatusQueue({
   title,
+  registerId,
   status,
   actions,
   info,
@@ -33,6 +37,9 @@ export function StatusQueue({
   bulk,
 }: {
   title: string;
+  /** Persistence key for this panel's remembered column filters/sort. Stable and unique per panel:
+   *  several queues share one page, and the same status can appear twice (fast-track vs standard). */
+  registerId: string;
   status: ApplicationStatus;
   /** Omit for a read-only queue (e.g. SANCTIONED, which nobody on staff actions). */
   actions?: (app: ApplicationView) => React.ReactNode;
@@ -63,12 +70,12 @@ export function StatusQueue({
   });
 
   const apps = React.useMemo(() => (filter ? (q.data ?? []).filter(filter) : q.data ?? []), [q.data, filter]);
+  // Filter BEFORE selecting: "Select all" must mean the rows the column filters are showing, never
+  // rows they hide — a bulk reject on unseen applications is a 30-day cooling-off nobody chose.
+  const register = useQueueRegister(apps, registerId);
   // Hook order must not depend on `bulk` being passed — call unconditionally with an empty config
   // when the caller opted out, which resolves to `selection: undefined` (no checkbox column).
-  const { selection, dialogs } = useBulkQueue(
-    React.useMemo(() => apps.map((a) => a.id), [apps]),
-    bulk ?? {},
-  );
+  const { selection, dialogs } = useBulkQueue(register.visibleIds, bulk ?? {});
 
   if (hideWhenEmpty && !q.isLoading && !q.error && apps.length === 0) return null;
 
@@ -85,6 +92,7 @@ export function StatusQueue({
         info={info}
         withLoanHistory={withLoanHistory}
         selection={selection}
+        register={register}
       />
       {dialogs}
     </>
@@ -97,12 +105,15 @@ export function CreditQueuePanel() {
     queryFn: () => staffApi.creditQueue(),
     refetchInterval: 8000,
   });
+  const apps = React.useMemo(() => q.data ?? [], [q.data]);
+  const register = useQueueRegister(apps, "queue-credit-intake");
 
   return (
     <QueuePanel
+      register={register}
       title="Credit queue — assign an executive"
       countBadge="credit-queue"
-      apps={q.data ?? []}
+      apps={apps}
       isLoading={q.isLoading}
       error={q.error}
       onRefresh={() => q.refetch()}
@@ -172,6 +183,7 @@ export function CreditWorkbench() {
       {groups.map((group) => (
         <CreditGroupPanel
           key={group.key}
+          registerId={`queue-credit-${group.key}`}
           title={group.title}
           apps={group.apps}
           isLoading={unallocatedQ.isLoading || assignedQ.isLoading || execQ.isLoading}
@@ -193,6 +205,7 @@ export function CreditWorkbench() {
  */
 function CreditGroupPanel({
   title,
+  registerId,
   apps,
   isLoading,
   error,
@@ -201,6 +214,8 @@ function CreditGroupPanel({
   allowAssign,
 }: {
   title: string;
+  /** Keyed by the group's stable key, not its title: executives can share a name. */
+  registerId: string;
   apps: ApplicationView[];
   isLoading: boolean;
   error: unknown;
@@ -208,10 +223,9 @@ function CreditGroupPanel({
   actions: (app: ApplicationView) => React.ReactNode;
   allowAssign: boolean;
 }) {
-  const { selection, dialogs } = useBulkQueue(
-    React.useMemo(() => apps.map((a) => a.id), [apps]),
-    { rejectMode: "credit", allowAssign },
-  );
+  // Filter before selecting — see StatusQueue.
+  const register = useQueueRegister(apps, registerId);
+  const { selection, dialogs } = useBulkQueue(register.visibleIds, { rejectMode: "credit", allowAssign });
   return (
     <>
       <QueuePanel
@@ -224,6 +238,7 @@ function CreditGroupPanel({
         actions={actions}
         info="Credit review remains one stage. The Credit Head may decide any file or reassign it; executives can decide only their own files."
         selection={selection}
+        register={register}
         caption={`Credit review — ${title}`}
       />
       {dialogs}
@@ -242,6 +257,7 @@ export function QueuePanel({
   info,
   withLoanHistory,
   selection,
+  register,
   caption,
 }: {
   title: string;
@@ -255,6 +271,8 @@ export function QueuePanel({
   withLoanHistory?: boolean;
   /** Bulk select + assign/reject — see `pipeline/bulk-actions.tsx`. Omit for the plain table. */
   selection?: QueueSelection;
+  /** The column-filter view this panel's table renders; its `visibleIds` fed `selection`. */
+  register: QueueRegister;
   /** The table's visually-hidden caption; defaults to `title`. */
   caption?: string;
 }) {
@@ -292,13 +310,25 @@ export function QueuePanel({
           most queues are short, so a taller placeholder would only collapse on arrival. Before
           this, the panel claimed "Nothing in the … queue" while it was still loading. */}
       {isLoading ? (
-        <Skeleton variant="table" rows={5} cols={selection ? 19 : 18} />
+        <Skeleton variant="table" rows={5} cols={selection ? 20 : 19} />
       ) : error ? (
         <ErrorState error={error} onRetry={onRefresh} />
       ) : apps.length === 0 ? (
         <EmptyState title={`Nothing in the ${countBadge} queue.`} />
       ) : (
-        <QueueTable apps={apps} actions={actions} withLoanHistory={withLoanHistory} selection={selection} caption={caption ?? title} />
+        <>
+          {/* Narrows WITHIN this panel's rows (client-side, unpaged), under the same bulk-selection
+              rule as the header carets: "Select all" still means the rows the filters leave. */}
+          <div className="px-5 pt-3">
+            <FilterBar
+              th={register.th}
+              total={register.cr.total}
+              onClear={() => register.rq.setFilters({})}
+              pinned={QUEUE_PINNED}
+            />
+          </div>
+          <QueueTable actions={actions} withLoanHistory={withLoanHistory} selection={selection} register={register} caption={caption ?? title} />
+        </>
       )}
     </section>
   );
@@ -312,24 +342,27 @@ export function QueuePanel({
  * information was dropped; see {@link AppRow}.
  */
 export function QueueTable({
-  apps,
   actions,
   withLoanHistory,
   showJourney = true,
   selection,
+  register,
   caption,
 }: {
-  apps: ApplicationView[];
   actions: (app: ApplicationView) => React.ReactNode;
   withLoanHistory?: boolean;
   showJourney?: boolean;
   /** Bulk select + assign/reject — see `pipeline/bulk-actions.tsx`. Omitted, this table renders
    *  byte-identical to before bulk actions existed: no checkbox column, no layout shift. */
   selection?: QueueSelection;
+  /** Owns the rows plus filter, sort and page. Created by the caller (not here) so the same filtered
+   *  ids can feed `selection` — see `useQueueRegister`. */
+  register: QueueRegister;
   /** Names the queue for assistive tech (a visually-hidden `<caption>`). Defaults to a generic name. */
   caption?: string;
 }) {
-  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(apps);
+  const { pageRows, pageCount, total } = register.cr;
+  const { page, size: pageSize } = register.rq.state;
 
   return (
     <div>
@@ -356,26 +389,28 @@ export function QueueTable({
               )}
               <th scope="col" className={selection ? undefined : "staff-sticky-identity"}>Application</th>
               <th scope="col">Customer ID</th>
-              <th scope="col">Date</th>
-              <th scope="col">Customer</th>
+              <Th th={register.th} col="createdAt" />
+              <Th th={register.th} col="customerName" />
               <th scope="col">Signals</th>
               <th scope="col">Mobile</th>
               <th scope="col">PAN</th>
               <th scope="col">Account</th>
               <th scope="col">IFSC</th>
               <th scope="col">Loan</th>
-              <th scope="col" className="num">Amount</th>
-              <th scope="col">Due</th>
-              <th scope="col">Credit</th>
+              <Th th={register.th} col="amountRequestedPaise" className="num" />
+              <Th th={register.th} col="loanDueDate" />
+              <Th th={register.th} col="creditScore" />
+              <Th th={register.th} col="status" />
               {/* Who worked the file. "Credit exec" is who DECIDED it — on a reassigned or
                   Head-decided file that is not the assignee. Blank until the stage happens. */}
-              <th scope="col" title="The credit executive who decided this file">Credit exec</th>
-              <th scope="col" title="Who released the money">Disbursed by</th>
-              <th scope="col" title="The assigned collections executive">Collections exec</th>
+              <Th th={register.th} col="creditDecidedByName" />
+              <Th th={register.th} col="disbursedByName" />
+              <Th th={register.th} col="collectionOfficerName" />
               <th scope="col" className="staff-sticky-actions">Actions</th>
             </tr>
           </thead>
           <tbody>
+            {total === 0 && <EmptyState inTable={selection ? 20 : 19} title="No applications match the column filters." hint="Clear a column filter to see more." />}
             {pageRows.map((app, i) => (
               <AppRow
                 key={app.id}
@@ -394,10 +429,10 @@ export function QueueTable({
       <PaginationBar
         page={page}
         pageCount={pageCount}
-        setPage={setPage}
+        setPage={register.rq.setPage}
         total={total}
         pageSize={pageSize}
-        setPageSize={setPageSize}
+        setPageSize={register.rq.setSize}
       />
     </div>
   );

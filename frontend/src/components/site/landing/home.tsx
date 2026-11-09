@@ -530,11 +530,11 @@ const FAQS = [
   },
   {
     q: "Are there any hidden charges or advance fees?",
-    a: "Never. DhanBoost does not charge any advance or upfront fee. All applicable interest and charges are shown in your loan summary before you accept the offer.",
+    a: "You never pay anything before your loan is disbursed. A processing fee of 10% of the loan amount plus 18% GST on that fee is deducted from the amount disbursed. All interest and charges are disclosed in the Key Fact Statement before you accept the offer.",
   },
   {
     q: "Will applying affect my credit score?",
-    a: "When you submit your application, we check your credit report with a credit bureau as part of our review. Repaying on time, on your salary day, is the best way to keep your score healthy.",
+    a: "Using the calculator does not involve a credit check. When you submit an application, a credit report is obtained from a credit bureau with your consent, before any offer is made. This may show as an enquiry on your credit report.",
   },
 ];
 

@@ -1,0 +1,713 @@
+{
+ "components": {
+  "schemas": {
+   "CorporateDetailsSchema_Client": {
+    "description": "Details of corporate",
+    "properties": {
+     "corporate_account_number": {
+      "description": "Masked account number of the corporate",
+      "type": "string"
+     },
+     "corporate_reference": {
+      "description": "Reference number against the corporate",
+      "type": "string"
+     },
+     "name": {
+      "description": "Name of the corporate",
+      "type": "string"
+     },
+     "sponsor_bank_code": {
+      "description": "Bank code for sponsor bank",
+      "type": "string"
+     },
+     "sponsor_ifsc": {
+      "description": "IFSC code of the sponsor bank",
+      "type": "string"
+     },
+     "utility_code": {
+      "description": "Utility code registered for the corporate",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "CustomerDetailsSchema_Client": {
+    "description": "Details of customer",
+    "properties": {
+     "destination_account_type": {
+      "default": "SAVINGS",
+      "description": "Type of account of the customer",
+      "enum": [
+       "SAVINGS",
+       "CURRENT",
+       "OTHER"
+      ],
+      "type": "string"
+     },
+     "destination_ifsc": {
+      "description": "IFSC code of the bank",
+      "type": "string"
+     },
+     "name": {
+      "description": "Name of the customer",
+      "type": "string"
+     },
+     "user_account_number": {
+      "description": "Masked account number of the customer",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "ExternalMandateDebitSchema_Client": {
+    "description": "Mandate information",
+    "properties": {
+     "auth_sub_mode": {
+      "description": "In case of API mandate, sub auth mode type",
+      "enum": [
+       "net_banking",
+       "debit",
+       "aadhaar",
+       "otp",
+       "other",
+       "pan",
+       "customer_id",
+       "direct_bank"
+      ],
+      "type": "string"
+     },
+     "created_at": {
+      "description": "Timestamp at which mandate was created",
+      "format": "date-time",
+      "type": "string"
+     },
+     "id": {
+      "description": "Unique ID to identify mandates provided by Digio.",
+      "type": "string"
+     },
+     "mandate_details": {
+      "$ref": "#/components/schemas/MandateDetailsSchema_Client"
+     },
+     "mandate_id": {
+      "description": "Unique ID to identify mandates provided by Digio.",
+      "type": "string"
+     },
+     "mode": {
+      "description": "Mode of mandate authentication",
+      "enum": [
+       "API",
+       "ESIGN",
+       "PHYSICAL"
+      ],
+      "type": "string"
+     },
+     "state": {
+      "description": "This depicts the current state of mandate",
+      "enum": [
+       "partial",
+       "signed",
+       "expired",
+       "auth_success",
+       "auth_failed",
+       "cancelled",
+       "revoked"
+      ],
+      "type": "string"
+     },
+     "type": {
+      "description": "The type for mandate which was requested",
+      "enum": [
+       "CREATE",
+       "AMEND"
+      ],
+      "type": "string"
+     },
+     "umrn": {
+      "description": "UMRN of the mandate registered",
+      "type": "string"
+     },
+     "updated_at": {
+      "description": "Last modification timestamp of the mandate",
+      "format": "date-time",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "ExternalNachDebitTxnOnGetSchema_Client": {
+    "description": "Details of the last transaction",
+    "properties": {
+     "created_at": {
+      "description": "Creation timestamp of the last transaction",
+      "format": "date-time",
+      "type": "string"
+     },
+     "customer": {
+      "$ref": "#/components/schemas/CustomerDetailsSchema_Client"
+     },
+     "details": {
+      "$ref": "#/components/schemas/TxnDetailsSchema_Client"
+     },
+     "id": {
+      "description": "ID of the last transaction",
+      "type": "string"
+     },
+     "state": {
+      "description": "State of the last transaction",
+      "type": "string"
+     },
+     "status_updated_at": {
+      "description": "Timestamp when the status was last updated",
+      "format": "date-time",
+      "type": "string"
+     },
+     "umrn": {
+      "description": "UMRN of the last transaction",
+      "type": "string"
+     },
+     "updated_at": {
+      "description": "Last update timestamp of the last transaction",
+      "format": "date-time",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "ExternalScheduledPlanOnGetSchema_Client": {
+    "properties": {
+     "corporate": {
+      "$ref": "#/components/schemas/CorporateDetailsSchema_Client"
+     },
+     "created_at": {
+      "description": "Timestamp of plan creation",
+      "format": "date-time",
+      "type": "string"
+     },
+     "customer": {
+      "$ref": "#/components/schemas/CustomerDetailsSchema_Client"
+     },
+     "details": {
+      "$ref": "#/components/schemas/SchedulePlanDetailsSchema_Client"
+     },
+     "id": {
+      "description": "Unique ID of created plan",
+      "type": "string"
+     },
+     "last_transaction": {
+      "$ref": "#/components/schemas/ExternalNachDebitTxnOnGetSchema_Client"
+     },
+     "mandate": {
+      "$ref": "#/components/schemas/ExternalMandateDebitSchema_Client"
+     },
+     "partner": {
+      "$ref": "#/components/schemas/PartnerDetails_Client"
+     },
+     "sponsor_bank_name": {
+      "description": "Name of the sponsor bank",
+      "type": "string"
+     },
+     "status": {
+      "description": "Current status of created plan",
+      "type": "string"
+     },
+     "sub_user": {
+      "$ref": "#/components/schemas/ExternalSubUserSchema_Client"
+     },
+     "umrn": {
+      "description": "Unique Mandate Reference Number",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "ExternalSubUserSchema_Client": {
+    "description": "Sub user details, if the request was containing sub-user identifier.",
+    "properties": {
+     "email_id": {
+      "description": "Sub-user's email id if registered.",
+      "type": "string"
+     },
+     "id": {
+      "description": "Sub-user id",
+      "type": "string"
+     },
+     "identifier": {
+      "description": "Type of identifier",
+      "enum": [
+       "EMAIL",
+       "MOBILE"
+      ],
+      "type": "string"
+     },
+     "identifier_value": {
+      "description": "Identifier used for sub-user, , this is generally emailID or mobile number",
+      "type": "string"
+     },
+     "mobile": {
+      "description": "Sub-user's mobile number",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "GenericBadRequestResponse_Client": {
+    "properties": {
+     "code": {
+      "description": "Error code",
+      "type": "string"
+     },
+     "details": {
+      "description": "Details about the exception. Usually contains the exception id for reference.",
+      "type": "string"
+     },
+     "errors": {
+      "description": "Custom errors",
+      "type": "string"
+     },
+     "message": {
+      "description": "Description of the error",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "MandateDetailsSchema_Client": {
+    "description": "Details of mandate",
+    "properties": {
+     "auth_type": {
+      "description": "Mode of authentication used for mandate",
+      "enum": [
+       "API",
+       "ESIGN",
+       "PHYSICAL"
+      ],
+      "type": "string"
+     },
+     "authentication_time": {
+      "description": "Timestamp of mandate authentication",
+      "format": "date-time",
+      "type": "string"
+     },
+     "collection_amount": {
+      "description": "For fixed amount mandate, this denotes the amount",
+      "type": "number"
+     },
+     "customer_account_number": {
+      "description": "Masked account number of customer",
+      "type": "string"
+     },
+     "customer_account_type": {
+      "description": "Type of bank account of customer",
+      "enum": [
+       "SAVINGS",
+       "CURRENT",
+       "OTHER"
+      ],
+      "type": "string"
+     },
+     "customer_email": {
+      "description": "Customer email number",
+      "type": "string"
+     },
+     "customer_identifier": {
+      "description": "Identifier for customer, could be email or mobile number",
+      "type": "string"
+     },
+     "customer_mobile": {
+      "description": "Mobile number of customer",
+      "type": "string"
+     },
+     "customer_name": {
+      "description": "Name of customer",
+      "type": "string"
+     },
+     "customer_ref_number": {
+      "description": "Unique Reference Number identifier the customer",
+      "type": "string"
+     },
+     "destination_bank_id": {
+      "description": "IFSC code of customer's bank account",
+      "type": "string"
+     },
+     "destination_bank_name": {
+      "description": "Name of customer's bank",
+      "type": "string"
+     },
+     "file_name": {
+      "description": "Name of file shared with the bank",
+      "type": "string"
+     },
+     "final_collection_date": {
+      "description": "Date of last debit",
+      "format": "date-time",
+      "type": "string"
+     },
+     "first_collection_date": {
+      "description": "Date of first debit",
+      "format": "date-time",
+      "type": "string"
+     },
+     "frequency": {
+      "description": "In case of recurring mandate, denotes the frequency.",
+      "enum": [
+       "Adhoc",
+       "IntraDay",
+       "Daily",
+       "Weekly",
+       "Monthly",
+       "BiMonthly",
+       "Quarterly",
+       "Semiannually",
+       "Yearly"
+      ],
+      "type": "string"
+     },
+     "is_recurring": {
+      "description": "Denotes whether it is a recurring mandate or not",
+      "type": "boolean"
+     },
+     "maximum_amount": {
+      "description": "Maximum amount that may be collected from the customer's account",
+      "type": "number"
+     },
+     "npci_txn_id": {
+      "description": "Transaction ID in reference to NPCI",
+      "type": "string"
+     },
+     "scheme_ref_number": {
+      "description": "Unique number maintained by Corporate for the reconciliation",
+      "type": "string"
+     },
+     "sponsor_bank_name": {
+      "description": "Name of sponsor's bank account",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "PartnerDetails_Client": {
+    "description": "Details of partner bank",
+    "properties": {
+     "identifier": {
+      "description": "Email of the partner bank",
+      "type": "string"
+     },
+     "name": {
+      "description": "Name of the partner bank",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "SchedulePlanDetailsSchema_Client": {
+    "description": "Further details of schedule plan created",
+    "properties": {
+     "amount_in_paise": {
+      "description": "Amount to be paid in paise",
+      "format": "int32",
+      "type": "integer"
+     },
+     "client_ref_id": {
+      "description": "Client reference ID for identification",
+      "type": "string"
+     },
+     "ended_at": {
+      "description": "Date when the schedule ended",
+      "format": "date-time",
+      "type": "string"
+     },
+     "first_proposed_settlement_date": {
+      "description": "Date of the first settlement",
+      "format": "date-time",
+      "type": "string"
+     },
+     "frequency": {
+      "description": "Frequency of subscription payments",
+      "enum": [
+       "onetime",
+       "adhoc",
+       "intraday",
+       "daily",
+       "weekly",
+       "monthly",
+       "quarterly",
+       "semiannually",
+       "yearly",
+       "bimonthly"
+      ],
+      "type": "string"
+     },
+     "last_presented_at": {
+      "description": "Date when the last payment was presented",
+      "format": "date-time",
+      "type": "string"
+     },
+     "last_presented_settlement_date": {
+      "description": "Date of the last presented settlement",
+      "format": "date-time",
+      "type": "string"
+     },
+     "mandate_id": {
+      "description": "Mandate ID associated with the payment schedule",
+      "type": "string"
+     },
+     "narration": {
+      "description": "Narration or description of the payment schedule",
+      "type": "string"
+     },
+     "next_present_at": {
+      "description": "Date when the next payment should be presented",
+      "format": "date-time",
+      "type": "string"
+     },
+     "next_scheduled_settlement_date": {
+      "description": "Date of the next scheduled settlement",
+      "format": "date-time",
+      "type": "string"
+     },
+     "paid_count": {
+      "default": 0,
+      "description": "Number of payments already made",
+      "format": "int32",
+      "type": "integer"
+     },
+     "payment_count": {
+      "description": "Total number of payments to be made",
+      "format": "int32",
+      "type": "integer"
+     },
+     "present_settlement_before_days": {
+      "default": 1,
+      "description": "Number of days before which the settlement should be presented",
+      "format": "int32",
+      "type": "integer"
+     },
+     "product_type": {
+      "description": "Type of the product for which the schedule is created",
+      "type": "string"
+     },
+     "txn_reference": {
+      "description": "Transaction reference",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "TxnDetailsSchema_Client": {
+    "description": "Detailed information about the last transaction",
+    "properties": {
+     "amount": {
+      "description": "Transaction amount in standard currency units",
+      "format": "double",
+      "type": "number"
+     },
+     "amount_in_paise": {
+      "description": "Transaction amount in the smallest currency units (e.g., paise)",
+      "format": "int32",
+      "type": "integer"
+     },
+     "customer_vpa": {
+      "description": "Virtual Payment Address of the customer, if applicable",
+      "type": "string"
+     },
+     "failure_code": {
+      "description": "Code indicating the reason for transaction failure, if applicable",
+      "type": "string"
+     },
+     "failure_reason": {
+      "description": "Description of the reason for transaction failure, if applicable",
+      "type": "string"
+     },
+     "ready_to_process_at": {
+      "description": "Timestamp indicating when the transaction is ready to be processed",
+      "format": "date-time",
+      "type": "string"
+     },
+     "settlement_desc": {
+      "description": "Description of the settlement",
+      "type": "string"
+     },
+     "sponsor_bank_id": {
+      "description": "Identifier for the sponsor bank",
+      "type": "string"
+     },
+     "status": {
+      "description": "Status of the NACH payment transaction",
+      "enum": [
+       "NEW",
+       "READY_TO_SEND",
+       "SKIPPED",
+       "CANCELLED",
+       "SUBMITTED_TO_BANK",
+       "DIGIO_TECHNICAL_ERROR",
+       "ACCEPTED_SPO_BANK",
+       "REJECT_SPO_BANK",
+       "PAYMENT_DELAYED",
+       "PAYMENT_AUTHENTICATED",
+       "PAYMENT_FAILED",
+       "PAYMENT_SUCCESS"
+      ],
+      "type": "string"
+     },
+     "txn_ref": {
+      "description": "Reference number for the transaction",
+      "type": "string"
+     },
+     "type": {
+      "description": "Type of the transaction",
+      "enum": [
+       "NACH_DEBIT"
+      ],
+      "type": "string"
+     },
+     "utr": {
+      "description": "Unique Transaction Reference number for the transaction",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   }
+  },
+  "securitySchemes": {
+   "api_auth": {
+    "in": "header",
+    "scheme": "basic",
+    "type": "http"
+   }
+  }
+ },
+ "info": {
+  "contact": {
+   "email": "support@digio.in"
+  },
+  "description": "Getting started with Digio Rest Apis",
+  "title": "Digio Apis",
+  "x-provenance": "Fetched 2026-10-16 from https://documentation.digio.in/swagger/get_getScheduledDetailByCoreperateRef.json (servers[] replaced with the hosts documented at https://documentation.digio.in/digienvironments/; the published spec ships a localhost placeholder)"
+ },
+ "openapi": "3.0.1",
+ "paths": {
+  "/v3/client/nach_debit/scheduled/by_reference_id/{refId}": {
+   "get": {
+    "description": "This API is used to Get debit request based on unique key provided in request payload of create debit API\u2019s",
+    "operationId": "getScheduledDetailByCoreperateRef",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "refId",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "examples": {
+         "Success Response": {
+          "description": "Success Response",
+          "value": {
+           "corporate": {
+            "corporate_account_number": "xxxxxxxx6789",
+            "corporate_reference": "UMRN2984366445219389-37",
+            "name": "Digio tech",
+            "sponsor_bank_code": "YESB",
+            "sponsor_ifsc": "YESB0000001",
+            "utility_code": "NACH00000000000357"
+           },
+           "created_at": "2019-07-01 12:51:39",
+           "customer": {
+            "destination_account_type": "savings",
+            "destination_ifsc": "HDFC0000158",
+            "name": "devesh",
+            "user_account_number": "xxxxxxxx6321"
+           },
+           "details": {
+            "amount_in_paise": 150,
+            "client_ref_id": "UMRN2984366445219389-37",
+            "ended_at": "2019-07-01 12:51:39",
+            "first_proposed_settlement_date": "2019-07-01 12:51:39",
+            "frequency": "monthly",
+            "last_presented_at": "2019-07-01 12:51:39",
+            "last_presented_settlement_date": "2019-07-02 00:00:00",
+            "narration": "Digio tech",
+            "paid_count": 1,
+            "payment_count": 1,
+            "present_settlement_before_days": 10
+           },
+           "id": "NSP190701125139737XIALSKQ8HZ64BA",
+           "last_transaction": {
+            "created_at": "2019-07-01 12:51:39",
+            "customer": {
+             "name": "XYZ"
+            },
+            "details": {
+             "amount": 1.5,
+             "amount_in_paise": 150,
+             "ready_to_process_at": "2019-07-01 12:51:39",
+             "sponsor_bank_id": "YESB0000001",
+             "status": "new",
+             "type": "nach_debit"
+            },
+            "id": "NPT1907011251397432NBQ8NL8BTVQ",
+            "state": "scheduled",
+            "status_updated_at": "2019-07-01 12:51:39",
+            "umrn": "UMRN2984366445219389"
+           },
+           "partner": {
+            "identifier": "test@bank.com",
+            "name": "Test Bank"
+           },
+           "sponsor_bank_name": "Test Bank",
+           "status": "completed",
+           "umrn": "UMRN2984366445219389"
+          }
+         }
+        },
+        "schema": {
+         "$ref": "#/components/schemas/ExternalScheduledPlanOnGetSchema_Client"
+        }
+       }
+      }
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "examples": {
+         "Bad Request": {
+          "description": "Bad Request",
+          "value": {
+           "code": "ENTITY_NOT_FOUND",
+           "details": "EX23297402937402",
+           "message": "Entity not found for this id"
+          }
+         }
+        },
+        "schema": {
+         "$ref": "#/components/schemas/GenericBadRequestResponse_Client"
+        }
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "api_auth": []
+     }
+    ],
+    "summary": "Get Debit Request Details by Reference"
+   }
+  }
+ },
+ "servers": [
+  {
+   "description": "Production",
+   "url": "https://api.digio.in"
+  },
+  {
+   "description": "Sandbox",
+   "url": "https://ext.digio.in:444"
+  }
+ ]
+}

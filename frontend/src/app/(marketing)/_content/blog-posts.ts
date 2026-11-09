@@ -35,7 +35,7 @@ function page(p: {
   </div></div>
   <div class="sec"><div class="wrap"><div class="prose" style="max-width:760px;margin:0 auto">
     ${p.body}
-    <p style="margin-top:32px;font-size:.86rem;color:var(--muted)"><em>This article is general information, not financial advice. Loans are offered by DhanBoost's RBI-registered NBFC partners; all rates and charges are set out in your Key Fact Statement before you accept an offer.</em></p>
+    <p style="margin-top:32px;font-size:.86rem;color:var(--muted)"><em>This article is general information, not financial advice. Loans are offered by DhanBoost's RBI-registered NBFC partner, MLB Securities Private Limited; all rates and charges are set out in your Key Fact Statement before you accept an offer.</em></p>
     <div style="text-align:center;margin-top:32px"><a href="/blog" class="btn btn-ghost" data-link="">← All resources</a></div>
   </div></div></div>
 </section>`;
@@ -72,7 +72,7 @@ export const POSTS: Record<string, BlogPost> = {
     <h2>Why the "net disbursed" line is the one people miss</h2>
     <p>A loan of ₹10,000 does not put ₹10,000 in your account. The processing fee and GST are taken from the disbursal, so you receive a little less — and you repay the full principal plus interest. This is normal and disclosed, but it surprises first-time borrowers. Read the net-disbursed line first, then the total-payable line, and you'll know exactly what you're getting and what you're giving back.</p>
     <h2>Check the due date and the late-payment terms</h2>
-    <p>DhanBoost loans are salary-linked and repaid in a single instalment on or after your salary date. Your KFS shows the exact due date and the total due. It also states the late-payment fee: 2% per day on the overdue principal, capped at 30 days. Knowing this before you sign means there are no surprises if something slips.</p>
+    <p>DhanBoost loans are repaid in a single instalment. Your KFS shows the exact due date and the total due. It also states the late-payment fee: 2% per day on the overdue principal, capped at 30 days. Knowing this before you sign means there are no surprises if something slips.</p>
     <h2>A 60-second KFS checklist</h2>
     <ul>
       <li>Does the <b>net disbursed</b> amount match what you need?</li>
@@ -109,7 +109,7 @@ export const POSTS: Record<string, BlogPost> = {
     <h2>3. The app or link isn't official</h2>
     <p>Scammers clone brand names and logos. Always check you're on the official domain — for us, that's <b>dhanboost.com</b> — and that emails come from <b>${BRAND.email}</b>. Be wary of loan offers arriving by random WhatsApp, SMS or Telegram links, or apps downloaded from outside official stores.</p>
     <h2>4. There's no clear lender or registration</h2>
-    <p>Every legitimate loan in India is made by an RBI-registered entity. If you can't tell who the actual lender is, or there's no Key Fact Statement, walk away. DhanBoost is a platform; the loan is sanctioned and disbursed by our RBI-registered NBFC partners, and that's stated clearly before you sign.</p>
+    <p>Every legitimate loan in India is made by an RBI-registered entity. If you can't tell who the actual lender is, or there's no Key Fact Statement, walk away. DhanBoost is a platform; the loan is sanctioned and disbursed by our RBI-registered NBFC partner, MLB Securities Private Limited, and that's stated clearly before you sign.</p>
     <h2>5. They ask for OTPs, full card numbers or remote access</h2>
     <p>No genuine lender needs your OTP, full card/CVV, or remote-control access to your phone. These requests exist only to drain your account. Never share them.</p>
     <h2>How to stay safe</h2>
@@ -142,13 +142,13 @@ export const POSTS: Record<string, BlogPost> = {
       body: `
     <p>Your credit score is a three-digit summary of how you've handled borrowing. In India it usually runs from 300 to 900, and lenders use it as one input when they assess you. It isn't magic, and it isn't fixed — it responds to a few clear behaviours. Here's what actually moves it.</p>
     <h2>Payment history — the biggest factor</h2>
-    <p>Paying on time, every time, is the strongest thing you can do. A single missed or late payment can dent your score, and the effect lingers. Set reminders, automate where you can, and if you're going to be late, talk to your lender early. On DhanBoost, your due date is salary-linked and shown clearly, precisely so it's easy to pay on time.</p>
+    <p>Paying on time, every time, is the strongest thing you can do. A single missed or late payment can dent your score, and the effect lingers. Set reminders, automate where you can, and if you're going to be late, talk to your lender early. On DhanBoost, your due date is shown clearly in your Key Fact Statement, precisely so it's easy to pay on time.</p>
     <h2>Credit utilisation — how much of your limit you use</h2>
     <p>If you have credit cards or revolving limits, using a large share of them signals stress. A common rule of thumb is to keep usage well below 30% of your limit. Lower utilisation generally helps your score.</p>
     <h2>Age and mix of credit</h2>
     <p>A longer track record of well-managed accounts helps. So does a healthy mix — for example, a card plus a loan repaid responsibly — because it shows you can handle different kinds of credit. This is a smaller factor, and it builds naturally over time; don't open accounts just to "improve the mix".</p>
     <h2>Hard enquiries</h2>
-    <p>Every time you formally apply for credit, a "hard enquiry" is recorded, and several in a short window can look like you're desperate for funds. Checking your <em>own</em> score, or checking eligibility that doesn't trigger a formal enquiry, does not hurt you. On DhanBoost, checking eligibility does not impact your score — a formal enquiry only happens if you proceed and accept an offer.</p>
+    <p>Every time you formally apply for credit, a "hard enquiry" is recorded, and several in a short window can look like you're desperate for funds. Checking your <em>own</em> score, or checking eligibility that doesn't trigger a formal enquiry, does not hurt you. On DhanBoost, using the calculator involves no credit check. When you submit an application, a credit report is obtained with your consent, before any offer is made, and this may show as an enquiry on your credit report.</p>
     <h2>Common myths</h2>
     <ul>
       <li><b>"Checking my score lowers it."</b> False — checking your own score is a soft enquiry and has no impact.</li>
@@ -191,7 +191,7 @@ export const POSTS: Record<string, BlogPost> = {
     <h2>A quick example</h2>
     <p>Imagine two lenders offering a similar-sounding rate on the same amount. The one quoting a flat rate can end up costing noticeably more than the one quoting an equivalent-looking APR, because the flat rate keeps charging on money you've already repaid. Same headline, different bill.</p>
     <h2>How DhanBoost keeps it honest</h2>
-    <p>DhanBoost loans charge a simple 1% per day on the principal over your actual tenure, and — because it's a single-repayment, salary-linked loan — the Key Fact Statement shows you the exact rupee total you'll repay before you accept. Our calculator shows the same figure, including a representative APR, so you compare on total cost, not a headline.</p>
+    <p>DhanBoost loans charge a simple 1% per day on the principal over your actual tenure, and — because it's a single-repayment loan — the Key Fact Statement shows you the exact rupee total you'll repay before you accept. Our calculator shows the same figure, including a representative APR, so you compare on total cost, not a headline.</p>
     <h2>The one habit to build</h2>
     <p>Whenever you compare loans, ignore the marketing rate and ask two questions: <b>what's the APR</b>, and <b>what's the total rupee amount I'll repay?</b> Those two numbers cut through almost every pricing trick.</p>`,
     }),
@@ -217,7 +217,7 @@ export const POSTS: Record<string, BlogPost> = {
     <h2>When it can make sense</h2>
     <ul>
       <li><b>A genuine, time-bound need with a clear payoff.</b> An essential expense you can't defer — a medical bill, a critical repair, a fee with a deadline — where a short bridge until your salary solves the problem cleanly.</li>
-      <li><b>You already know how you'll repay.</b> A salary-linked loan works best when your due date lines up with money you know is coming. If the repayment plan is obvious, the loan is doing its job.</li>
+      <li><b>You already know how you'll repay.</b> A short-term loan works best when you know exactly where the repayment will come from. If the repayment plan is obvious, the loan is doing its job.</li>
       <li><b>The total cost is small relative to the benefit.</b> If a modest amount of interest saves you a large late penalty, a lost deposit, or real hardship, the maths can favour borrowing.</li>
     </ul>
     <h2>When it doesn't</h2>
@@ -243,32 +243,30 @@ export const POSTS: Record<string, BlogPost> = {
 
   "repaying-on-dhanboost": {
     slug: "repaying-on-dhanboost",
-    title: "Repaying on DhanBoost: UPI, net-banking & auto-debit",
+    title: "Repaying on DhanBoost: UPI and net-banking",
     description:
-      "Every way to repay your DhanBoost loan — UPI, net-banking and auto-debit — plus how repaying early saves you interest.",
+      "How to repay your DhanBoost loan by UPI or net-banking, plus how repaying early saves you interest.",
     category: "Product",
     readMin: 3,
     date: "Apr 2026",
     datePublished: "2026-04-05",
     html: page({
       category: "Product",
-      title: "Repaying on DhanBoost: UPI, net-banking & auto-debit",
+      title: "Repaying on DhanBoost: UPI and net-banking",
       lede: "A quick walkthrough of every way to repay — and how clearing early saves you money.",
       readMin: 3,
       date: "Apr 2026",
       body: `
-    <h2>One repayment, on your salary date</h2>
-    <p>A DhanBoost loan is designed to be simple: you repay it in a <b>single instalment</b> on or after your salary date. There are no EMIs to track. Your exact due date and total amount are shown in your Key Fact Statement and on your dashboard, so you always know what's due and when.</p>
+    <h2>One repayment, on your due date</h2>
+    <p>A DhanBoost loan is designed to be simple: you repay it in a <b>single instalment</b> on or before your due date. There are no EMIs to track. Your exact due date and total amount are shown in your Key Fact Statement and on your dashboard, so you always know what's due and when.</p>
     <h2>The ways to pay</h2>
     <ul>
       <li><b>UPI:</b> the fastest option — pay from any UPI app to the details shown on your repayment screen. Payments usually reflect within minutes.</li>
-      <li><b>Net-banking:</b> transfer from your bank's net-banking to the account shown on your dashboard. Keep the reference number until it's confirmed.</li>
-      <li><b>Auto-debit:</b> if you've set up a mandate, the due amount is collected automatically on your due date — so you can't forget. Just keep enough balance in the account.</li>
-    </ul>
+      <li><b>Net-banking:</b> transfer from your bank's net-banking to the account shown on your dashboard. Keep the reference number until it's confirmed.</li>    </ul>
     <h2>Repaying early saves you interest</h2>
     <p>DhanBoost charges 1% per day on the principal over the actual tenure, and there are <b>no pre-closure or prepayment charges</b>. That means clearing your loan early genuinely reduces what you pay — you're only charged interest for the days you actually held the loan. If salary lands early, paying early is a small, easy win.</p>
     <h2>If you might miss the date</h2>
-    <p>Life happens. If you think you'll be late, contact us early at <b>${BRAND.email}</b>. A late payment attracts a fee of 2% per day on the overdue principal (capped at 30 days) and can affect your credit score, so it's always worth talking to us before the date rather than after.</p>
+    <p>Life happens. If you think you'll be late, contact us early at <b>${BRAND.email}</b>. A late payment attracts a fee of 2% per day on the overdue principal (capped at 30 days). The lender may also report late payments to credit bureaus, which can lower your credit score, so it's always worth talking to us before the date rather than after.</p>
     <h2>After you repay</h2>
     <p>Once your payment is confirmed, your loan is marked closed and you're free to borrow again in future if you need to. Keep your payment confirmation for your records — and that's it. Simple by design.</p>`,
     }),

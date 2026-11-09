@@ -16,7 +16,7 @@ export interface PositionCardProps {
   metric: DashMetric;
   /** One-line caption under the figure. */
   caption?: string;
-  /** Definition shown in the hover popover. */
+  /** Plain-language explanation, printed on the card (phones have no hover) and in the popover. */
   definition: string;
   /** Extra popover lines (e.g. a reconciliation), rendered under the amount. */
   detail?: React.ReactNode;
@@ -59,6 +59,7 @@ export function PositionCard({ title, tone, icon, paise, loans, metric, caption,
           {paiseToINR(Math.round(animated))}
         </span>
         <span className={cn("mt-2 min-h-4 text-[11px]", dark ? "text-white/65" : "text-slate")}>{caption ?? " "}</span>
+        <span className={cn("mt-1 text-[11px] leading-snug", dark ? "text-white/60" : "text-muted")}>{definition}</span>
       </button>
 
       {open && (

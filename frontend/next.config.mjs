@@ -44,7 +44,9 @@ const csp = [
   // step embeds its short-lived S3 PDF URL. Both must be explicitly allowed in frames.
   "frame-src 'self' https://*.signzy.app " + s3 + " " + turnstile,
   "frame-ancestors 'self'",
-  "form-action 'self'",
+  // The repay page posts a form to PayU's hosted checkout. A wildcard because Chrome also applies
+  // form-action to redirects, and PayU redirects the POST to another host (test -> apitest).
+  "form-action 'self' https://*.payu.in",
   "base-uri 'self'",
   "object-src 'none'",
 ].join("; ");
@@ -75,6 +77,18 @@ const nextConfig = {
           },
           { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
         ],
+      },
+    ];
+  },
+  // staff.dhanboost.com is the staging host for the staff console: anything outside /staff (except
+  // the BFF, Next assets and public files) lands on /staff, which routes to login or the dashboard.
+  async redirects() {
+    return [
+      {
+        source: "/:path((?!staff|api/|_next/|.*[.]).*)",
+        has: [{ type: "host", value: "staff.dhanboost.com" }],
+        destination: "/staff",
+        permanent: false,
       },
     ];
   },

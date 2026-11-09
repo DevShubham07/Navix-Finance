@@ -25,11 +25,22 @@ export function mondayOf(d: Date): Date {
   return addDays(d, -((d.getDay() + 6) % 7));
 }
 
+/** First month (0-based) of the calendar quarter containing `d`: Jan, Apr, Jul or Oct. */
+export function quarterStartMonth(d: Date): number {
+  return Math.floor(d.getMonth() / 3) * 3;
+}
+
+/** The financial year (1 Apr – 31 Mar) that `d` falls in, as its starting calendar year. */
+export function fyStartYear(d: Date): number {
+  return d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1;
+}
+
 /**
  * Bounded windows, not rolling ones: "Last week" must END last Sunday, otherwise it overlaps this
  * week and the two periods double-count the same actions.
  */
-export const PRESETS: { key: string; label: string; range: () => Range }[] = [
+// `now` is optional so tests can pin the clock; the older presets read the real clock directly.
+export const PRESETS: { key: string; label: string; range: (now?: Date) => Range }[] = [
   { key: "today", label: "Today", range: () => ({ from: iso(new Date()), to: iso(new Date()) }) },
   {
     key: "yesterday",
@@ -66,6 +77,36 @@ export const PRESETS: { key: string; label: string; range: () => Range }[] = [
         from: iso(new Date(now.getFullYear(), now.getMonth() - 1, 1)),
         to: iso(new Date(now.getFullYear(), now.getMonth(), 0)),
       };
+    },
+  },
+  {
+    key: "this-quarter",
+    label: "This quarter",
+    range: (now = new Date()) => ({ from: iso(new Date(now.getFullYear(), quarterStartMonth(now), 1)), to: iso(now) }),
+  },
+  {
+    key: "last-quarter",
+    label: "Last quarter",
+    range: (now = new Date()) => {
+      const start = quarterStartMonth(now);
+      // Day 0 of the current quarter's first month is the last day of the previous quarter.
+      return {
+        from: iso(new Date(now.getFullYear(), start - 3, 1)),
+        to: iso(new Date(now.getFullYear(), start, 0)),
+      };
+    },
+  },
+  {
+    key: "this-fy",
+    label: "This financial year",
+    range: (now = new Date()) => ({ from: iso(new Date(fyStartYear(now), 3, 1)), to: iso(now) }),
+  },
+  {
+    key: "last-fy",
+    label: "Last financial year",
+    range: (now = new Date()) => {
+      const y = fyStartYear(now) - 1;
+      return { from: iso(new Date(y, 3, 1)), to: iso(new Date(y + 1, 2, 31)) };
     },
   },
   { key: "all", label: "All time", range: () => ({}) },

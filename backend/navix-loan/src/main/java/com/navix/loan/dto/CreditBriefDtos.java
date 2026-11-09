@@ -35,7 +35,10 @@ public final class CreditBriefDtos {
         String bureauSource,
         /** The bureau's own report PDF ({@code BUREAU_REPORT} — Fintrix CRIF's {@code credit_report_link},
          *  ingested at pull time), or {@code null} when the bureau returned none (Experian, KBA-released). */
-        Long bureauReportDocumentId) {
+        Long bureauReportDocumentId,
+        /** Why the stars are what they are — the score band, then each BRE deduction or cap applied.
+         *  Recomputed from the stored facts on read; empty for an unrated or absent report. */
+        java.util.List<String> ratingReasons) {
 
         /** Categorized facts for the card. Full PAN/mobile (staff-only); amounts in rupees (the bureau's unit). */
         public record Facts(

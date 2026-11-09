@@ -43,7 +43,12 @@ export default function SignupSubmittedPage() {
     done.current = true;
     borrowerApi
       .submitKyc(appId)
-      .then(() => {
+      .then((app) => {
+        // The duplicate-Aadhaar rule rejects at submission instead of submitting.
+        if (app.status === "REJECTED") {
+          router.replace("/application-rejected");
+          return;
+        }
         setSubmitted(true);
         // Best-effort pointer update; the status leaving DRAFT is what really ends the intake.
         return journeyApi.advance(appId, "SUBMITTED").catch(() => {});

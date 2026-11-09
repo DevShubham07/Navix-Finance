@@ -7,6 +7,73 @@ import org.junit.jupiter.api.Test;
 /** The PROVIDER_CALL log keeps a payload's shape and drops the borrower's identifiers. */
 class ProviderLogRedactorTest {
 
+    /**
+     * The bank-statement-analysis request, which carries three credentials at once: a presigned S3
+     * URL whose query string IS the authorisation to a borrower's statement, the borrower's PDF
+     * password (which never expires), and our own vendor authToken. None may reach CloudWatch.
+     */
+    private static final String BSA_REQUEST = """
+            {"authToken":"eyJhbGciOiJIUzI1NiJ9.abc.def",
+             "files":[{"fileUrl":"https://navix-finance-bucket.s3.ap-south-1.amazonaws.com/applications/9995/bank_statement/1789787768518.pdf?X-Amz-Signature=deadbeefcafe&X-Amz-Credential=AKIAEXAMPLE","password":"Statement@123"}],
+             "customerName":"Jane Doe","statementPeriod":"6m"}
+            """;
+
+    @Test
+    void masksCredentialsInTheLog_presignedUrlPasswordAndAuthToken() {
+        String out = ProviderLogRedactor.redact(BSA_REQUEST);
+
+        assertThat(out).doesNotContain("X-Amz-Signature").doesNotContain("deadbeefcafe");
+        assertThat(out).doesNotContain("Statement@123").doesNotContain("eyJhbGciOiJIUzI1NiJ9");
+        // The shape survives, so a failing integration is still diagnosable from the log line.
+        assertThat(out).contains("fileUrl").contains("password").contains("authToken")
+                .contains("\"statementPeriod\":\"6m\"");
+    }
+
+    /** Signzy eSign initiate: the webhook shared secret and the presigned KFS URL ride in the request. */
+    private static final String ESIGN_REQUEST = """
+            {"pdf":"https://bucket.s3.amazonaws.com/applications/9/sanction_letter/1.pdf?X-Amz-Signature=cafe01",
+             "callbackUrl":"https://api.example/api/webhooks/signzy/contract",
+             "callbackUrlAuthorizationHeader":"whsec_topsecret","signMode":"aadhaar"}
+            """;
+
+    @Test
+    void masksTheEsignWebhookSecretAndPresignedPdfInBothTheLogAndTheStoredRow() {
+        for (String out : new String[] {ProviderLogRedactor.redact(ESIGN_REQUEST),
+                ProviderLogRedactor.redactCredentials(ESIGN_REQUEST)}) {
+            assertThat(out).doesNotContain("whsec_topsecret").doesNotContain("X-Amz-Signature");
+            assertThat(out).contains("callbackUrlAuthorizationHeader").contains("aadhaar");
+        }
+    }
+
+    @Test
+    void aHugeValueIsCappedBeforeTheQuadraticEmailPatternRuns() {
+        String huge = "a.".repeat(500_000); // ~1 MB of alternating word / non-word characters
+
+        long start = System.nanoTime();
+        String out = ProviderLogRedactor.redactText(huge);
+
+        assertThat(out.length()).isLessThan(3_000);
+        assertThat((System.nanoTime() - start) / 1_000_000).isLessThan(2_000);
+    }
+
+    @Test
+    void storedAuditRowDropsCredentialsButKeepsIdentifiers() {
+        String out = ProviderLogRedactor.redactCredentials(BSA_REQUEST);
+
+        assertThat(out).doesNotContain("X-Amz-Signature").doesNotContain("Statement@123")
+                .doesNotContain("eyJhbGciOiJIUzI1NiJ9");
+        // Unlike the log pass, the access-controlled row deliberately keeps the borrower data —
+        // it is the record a failing integration is diagnosed from.
+        assertThat(out).contains("Jane Doe").contains("6m");
+    }
+
+    @Test
+    void redactCredentialsLeavesNonJsonAndEmptyPayloadsAlone() {
+        assertThat(ProviderLogRedactor.redactCredentials("<html>502 Bad Gateway</html>"))
+                .isEqualTo("<html>502 Bad Gateway</html>");
+        assertThat(ProviderLogRedactor.redactCredentials(null)).isNull();
+    }
+
     @Test
     void masksIdentifyingKeys_keepsEverythingNeededToDiagnose() {
         String out = ProviderLogRedactor.redact("""

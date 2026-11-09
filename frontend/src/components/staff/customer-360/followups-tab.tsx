@@ -20,7 +20,7 @@ function ymd(d: Date): string {
 
 function FollowupTable({ rows, past, onDone }: { rows: CallLogView[]; past?: boolean; onDone?: () => void }) {
   return (
-    <table className="staff-data-table">
+    <div className="staff-table-scroll"><table className="staff-data-table staff-table-fit">
       <thead>
         <tr>
           <th>S.No</th>
@@ -54,7 +54,7 @@ function FollowupTable({ rows, past, onDone }: { rows: CallLogView[]; past?: boo
           </tr>
         ))}
       </tbody>
-    </table>
+    </table></div>
   );
 }
 

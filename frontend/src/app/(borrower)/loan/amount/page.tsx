@@ -6,7 +6,8 @@ import { Loader2 } from "lucide-react";
 import { WizardActions } from "@/components/borrower/wizard-actions";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { LoanCostBreakdown } from "@/components/borrower/loan-cost-breakdown";
-import { offerApi } from "@/lib/api/applications";
+import { useQuery } from "@tanstack/react-query";
+import { ApplicationApiError, journeyApi, offerApi } from "@/lib/api/applications";
 import { buildCostBreakdown, MIN_LOAN_AMOUNT } from "@/lib/calc/loan-math";
 import { useOffer, completeOfferStep, nextOfferRoute } from "@/lib/offer";
 import { formatINR0, formatDate } from "@/lib/utils";
@@ -48,7 +49,20 @@ export default function LoanAmountPage() {
   }, [repaymentDate]);
 
   const value = amount ?? ceiling;
-  const breakdown = React.useMemo(() => buildCostBreakdown(value, tenureDays), [value, tenureDays]);
+  // The pinned repayment discount (percent of principal off the fee) lives on the offer summary. Best
+  // effort: if the summary isn't readable yet the preview simply shows the undiscounted fee, and the
+  // summary screen right after this one is authoritative.
+  const discountQ = useQuery({
+    queryKey: ["offer-fee-discount", appId],
+    queryFn: () => offerApi.summary(appId as number),
+    enabled: appId != null,
+    retry: false,
+  });
+  const discountPct = discountQ.data?.feeDiscountPercent ?? 0;
+  const breakdown = React.useMemo(
+    () => buildCostBreakdown(value, tenureDays, discountPct),
+    [value, tenureDays, discountPct],
+  );
   const pct = ceiling > min ? ((value - min) / (ceiling - min)) * 100 : 100;
   const presets = [0.25, 0.5, 0.75, 1].map((f) => ({
     label: `${Math.round(f * 100)}%`,
@@ -63,6 +77,14 @@ export default function LoanAmountPage() {
       await offerApi.chooseAmount(appId, Math.round(value * 100));
       await completeOfferStep(appId, "OFFER_AMOUNT", router, nextOfferRoute("amount"));
     } catch (err) {
+      if (err instanceof ApplicationApiError && err.code === "TERMS_LOCKED") {
+        // Already signed: the amount is fixed, so send them to wherever the server says they are.
+        const j = await journeyApi.get(appId).catch(() => null);
+        if (j?.route?.startsWith("/loan/")) {
+          router.replace(j.route);
+          return;
+        }
+      }
       setError(formatApiError(err, "Could not save your amount — please try again."));
       setBusy(false);
     }

@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -65,6 +67,8 @@ class CustomerReviewServiceTest {
     private ProfileChangeLogger changeLogger;
     @Mock
     private com.navix.loan.repository.ApplicationVerificationRepository verificationRepository;
+    @Mock
+    private com.navix.common.security.BorrowerIdentityPort borrowerIdentity;
 
     private CustomerReviewService service;
 
@@ -72,7 +76,7 @@ class CustomerReviewServiceTest {
     void setUp() {
         service = new CustomerReviewService(applicationRepository, profileRepository, documentRepository,
                 storage, verificationInvalidation, eligibilityService, changeLogRepository, changeLogger,
-                verificationRepository);
+                verificationRepository, borrowerIdentity);
         ActorContext.set(BORROWER);
     }
 
@@ -144,6 +148,7 @@ class CustomerReviewServiceTest {
         when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(application()));
         when(profileRepository.existsPanForOtherCustomer("ABCDE1234F", CUSTOMER_ID)).thenReturn(false);
         when(profileRepository.existsMobileForOtherCustomer("9876543210", CUSTOMER_ID)).thenReturn(false);
+        when(borrowerIdentity.isLoginMobile("9876543210", CUSTOMER_ID)).thenReturn(true);
         when(profileRepository.findByApplicationId(APP_ID)).thenReturn(Optional.empty());
         when(profileRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
@@ -153,6 +158,162 @@ class CustomerReviewServiceTest {
         assertThat(saved.getApplicationId()).isEqualTo(APP_ID);
         assertThat(saved.getPan()).isEqualTo("ABCDE1234F");
         assertThat(saved.getMobile()).isEqualTo("9876543210");
+    }
+
+    @Test
+    void borrowerCannotSetAMobileOtherThanTheirLoginMobile() {
+        when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(application()));
+        when(borrowerIdentity.isLoginMobile("9000000001", CUSTOMER_ID)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.saveProfile(APP_ID, req(null, "9000000001")))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("signed in with");
+        verify(profileRepository, never()).save(any());
+    }
+
+    @Test
+    void borrowerCannotChangeNamePanOrDobOnceFileLeftDraft() {
+        LoanApplication app = application();
+        app.setStatus(ApplicationStatus.KYC_PENDING);
+        when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(app));
+        CustomerProfile existing = new CustomerProfile();
+        existing.setApplicationId(APP_ID);
+        existing.setFullName("Asha Verma");
+        existing.setPan("ABCDE1234F");
+        when(profileRepository.findByApplicationId(APP_ID)).thenReturn(Optional.of(existing));
+
+        // a different PAN is refused; re-sending the same name + PAN is a no-op, not an error
+        assertThatThrownBy(() -> service.saveProfile(APP_ID, req("ZZZZZ9999Z", null)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("can't be changed");
+        service.saveProfile(APP_ID, req("ABCDE1234F", null));
+    }
+
+    // ---- F5 / F14: verified fields and salary after the check ------------------------------
+
+    private ProfileRequest slice(String address, String employer, Long salary, String email,
+                                 String officialEmail, java.time.LocalDate prevSalaryDate) {
+        return new ProfileRequest(null, null, null, null, address, employer, null, salary, null, email,
+                officialEmail, null, null, null, prevSalaryDate, null, null, null, null);
+    }
+
+    private CustomerProfile stubProfile(ApplicationStatus status) {
+        LoanApplication app = application();
+        app.setStatus(status);
+        when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(app));
+        CustomerProfile p = new CustomerProfile();
+        p.setApplicationId(APP_ID);
+        p.setAddress("Old address");
+        p.setEmployer("Acme");
+        p.setMonthlySalaryPaise(5_000_000L);
+        p.setOfficialEmail("a@acme.com");
+        p.setOfficialEmailOtpVerified(true);
+        when(profileRepository.findByApplicationId(APP_ID)).thenReturn(Optional.of(p));
+        lenient().when(profileRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        return p;
+    }
+
+    @Test
+    void changingTheOfficialEmailClearsItsOtpFlag_andSameAddressKeepsIt() {
+        CustomerProfile p = stubProfile(ApplicationStatus.DRAFT);
+
+        service.saveProfile(APP_ID, slice(null, null, null, null, "A@ACME.com", null));
+        assertThat(p.getOfficialEmailOtpVerified()).isTrue();
+
+        service.saveProfile(APP_ID, slice(null, null, null, null, "b@acme.com", null));
+        assertThat(p.getOfficialEmailOtpVerified()).isNull();
+    }
+
+    @Test
+    void afterDraftChangedVerifiedFieldsAreInvalidated_includingAddress() {
+        stubProfile(ApplicationStatus.KYC_PENDING);
+
+        service.saveProfile(APP_ID, slice("New address", "Globex", null, null, null, null));
+
+        verify(verificationInvalidation).invalidateForFields(eq(APP_ID),
+                argThat(s -> s.equals(java.util.Set.of("employer", "address"))));
+    }
+
+    @Test
+    void afterDraftOfficialEmailAndAccountChangesAreInvalidated() {
+        CustomerProfile p = stubProfile(ApplicationStatus.KYC_PENDING);
+        p.setSalaryAccountNumber("111");
+        p.setSalaryIfsc("HDFC0000001");
+
+        service.saveProfile(APP_ID, new ProfileRequest(null, null, null, null, null, null, null, null, null,
+                null, "b@acme.com", "222", "icic0000002", null, null, null, null, null, null));
+
+        verify(verificationInvalidation).invalidateForFields(eq(APP_ID),
+                argThat(s -> s.equals(java.util.Set.of("officialEmail", "salaryAccountNumber", "salaryIfsc"))));
+    }
+
+    @Test
+    void inDraftNothingIsInvalidated() {
+        stubProfile(ApplicationStatus.DRAFT);
+
+        service.saveProfile(APP_ID, slice(null, "Globex", 6_000_000L, null, null, null));
+
+        verify(verificationInvalidation, never()).invalidateForFields(any(), any());
+    }
+
+    @Test
+    void afterDraftABorrowerCannotMoveTheSalaryDay() {
+        LoanApplication app = application();
+        app.setStatus(ApplicationStatus.SANCTIONED);
+        app.setSalaryCreditDay(5);
+        when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(app));
+        CustomerProfile p = new CustomerProfile();
+        when(profileRepository.findByApplicationId(APP_ID)).thenReturn(Optional.of(p));
+        when(profileRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        service.saveProfile(APP_ID, slice(null, null, null, null, null, java.time.LocalDate.of(2026, 10, 28)));
+
+        assertThat(app.getSalaryCreditDay()).isEqualTo(5);
+        assertThat(p.getPreviousSalaryDate()).isNull();
+    }
+
+    @Test
+    void inDraftTheSalaryDayIsStillDerived() {
+        LoanApplication app = application();
+        when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(app));
+        when(profileRepository.findByApplicationId(APP_ID)).thenReturn(Optional.of(new CustomerProfile()));
+        when(profileRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        service.saveProfile(APP_ID, slice(null, null, null, null, null, java.time.LocalDate.of(2026, 10, 28)));
+
+        assertThat(app.getSalaryCreditDay()).isEqualTo(28);
+    }
+
+    @Test
+    void afterDraftABorrowerCannotRaiseSalary_inEitherPath() {
+        CustomerProfile p = stubProfile(ApplicationStatus.KYC_PENDING);
+
+        assertThatThrownBy(() -> service.saveProfile(APP_ID, slice(null, null, 6_000_000L, null, null, null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code").isEqualTo("SALARY_INCREASE_NEEDS_REVIEW");
+        assertThatThrownBy(() -> service.editOwnProfile(APP_ID, new EditProfileRequest(
+                null, null, null, 6_000_000L, null, null, null, null, null, null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code").isEqualTo("SALARY_INCREASE_NEEDS_REVIEW");
+        assertThat(p.getMonthlySalaryPaise()).isEqualTo(5_000_000L);
+    }
+
+    @Test
+    void afterDraftABorrowerMayLowerSalary() {
+        CustomerProfile p = stubProfile(ApplicationStatus.KYC_PENDING);
+
+        service.saveProfile(APP_ID, slice(null, null, 4_000_000L, null, null, null));
+
+        assertThat(p.getMonthlySalaryPaise()).isEqualTo(4_000_000L);
+    }
+
+    @Test
+    void inDraftABorrowerMayRaiseSalary() {
+        CustomerProfile p = stubProfile(ApplicationStatus.DRAFT);
+
+        service.saveProfile(APP_ID, slice(null, null, 6_000_000L, null, null, null));
+
+        assertThat(p.getMonthlySalaryPaise()).isEqualTo(6_000_000L);
     }
 
     // ---- V75: Aadhaar number slice ------------------------------------------------------
@@ -273,11 +434,30 @@ class CustomerReviewServiceTest {
         when(applicationRepository.existsById(APP_ID)).thenReturn(true);
         when(documentRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
-        for (CurrentActor actor : new CurrentActor[] {CREDIT_EXECUTIVE, CREDIT_HEAD, BORROWER}) {
+        for (CurrentActor actor : new CurrentActor[] {CREDIT_EXECUTIVE, CREDIT_HEAD}) {
             ActorContext.set(actor);
             ApplicationDocument saved = service.addDocument(APP_ID, payslip());
             assertThat(saved.getApplicationId()).isEqualTo(APP_ID);
             assertThat(saved.getDocType()).isEqualTo("PAYSLIP");
+        }
+    }
+
+    @Test
+    void aBorrowerMayUploadOnlyAllowListedDocTypes() {
+        when(applicationRepository.existsById(APP_ID)).thenReturn(true);
+        when(documentRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        ActorContext.set(BORROWER);
+
+        ApplicationDocument saved = service.addDocument(APP_ID, new DocumentRequest("bank_statement", "s.pdf",
+                "application/pdf", Base64.getEncoder().encodeToString("x".getBytes()), null));
+        assertThat(saved.getDocType()).isEqualTo("BANK_STATEMENT");
+
+        // System- and credit-team-owned types are never a borrower's to file.
+        for (String reserved : new String[] {"CREDIT_BRIEF", "BUREAU_REPORT", "SIGNED_AGREEMENT", "SANCTION_LETTER"}) {
+            assertThatThrownBy(() -> service.addDocument(APP_ID, new DocumentRequest(reserved, "x.pdf",
+                    "application/pdf", Base64.getEncoder().encodeToString("x".getBytes()), null)))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("Unsupported document type");
         }
     }
 

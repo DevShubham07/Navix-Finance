@@ -148,7 +148,10 @@ export async function ensureBorrowerSession(
   name?: string,
 ): Promise<BorrowerSession | null> {
   const existing = await fetchBorrowerSession();
-  if (existing) return existing;
+  // Reuse a session only if it belongs to this mobile (last 10 digits), so a stale session for
+  // another number is not silently adopted. An empty `mobile` keeps the old reuse-anything behaviour.
+  const last10 = (m: string) => m.replace(/\D/g, "").slice(-10);
+  if (existing && (!mobile || last10(existing.mobile ?? "") === last10(mobile))) return existing;
   if (!otp) return null;
   const res = await fetch("/api/auth/borrower/login", {
     method: "POST",
@@ -547,12 +550,14 @@ export function canStartNewLoan(apps: ApplicationView[] | undefined): boolean {
  *   - `ACTIVE_LOAN`        → a live advance is still outstanding → repay it first on `/repay`
  *   - `RETURNING_BORROWER` → they have repaid an advance before → borrow again on `/reloan`
  *   - `ONBOARDING_PAUSED`   → new onboarding is switched off → the waitlist form on `/apply`
+ *   - `APPLICATIONS_CLOSED` → admin closed all new applications + reloans → `/applications-closed`
  */
 export function routeForBlockedStart(code: string | undefined): string | null {
   if (code === "ACTIVE_APPLICATION") return "/loan/status";
   if (code === "ACTIVE_LOAN") return "/repay";
   if (code === "RETURNING_BORROWER") return "/reloan";
   if (code === "ONBOARDING_PAUSED") return "/apply";
+  if (code === "APPLICATIONS_CLOSED") return "/applications-closed";
   return null;
 }
 

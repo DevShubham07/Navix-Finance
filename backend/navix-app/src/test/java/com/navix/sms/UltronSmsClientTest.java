@@ -1,6 +1,7 @@
 package com.navix.sms;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -14,6 +15,15 @@ class UltronSmsClientTest {
                 "route", "peid", globalId, perType,
                 "otp {otp} {ttl}", null, true, false, 300, 6, false, "123456");
         return new UltronSmsClient(props);
+    }
+
+    @Test
+    void sendRegisteredRefusesABlankIdRatherThanFallingBack() {
+        UltronSmsClient c = client("GLOBAL", Map.of());
+        assertThatThrownBy(() -> c.sendRegistered("919876543210", "text", " "))
+                .isInstanceOf(SmsException.class);
+        assertThatThrownBy(() -> c.sendRegistered("919876543210", "text", null))
+                .isInstanceOf(SmsException.class);
     }
 
     @Test
@@ -58,7 +68,7 @@ class UltronSmsClientTest {
             assertThat(m.group(2)).as("DLT id default for %s", m.group(1)).matches("\\d{19}");
             mapped++;
         }
-        assertThat(mapped).isEqualTo(15);
+        assertThat(mapped).isEqualTo(17);
     }
 
     /**

@@ -1,0 +1,373 @@
+{
+ "components": {
+  "schemas": {
+   "GenericBadRequestResponse_Client": {
+    "properties": {
+     "code": {
+      "description": "Error code",
+      "type": "string"
+     },
+     "details": {
+      "description": "Details about the exception. Usually contains the exception id for reference.",
+      "type": "string"
+     },
+     "errors": {
+      "description": "Custom errors",
+      "type": "string"
+     },
+     "message": {
+      "description": "Description of the error",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "GenericIdListResponse_Client": {
+    "items": {
+     "type": "string"
+    },
+    "properties": {
+     "empty": {
+      "type": "boolean"
+     }
+    },
+    "type": "array"
+   },
+   "NDScheduledPlanCreateMultiRequest_Client": {
+    "example": "{\n    \"requests\" : [\n       { \n           \"umrn\" : \"UMRN2984366445219389\",\n           \"amount\" : 2.0,\n           \"settlement_date\" : \"2019-04-10\",\n           \"corporate_account_number\" : \"123456789\",\n           \"corporate_config_id\" : \"TSE180110115609336HGUGFNECH30001\",\n           \"destination_bank_id\": \"HDFC0000158\",\n           \"unique_key\": \"LAN_EMI_1\",\n           \"narration\": \"TW Loan EMI\",\n           \"customer_account_number\" : \"01581000136321\",\n           \"customer_name\" : \"devesh\",\n           \"frequency\" : \"monthly\"\n       },\n       { <entry-2> },\n       { <entry-3> }\n     ]\n}\n",
+    "properties": {
+     "requests": {
+      "items": {
+       "$ref": "#/components/schemas/NDScheduledPlanCreateRequest_Client"
+      },
+      "type": "array"
+     }
+    },
+    "type": "object"
+   },
+   "NDScheduledPlanCreateRequest_Client": {
+    "properties": {
+     "amount": {
+      "description": "Either amount or amount_in_paise is mandatory",
+      "minimum": 1,
+      "type": "string"
+     },
+     "amount_in_paise": {
+      "description": "Either amount or amount_in_paise is mandatory",
+      "format": "int32",
+      "minimum": 1,
+      "type": "integer"
+     },
+     "corporate_account_number": {
+      "description": " Corporate account number where debited amount from customer\u2019s account is to be settled. Any one of corporate_account_number or settlement_config_profile_id or split_settlement_info is required. For Non Digio PA users, this is a mandatory attribute. <br><br>All numeric<br>Min len = 8 Max len = 18<br>",
+      "type": "string"
+     },
+     "corporate_config_id": {
+      "description": "Optional.  Passing the attribute is not required if the mandate already exists in the digio system, else error will be thrown.<br><br>Corporate config created from dashboard has below info and is auto populated during user authentication.<br>Utility Code<br>Service provider name<br>Sponsor bank name<br>Sponsor bank <br>Sponsor bank ifsc<br><br>Length = 32<br>",
+      "type": "string"
+     },
+     "customer_account_number": {
+      "description": "Optional, only applicable if mandate is not provided by Digio. Bank account number of customer",
+      "maxLength": 18,
+      "minLength": 8,
+      "type": "string"
+     },
+     "customer_name": {
+      "description": "Optional, only applicable if mandate is not provided by Digio. Name of the customer",
+      "maxLength": 40,
+      "minLength": 1,
+      "pattern": "^[0-9A-Za-z]{1,}[0-9A-Za-z\\s.']{0,}$",
+      "type": "string"
+     },
+     "destination_account_type": {
+      "description": "Optional, only applicable if mandate is not provided by Digio. Default: SAVINGS<br><br>Pass one from below<br>SAVINGS,<br>CURRENT, <br>CC, <br>SB_NRE, <br>SB_NRO, <br>OTHER<br>",
+      "enum": [
+       "savings",
+       "current",
+       "cc",
+       "sb_nre",
+       "sb_nro",
+       "other"
+      ],
+      "type": "string"
+     },
+     "destination_bank_id": {
+      "description": "Optional, only applicable if mandate is not provided by Digio. Valid IFSC or MICR Code",
+      "type": "string"
+     },
+     "frequency": {
+      "default": "ONETIME",
+      "description": "Pass any one allowed value",
+      "enum": [
+       "onetime",
+       "adhoc",
+       "intraday",
+       "daily",
+       "weekly",
+       "monthly",
+       "quarterly",
+       "semiannually",
+       "yearly",
+       "bimonthly"
+      ],
+      "type": "string"
+     },
+     "narration": {
+      "description": "Default: Corporate name <br>Allowed chars: a-zA-Z.0-9<br>The value provided in narration, will be reflected in the customer account statement. <br>",
+      "maxLength": 20,
+      "minLength": 1,
+      "pattern": "^[0-9A-Za-z\\& .]{0,}$",
+      "type": "string"
+     },
+     "optional_attr": {
+      "$ref": "#/components/schemas/NDTxnOptionalAttr_Client"
+     },
+     "payment_count": {
+      "default": 1,
+      "description": "Refers to the number of consecutive debits to be undertaken<br>Note: payment_count has to be one if frequency is ONETIME<br>",
+      "format": "int32",
+      "minimum": 1,
+      "type": "integer"
+     },
+     "settlement_config_profile_id": {
+      "description": "For Digio PA users, easy to use config for custom settlement amount. Any one of corporate_account_number or settlement_config_profile_id or split_settlement_info is required.",
+      "type": "string"
+     },
+     "settlement_date": {
+      "description": "Date for Settlement in yyyy-mm-dd<br><br>Default: <br>(i) first_collection_date as provided in registered mandate<br>OR<br>(ii) current date<br>",
+      "format": "date-time",
+      "type": "string"
+     },
+     "split_settlement_info": {
+      "description": "Only for Digio PA users, easy to use config for custom settlement amount. Any one of corporate_account_number or settlement_config_profile_id or split_settlement_info is required.",
+      "items": {
+       "$ref": "#/components/schemas/SplitSettlementInfo_Client"
+      },
+      "maxItems": 10,
+      "minItems": 2,
+      "type": "array"
+     },
+     "sub_user_identifier": {
+      "description": "Set value to assign it to a sub-user.  Provide the email_id of registered sub_user. If it is provided then the debit details will be available in sub user login",
+      "type": "string"
+     },
+     "umrn": {
+      "description": "Mandate UMRN created upon successful registration of Mandate",
+      "type": "string"
+     },
+     "unique_key": {
+      "description": "To be used for Corporate\u2019s reference should be unique for each debit request. <br><br>ex: umrn_1, umrn_2<br><br>Allowed chars: a-zA-Z.0-9_<br><br>Min len = 1  Max len = 30<br>Note : Please provide unique_key in the API call to avoid duplicate schedule/debit creation<br>",
+      "maxLength": 30,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9-_]*$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "corporate_account_number",
+     "frequency",
+     "umrn"
+    ],
+    "type": "object"
+   },
+   "NDTxnOptionalAttr_Client": {
+    "description": "Please refer below for the additional attributes, that should only be passed by Mutual Fund use case customers",
+    "properties": {
+     "additional_date": {
+      "description": "Pass this attribute as blank. This will be populated by Sponsor Bank.\nDate in DD-MM-YYYY format\nIn case of Lump Sum and SIP First Order, the date reported can be repeated. In case of running SIP Date of trigger of SIP will be reported\n",
+      "format": "date-time",
+      "type": "string"
+     },
+     "bank_code": {
+      "description": "For YES Bank as sponsor bank, Pass RCY.\nWill be provided by BSE/ICCL to the PA/Bank and it will be common for transactions uploaded by the specific PA/Bank.\nALPHA, No Special char\n",
+      "maxLength": 3,
+      "pattern": "^[A-Za-z0-9]*$",
+      "type": "string"
+     },
+     "client_id": {
+      "description": "UCC for the said Client.\nALPHA NUM, No Special char,\n",
+      "pattern": "^[A-Za-z0-9]*$",
+      "type": "string"
+     },
+     "credit_utility_code": {
+      "description": "UTILITY CODE of Clearing House / AMC where Funds will be Credited\nALPHA NUM, No Special char.\nFor ICCL, please pass: YESB00709000028661\n",
+      "pattern": "^[A-Za-z0-9]*$",
+      "type": "string"
+     },
+     "destination_bank_code": {
+      "description": "Pass this attribute as blank. This will be populated by Sponsor Bank",
+      "pattern": "^$",
+      "type": "string"
+     },
+     "member_id": {
+      "description": "Member ID for whom the PA/ Bank is uploading the file\nNUM, No Special char,\n",
+      "maxLength": 5,
+      "pattern": "^[0-9]+$",
+      "type": "string"
+     },
+     "mis_shared_with": {
+      "description": "ICCL: BSE Clearing\nNSCCL: NSE Clearing\nAMC: AMC\n",
+      "enum": [
+       "ICCL",
+       "NSCCL",
+       "AMC"
+      ],
+      "type": "string"
+     },
+     "order_id": {
+      "description": "Pass the Order Number for this SIP order\nWill be sent by Member to PA/Bank to ICCL.\nALPHA NUM, No Special char\n",
+      "maxLength": 30,
+      "pattern": "^[A-Za-z0-9]*$",
+      "type": "string"
+     },
+     "pg_bank_ref_number": {
+      "description": "Unique reference number provided by the member for payment to be collected for a unique client. Please pass the SIP Registration Number here, which will be sent to ICCLALPHA NUM, No Special char,\n",
+      "maxLength": 25,
+      "pattern": "^[A-Za-z0-9]*$",
+      "type": "string"
+     },
+     "product_type": {
+      "description": "MUT : Mutual Funds (will create file as per new SEBI and Exchanges guidelines)\nFor Non MF use cases, please DO NOT pass optional_attr and its associated attributes",
+      "enum": [
+       "MUT"
+      ],
+      "type": "string"
+     },
+     "txn_type": {
+      "description": "L : Lump Sum\nS : SIP\n",
+      "enum": [
+       "L",
+       "S"
+      ],
+      "type": "string"
+     },
+     "utr_number": {
+      "description": "Pass this attribute as blank. This will be populated by Sponsor Bank<br>Unique number generated for funds transferred in ICCL's Account<br>",
+      "pattern": "^$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "bank_code",
+     "client_id",
+     "credit_utility_code",
+     "member_id",
+     "mis_shared_with",
+     "pg_bank_ref_number",
+     "product_type",
+     "txn_type",
+     "utr_number"
+    ],
+    "type": "object"
+   },
+   "SplitSettlementInfo_Client": {
+    "description": "Any one of corporate_account_number or settlement_config_profile_id or split_settlement_info is required.",
+    "properties": {
+     "settlement_account_number": {
+      "description": "Bank Account Number",
+      "type": "string"
+     },
+     "split_amount_in_paise": {
+      "description": "Amount to be settled in paise",
+      "format": "int32",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "split_amount_in_paise"
+    ],
+    "type": "object"
+   }
+  },
+  "securitySchemes": {
+   "api_auth": {
+    "in": "header",
+    "scheme": "basic",
+    "type": "http"
+   }
+  }
+ },
+ "info": {
+  "contact": {
+   "email": "support@digio.in"
+  },
+  "description": "Getting started with Digio Rest Apis",
+  "title": "Digio Apis",
+  "x-provenance": "Fetched 2026-10-16 from https://documentation.digio.in/swagger/post_createScheduledPlanMulti.json (servers[] replaced with the hosts documented at https://documentation.digio.in/digienvironments/; the published spec ships a localhost placeholder)"
+ },
+ "openapi": "3.0.1",
+ "paths": {
+  "/v3/client/nach_debit/scheduled/register_multiple": {
+   "post": {
+    "description": "This API is used to create schedule plan for a multiple UMRN. NOTE: Max Limit: 200 entries per request. Each entry has the same structure as the 1st API.",
+    "operationId": "createScheduledPlanMulti",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/NDScheduledPlanCreateMultiRequest_Client"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "examples": {
+         "Success Request": {
+          "description": "Success Request",
+          "value": "[\n       \"NSP1907171443025142M75F7G2JH8THE\",\n       <entry-2 digio generated unique id>,\n       <entry-3 digio generated unique id>\n]\n"
+         }
+        },
+        "schema": {
+         "$ref": "#/components/schemas/GenericIdListResponse_Client"
+        }
+       }
+      }
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "examples": {
+         "Bad Request": {
+          "description": "Bad Request",
+          "value": {
+           "code": "BAD_REQUEST",
+           "details": "EX230000000",
+           "errors": {
+            "15": "Request modification is not allowed. Please check value for customer_account_number",
+            "50": "amount or amount_in_paise cannot be null. ",
+            "6": "Action not allowed in current mandate state"
+           },
+           "message": "Action not allowed in current mandate state"
+          }
+         }
+        },
+        "schema": {
+         "$ref": "#/components/schemas/GenericBadRequestResponse_Client"
+        }
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "api_auth": []
+     }
+    ],
+    "summary": "Create presentation for a multiple UMRNs"
+   }
+  }
+ },
+ "servers": [
+  {
+   "description": "Production",
+   "url": "https://api.digio.in"
+  },
+  {
+   "description": "Sandbox",
+   "url": "https://ext.digio.in:444"
+  }
+ ]
+}

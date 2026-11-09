@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { rejectCrossSite } from "@/lib/api/bff-proxy";
 import { setStaffSession } from "@/lib/api/bff-session";
 import type { StaffRole } from "@/lib/auth/rbac";
 import { config } from "@/lib/config";
@@ -22,6 +23,8 @@ interface StaffLoginData {
 }
 
 export async function POST(req: NextRequest) {
+  const blocked = rejectCrossSite(req);
+  if (blocked) return blocked;
   let body: unknown;
   try {
     body = await req.json();

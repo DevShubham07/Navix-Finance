@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import { passwordOk } from "./password";
 
 describe("passwordOk", () => {
-  it("accepts 6–10 chars with a letter, a digit and a special character", () => {
-    expect(passwordOk("abc12!")).toBe(true);
-    expect(passwordOk("Abcd1234!@")).toBe(true);
+  it("accepts 8–72 chars with a letter, a digit and a special character", () => {
+    expect(passwordOk("abcd123!")).toBe(true);
+    expect(passwordOk("Admin@12345")).toBe(true);
+    expect(passwordOk("a1!" + "x".repeat(69))).toBe(true); // 72 bytes
   });
 
   it("rejects a missing character class", () => {
@@ -14,8 +15,9 @@ describe("passwordOk", () => {
   });
 
   it("rejects lengths outside the window", () => {
-    expect(passwordOk("ab1!")).toBe(false); // 4, too short
-    expect(passwordOk("Admin@12345")).toBe(false); // 11, too long
+    expect(passwordOk("abc12!x")).toBe(false); // 7, too short
+    expect(passwordOk("a1!" + "x".repeat(70))).toBe(false); // 73 bytes
+    expect(passwordOk("é1!" + "é".repeat(35))).toBe(false); // 39 chars but 74 bytes
   });
 
   it("does not count whitespace as a special character", () => {

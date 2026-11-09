@@ -103,6 +103,25 @@ class PaymentReminderSchedulerTest {
     }
 
     @Test
+    void dayAfterDueIsAGraceReminderOnlyWhenTheLoanCarriesAGraceDay() {
+        Loan legacy = loan(6L, 600L, today.minusDays(1));   // grace_days = 1 (entity default)
+        Loan fresh = loan(7L, 700L, today.minusDays(1));
+        fresh.setGraceDays(0);
+        when(loanRepository.findByStatusIn(any())).thenReturn(List.of(legacy, fresh));
+        when(repaymentService.outstandingAsOf(any(), any())).thenReturn(750_000L);
+
+        scheduler().sendDueAndOverdueReminders();
+
+        ArgumentCaptor<PaymentReminderEvent> ev = ArgumentCaptor.forClass(PaymentReminderEvent.class);
+        verify(events, org.mockito.Mockito.times(2)).publishEvent(ev.capture());
+        PaymentReminderEvent legacyEv = ev.getAllValues().stream().filter(e -> e.loanId() == 6L).findFirst().orElseThrow();
+        PaymentReminderEvent freshEv = ev.getAllValues().stream().filter(e -> e.loanId() == 7L).findFirst().orElseThrow();
+        org.assertj.core.api.Assertions.assertThat(legacyEv.overdue()).isFalse(); // still penalty-free
+        org.assertj.core.api.Assertions.assertThat(freshEv.overdue()).isTrue();   // overdue by 1
+        org.assertj.core.api.Assertions.assertThat(freshEv.days()).isEqualTo(1);
+    }
+
+    @Test
     void skipsLoansThatAreFullyPaid() {
         when(loanRepository.findByStatusIn(any())).thenReturn(List.of(loan(3L, 300L, today.plusDays(2))));
         when(repaymentService.outstandingAsOf(eq(3L), any())).thenReturn(0L);

@@ -37,16 +37,48 @@ export function useFocusTrap<T extends HTMLElement = HTMLElement>(
 
     const previouslyFocused = document.activeElement as HTMLElement | null;
 
-    const focusable = () =>
-      Array.from(node.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
-        (el) => el.offsetParent !== null || el === document.activeElement,
+    // Satellites find their owner by id, so the container needs one. Assigned here rather than
+    // required of every caller — a trapped surface should not have to know it might host a popover.
+    if (!node.id) {
+      node.id = `focus-trap-${Math.random().toString(36).slice(2, 10)}`;
+    }
+
+    /**
+     * Focusables inside the container, plus any the container has portalled elsewhere in the DOM
+     * (marked `data-trap-owner="<the container's id>"`).
+     *
+     * Without the second half, a portalled popover opened from inside a trapped surface — the
+     * column-filter panel is the live case — is invisible to the trap: Tab from the last control
+     * wraps back to the first instead of entering it, and `node.contains(activeEl)` is false the
+     * moment the panel focuses itself, so the very next keystroke yanks focus back out. Keyboard
+     * users could never reach the panel's OK button.
+     */
+    const focusable = () => {
+      const roots: HTMLElement[] = [node];
+      if (node.id) {
+        roots.push(
+          ...Array.from(document.querySelectorAll<HTMLElement>(`[data-trap-owner="${CSS.escape(node.id)}"]`)),
+        );
+      }
+      return roots.flatMap((root) =>
+        Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
+          (el) => el.offsetParent !== null || el === document.activeElement,
+        ),
       );
+    };
+
+    /** Is `el` inside the container or one of its portalled satellites? */
+    const owns = (el: Element | null) =>
+      !!el && (node.contains(el) || (!!node.id && !!el.closest(`[data-trap-owner="${CSS.escape(node.id)}"]`)));
 
     // Move focus into the panel on open.
     (focusable()[0] ?? node).focus();
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Tab") return;
+      // Listening on `document` rather than the container, so a Tab pressed inside a portalled
+      // satellite is handled too — it never bubbles to the container, being no descendant of it.
+      if (!owns(e.target as Element | null)) return;
       const els = focusable();
       if (els.length === 0) {
         // Nothing focusable — keep focus on the container itself.
@@ -58,19 +90,19 @@ export function useFocusTrap<T extends HTMLElement = HTMLElement>(
       const last = els[els.length - 1];
       const activeEl = document.activeElement;
       if (e.shiftKey) {
-        if (activeEl === first || !node.contains(activeEl)) {
+        if (activeEl === first || !owns(activeEl)) {
           e.preventDefault();
           last.focus();
         }
-      } else if (activeEl === last || !node.contains(activeEl)) {
+      } else if (activeEl === last || !owns(activeEl)) {
         e.preventDefault();
         first.focus();
       }
     };
 
-    node.addEventListener("keydown", onKeyDown);
+    document.addEventListener("keydown", onKeyDown);
     return () => {
-      node.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("keydown", onKeyDown);
       // Restore focus to the trigger (best-effort).
       previouslyFocused?.focus?.();
     };

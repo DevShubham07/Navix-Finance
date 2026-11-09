@@ -85,35 +85,15 @@ class StorageControllerTest {
     }
 
     @Test
-    void staffMayDownloadALeadImportFile() {
-        as("TELECALLER");
-        when(storage.presignDownload("leads/import/abc-list.csv")).thenReturn("https://s3/get");
-
-        var res = controller.presignDownload("leads/import/abc-list.csv");
-
-        assertThat(res.url()).isEqualTo("https://s3/get");
-    }
-
-    @Test
-    void downloadRefusesAnyOtherKey() {
-        as("ADMIN");
-        assertThatThrownBy(() -> controller.presignDownload("applications/7/aadhaar_card_front/1.jpg"))
-                .isInstanceOf(BusinessException.class)
-                .extracting("code").isEqualTo("FORBIDDEN_KEY");
-        assertThatThrownBy(() -> controller.presignDownload("leads/import/../applications/7/pan.jpg"))
-                .isInstanceOf(BusinessException.class);
-        verifyNoInteractions(storage);
-    }
-
-    @Test
-    void downloadRefusesBorrowersAndDsas() {
-        as("BORROWER");
-        assertThatThrownBy(() -> controller.presignDownload("leads/import/abc-list.csv"))
-                .isInstanceOf(BusinessException.class)
-                .extracting("code").isEqualTo("FORBIDDEN_ROLE");
-        as("DSA");
-        assertThatThrownBy(() -> controller.presignDownload("leads/import/abc-list.csv"))
-                .isInstanceOf(BusinessException.class);
+    void genericDownloadRefusesEveryKeyIncludingLeadImport() {
+        for (String role : new String[] {"ADMIN", "TELECALLER", "BORROWER", "DSA"}) {
+            as(role);
+            for (String key : new String[] {"leads/import/abc-list.csv", "applications/7/aadhaar_card_front/1.jpg"}) {
+                assertThatThrownBy(() -> controller.presignDownload(key))
+                        .isInstanceOf(BusinessException.class)
+                        .extracting("code").isEqualTo("FORBIDDEN_KEY");
+            }
+        }
         verifyNoInteractions(storage);
     }
 }

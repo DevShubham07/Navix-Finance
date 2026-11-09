@@ -3,62 +3,114 @@ package com.navix.loan.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.navix.common.verification.BureauReportFacts;
+import com.navix.common.verification.BureauTradeline;
 import com.navix.loan.service.CreditRatingCalculator.Rating;
+import com.navix.loan.service.CreditRatingCalculator.Signals;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/** Verifies the spec's rating math (bands, bonus, the two penalties) and the worked sample → 4.0★. */
+/** Verifies the BRE-aligned rating math (score bands, deductions, caps) and the worked sample → 4.0★. */
 class CreditRatingCalculatorTest {
 
     private final CreditRatingCalculator calc = new CreditRatingCalculator();
 
-    // computeStars(score, defaults, totalBalance, recentInquiries)
+    // computeStars(score, defaults, recentInquiries) — score-only, no bureau detail
 
     @Test
-    void scoreBands() {
-        assertThat(calc.computeStars(800, 0, 100, 0)).isEqualTo(4.5); // >750 (bonus also 4.5)
-        assertThat(calc.computeStars(720, 0, 100, 0)).isEqualTo(4.0); // 700–750
-        assertThat(calc.computeStars(680, 0, 100, 0)).isEqualTo(3.0); // 650–699
-        assertThat(calc.computeStars(600, 0, 100, 0)).isEqualTo(2.0); // <650
+    void scoreBandsAnchoredOnTheBreFloor() {
+        assertThat(calc.computeStars(800, 0, 0)).isEqualTo(5.0);
+        assertThat(calc.computeStars(780, 0, 0)).isEqualTo(5.0);
+        assertThat(calc.computeStars(779, 0, 0)).isEqualTo(4.5);
+        assertThat(calc.computeStars(750, 0, 0)).isEqualTo(4.5);
+        assertThat(calc.computeStars(749, 0, 0)).isEqualTo(4.0);
+        assertThat(calc.computeStars(720, 0, 0)).isEqualTo(4.0);
+        assertThat(calc.computeStars(719, 0, 0)).isEqualTo(3.5);
+        assertThat(calc.computeStars(690, 0, 0)).isEqualTo(3.5);
+        assertThat(calc.computeStars(689, 0, 0)).isEqualTo(3.0);
+        assertThat(calc.computeStars(660, 0, 0)).isEqualTo(3.0);
+        assertThat(calc.computeStars(659, 0, 0)).isEqualTo(2.5);
+        assertThat(calc.computeStars(631, 0, 0)).isEqualTo(2.5);
+        assertThat(calc.computeStars(630, 0, 0)).isEqualTo(2.0);
+        assertThat(calc.computeStars(601, 0, 0)).isEqualTo(2.0);
+        // BRE rule 1 is "more than 600": 600 itself fails.
+        assertThat(calc.computeStars(600, 0, 0)).isEqualTo(1.0);
+        assertThat(calc.computeStars(450, 0, 0)).isEqualTo(1.0);
     }
 
     @Test
-    void bonusForStrongCleanFile() {
-        // >770 & 0 defaults → 4.5; and balance == 0 → 5.0
-        assertThat(calc.computeStars(800, 0, 0, 0)).isEqualTo(5.0);
-        assertThat(calc.computeStars(800, 0, 5000, 0)).isEqualTo(4.5);
-        // not above 770 → no bonus, stays on the base band
-        assertThat(calc.computeStars(760, 0, 0, 0)).isEqualTo(4.5); // 760>750 base 4.5 anyway
-        assertThat(calc.computeStars(755, 0, 0, 0)).isEqualTo(4.5);
+    void aBreFailingScoreNeverReadsAsARecommendation() {
+        for (int score = 300; score <= 600; score += 25) {
+            assertThat(calc.verdict(calc.computeStars(score, 0, 0))).isEqualTo("NOT RECOMMENDED");
+        }
     }
 
     @Test
-    void penalty2_recentInquiries() {
-        // 760 base 4.5, 4 inquiries (>3) → −0.5
-        assertThat(calc.computeStars(760, 0, 5000, 4)).isEqualTo(4.0);
-        // exactly 3 → no penalty
-        assertThat(calc.computeStars(760, 0, 5000, 3)).isEqualTo(4.5);
+    void enquiryBurst() {
+        assertThat(calc.computeStars(760, 0, 4)).isEqualTo(4.0);
+        assertThat(calc.computeStars(760, 0, 3)).isEqualTo(4.5);
     }
 
     @Test
-    void penalty1_defaultsCapAt2_5() {
-        // any default caps at 2.5 regardless of an otherwise-strong score
-        assertThat(calc.computeStars(800, 2, 5000, 0)).isEqualTo(2.5);
-        // the cap is a ceiling applied last, so it also bounds a file that took the inquiry penalty
-        assertThat(calc.computeStars(800, 1, 5000, 5)).isEqualTo(2.5);
-        // a weak score with defaults stays at its lower base (the min() never raises it to 2.5)
-        assertThat(calc.computeStars(600, 3, 5000, 0)).isEqualTo(2.0);
+    void defaultsCapAt2_5() {
+        assertThat(calc.computeStars(800, 2, 0)).isEqualTo(2.5);
+        assertThat(calc.computeStars(800, 1, 5)).isEqualTo(2.5);
+        // the cap never raises a lower file
+        assertThat(calc.computeStars(610, 3, 0)).isEqualTo(2.0);
     }
 
     @Test
-    void workedSample_kartikJindal_is4Stars() {
-        BureauReportFacts f = sample();
-        // 778 base 4.5 → bonus 4.5 (balance≠0) → −0.5 (5 inquiries) → no cap → 4.0
-        assertThat(calc.computeStars(778, 0, 861232L, 5)).isEqualTo(4.0);
+    void breDeductionsAndCaps() {
+        List<String> reasons = new ArrayList<>();
+        // 785 = 5.0, DPD 45 in 12m −1.0, 1 overdue −0.5 → 3.5
+        assertThat(calc.computeStars(785, 0, 0, new Signals(45, 1, 0, true), reasons)).isEqualTo(3.5);
+        assertThat(reasons).containsExactly("Score 785 → 5.0★",
+                "45 days past due in the last 12 months (over 10) −1.0",
+                "1 account overdue right now −0.5");
 
-        Rating rating = calc.rate(f);
+        // DPD of exactly 10 is inside BRE rule 4
+        assertThat(calc.computeStars(785, 0, 0, new Signals(10, 0, 0, true), new ArrayList<>())).isEqualTo(5.0);
+        // no personal loan in the window −0.5
+        assertThat(calc.computeStars(785, 0, 0, new Signals(0, 0, 0, false), new ArrayList<>())).isEqualTo(4.5);
+        // written-off / settled caps at 2.0
+        assertThat(calc.computeStars(785, 0, 0, new Signals(0, 0, 1, true), new ArrayList<>())).isEqualTo(2.0);
+        // everything at once still floors at 1.0
+        assertThat(calc.computeStars(640, 2, 9, new Signals(90, 3, 2, false), new ArrayList<>())).isEqualTo(1.0);
+    }
+
+    @Test
+    void missingFactsAreNeverCountedAgainstTheBorrower() {
+        assertThat(calc.computeStars(785, 0, 0, Signals.NONE, new ArrayList<>())).isEqualTo(5.0);
+    }
+
+    @Test
+    void personalLoanWindow() {
+        LocalDate asOf = LocalDate.of(2026, 10, 1);
+        assertThat(CreditRatingCalculator.personalLoanInWindow(List.of(), asOf)).isNull();
+        // open, Experian code 5
+        assertThat(CreditRatingCalculator.personalLoanInWindow(List.of(tl("5", "2025-01-01", null)), asOf)).isTrue();
+        // closed inside the 9 months
+        assertThat(CreditRatingCalculator.personalLoanInWindow(List.of(tl("Personal Loan", "2024-01-01", "2026-02-01")), asOf)).isTrue();
+        // closed before the window
+        assertThat(CreditRatingCalculator.personalLoanInWindow(List.of(tl("Personal Loan", "2023-01-01", "2025-11-30")), asOf)).isFalse();
+        // not a personal loan
+        assertThat(CreditRatingCalculator.personalLoanInWindow(List.of(tl("Auto Loan (Personal)", "2025-01-01", null)), asOf)).isFalse();
+    }
+
+    @Test
+    void workedSample_kartikJindal() {
+        // 778 → 4.5, 5 enquiries −0.5 → 4.0 (no detail, so nothing else applies)
+        Rating rating = calc.rate(sample());
         assertThat(rating.stars()).isEqualTo(4.0);
         assertThat(rating.recommendation()).isEqualTo("RECOMMEND");
-        assertThat(rating.summary()).contains("778").contains("Kartik Jindal");
+        assertThat(rating.summary()).contains("778").contains("Kartik Jindal").contains("5 enquiries");
+        assertThat(rating.reasons()).containsExactly("Score 778 → 4.5★", "5 enquiries in the last 30 days −0.5");
+    }
+
+    private static BureauTradeline tl(String type, String opened, String closed) {
+        return new BureauTradeline("LENDER", "XX1", type, null, null, opened, closed,
+                0L, 0L, null, null, null, null, null);
     }
 
     @Test

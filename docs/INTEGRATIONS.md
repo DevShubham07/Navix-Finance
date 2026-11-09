@@ -174,6 +174,72 @@ and is set only by the demo seed script and tests). Specs + verified corrections
   whitelisted. **Status (2026-07-10):** `NAVIX_OTP_LOGIN_V2` approved & live; the other 14 pending
   (return `006 Invalid template text`).
 
+### Signzy Bank Statement Analysis (BSA) — on demand only
+
+Three calls on the **production** Signzy host, wired as `SignzyBankStatementClient` + `/api/staff/bank-analysis`:
+`POST /api/v3/statementanalysis/analyze-statement` → `/retrieve-work-order` → `/download-report`.
+It deliberately bypasses `VerificationPort` (one vendor, no fallback, a flow spanning three calls) and
+is never fired by the lifecycle — a Credit Executive, Credit Head or ADMIN runs it per customer from
+the Banking tab, and the stored row is what every later reader sees.
+
+Four things that are easy to get wrong:
+
+- **It runs on the PRODUCTION account, not preprod.** Probed 2026-10-16: `api.signzy.app` with the prod
+  token reaches payload validation (`400 "At least one fileUrl is required"`), so BSA is entitled there;
+  the preproduction account answers `403 "No remaining API credits"`. Hence `signzyProdRestClient`, like
+  PAN 206AB — not the preprod bean the other capabilities share. (It is absent from the portal's *My
+  APIs* list, which turns out to say nothing about entitlement.)
+- **The documented SECOND credential may not be enforced.** The portal marks an `authToken` — a
+  short-lived JWT from Signzy's Authenticate API — mandatory in the **body** of every BSA call, separate
+  from the header token. The probe above carried no body token and still got through to validation, so
+  `navix.signzy.bsa-auth-token` / `SIGNZY_BSA_AUTH_TOKEN` (SSM `/navix/<env>/navix/signzy/bsa-auth-token`,
+  unset today) is sent when configured but is **not** a precondition: Signzy judges, a 401 says plainly
+  that it is required, and the audit row records it. Do not reintroduce a client-side hard block on it
+  without evidence from a real run.
+- **It is asynchronous.** `analyze-statement` returns a `reportId` in `IN PROGRESS`; the numbers only
+  exist once `retrieve-work-order` says `ANALYSED` and `download-report` hands back the JSON/Excel
+  URLs. We pass no `callbackUrl` (that would mean a new public endpoint) — the row is the source of
+  truth and a staff read advances it, throttled by `last_polled_at`.
+- **The two envelopes differ.** `analyze-statement` hangs the per-file details off
+  `fileDetails.success[]`, `retrieve-work-order` off `files[]` — the transaction count and the
+  `authenticity` verdict (`ORIGINAL` / `REVIEW` / `FRAUD SUSPECTED`) live there, so both shapes are read.
+- **Salary identification is not mapped yet.** It lives in the downloadable report JSON, whose schema is
+  template-driven (`templateId`, issued by Signzy support). Until a real report has been read, the
+  Banking tab and BRE rule 9 say "not identified" rather than guessing a number that gates a loan.
+
+**Status (2026-10-16):** live-tested with a real borrower statement, and **half-entitled — the feature
+cannot complete today.** The three legs are licensed *separately* on the Signzy account:
+
+| Endpoint | Prod result |
+|---|---|
+| `analyze-statement` | **200** — accepted the statement, created report `PR1218783855987358`, identified the ICICI savings account and auto-unlocked the PDF |
+| `retrieve-work-order` | **403** `"You cannot consume this service"` |
+| `download-report` | **403** `"You cannot consume this service"` |
+| `preanalysis` | **403** `"You cannot consume this service"` |
+| `tampering-analysis` | **404** (not on this account at all) |
+
+So we can submit and be billed, but never read the analysis back. **Ask Signzy to enable
+`retrieve-work-order` + `download-report` before anyone runs this from the console** — until then the
+row stays `PENDING` with the 403 as its message, which is what `advance()` is built to do. The report
+JSON schema that salary identification needs is still unseen for the same reason.
+
+The portal confirms it independently: in **Live** mode with credential `navixfinance_prod_v3`, the
+runner for both read-back legs shows an *"Access Not Available"* badge and *"This credential doesn't
+have access to this API"* with a **REQUEST API** button, while `analyze-statement` renders its form
+normally. Two traps found with DevTools while checking this:
+
+- **The runner's displayed URL is not where it posts.** It shows `https://api.signzy.app/…` but in
+  **Test** mode posts to `cors.signzy.app/https://api-preproduction.signzy.app/…`. A green "prod" URL
+  in the portal proves nothing about which account answered — read the Network panel, not the header.
+- **Preprod is entitled to all three legs but has no credits**: its 403 is `"No remaining API credits"`
+  with `x-ratelimit-limit-year: 200`, `x-ratelimit-remaining-year: 0` (reset ~76 days out), a different
+  failure from prod's `"You cannot consume this service"`. So the cheap route to seeing a finished
+  report — and the report JSON schema — is a preprod credit top-up, not a prod licence.
+
+Unreconciled: the portal's prod credential sends `x-client-unique-id: info@dhanboost.com`; our
+`SIGNZY_CLIENT_UNIQUE_ID` is `info@navixfinance.com`. Not the cause of the 403 (ours was accepted by
+`analyze-statement`), but worth confirming with Signzy.
+
 ### Bureau KBA (knowledge-based-authentication) challenges
 
 `crif_combine` is keyed on **name + mobile only** — there is no PAN or DOB input, so CRIF decides who

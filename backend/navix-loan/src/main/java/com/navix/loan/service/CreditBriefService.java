@@ -187,7 +187,8 @@ public class CreditBriefService {
         if (profile == null || profile.getCreditBriefFacts() == null) {
             return new CreditBriefView(appId, providerResponse != null, null, null, null, null,
                     null, null, null, providerResponse, bureauState,
-                    profile != null ? profile.getBureauSource() : null, bureauReportId(appId));
+                    profile != null ? profile.getBureauSource() : null, bureauReportId(appId),
+                    java.util.List.of());
         }
         ensureBrief(appId, profile);
         // The identity shown on the brief must be the borrower's REAL KYC — the same profile the staff
@@ -213,7 +214,51 @@ public class CreditBriefService {
                 profile.getCreditRecommendation(),
                 profile.getCreditBriefSummary(),
                 profile.getCreditBriefGeneratedAt(),
-                docId, facts, providerResponse, bureauState, profile.getBureauSource(), bureauReportId(appId));
+                docId, facts, providerResponse, bureauState, profile.getBureauSource(), bureauReportId(appId),
+                ratingReasons(profile));
+    }
+
+    /** The reasons behind the stored stars, recomputed from the stored facts (empty when unrated). */
+    private java.util.List<String> ratingReasons(CustomerProfile profile) {
+        if (profile.getCreditStarRating() == null) {
+            return java.util.List.of();
+        }
+        BureauReportFacts raw = factsOf(profile);
+        return raw == null ? java.util.List.of() : calculator.rate(raw, asOf(profile)).reasons();
+    }
+
+    /** The day the brief was generated — the rating's personal-loan window ends there. */
+    static LocalDate asOf(CustomerProfile profile) {
+        Instant at = profile.getCreditBriefGeneratedAt();
+        return at != null ? at.atZone(java.time.ZoneId.of("Asia/Kolkata")).toLocalDate() : LocalDate.now();
+    }
+
+    /**
+     * Re-apply the current rating rules to a stored brief without a new bureau pull: stars, verdict
+     * and summary are recomputed from the saved facts. Returns true when anything changed. The
+     * CREDIT_BRIEF PDF is left as it was — a historical artefact of the pull, like on a no-record pull.
+     */
+    @Transactional
+    public boolean rescoreStored(CustomerProfile profile) {
+        BureauReportFacts facts = factsOf(profile);
+        if (facts == null) {
+            return false;
+        }
+        Rating rating = calculator.rate(facts, asOf(profile));
+        BigDecimal stars = rating.rated() ? BigDecimal.valueOf(rating.stars()) : null;
+        String recommendation = rating.rated() ? rating.recommendation() : null;
+        boolean same = (stars == null ? profile.getCreditStarRating() == null
+                        : profile.getCreditStarRating() != null && stars.compareTo(profile.getCreditStarRating()) == 0)
+                && java.util.Objects.equals(recommendation, profile.getCreditRecommendation())
+                && java.util.Objects.equals(rating.summary(), profile.getCreditBriefSummary());
+        if (same) {
+            return false;
+        }
+        profile.setCreditStarRating(stars);
+        profile.setCreditRecommendation(recommendation);
+        profile.setCreditBriefSummary(rating.summary());
+        profileRepo.save(profile);
+        return true;
     }
 
     private Long bureauReportId(Long appId) {

@@ -8,14 +8,33 @@ import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage, useStaffMe, useCan, NoAccessNotice, ROLE_LABEL } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { staffReferralApi, featureFlagsApi, paiseToINR, type ReferralPayout } from "@/lib/api/applications";
-import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
+import { PaginationBar } from "@/components/staff/pipeline/pagination";
+import { type FilterColumn } from "@/components/staff/column-filter";
+import { istDay } from "@/lib/staff/column-filter-match";
+import { useRegisterQuery } from "@/lib/staff/register-query";
+import { useClientRegister } from "@/lib/staff/use-client-register";
+import { Th, thBag, describeRegister } from "@/lib/staff/register-th";
 
-/** Short date for a nullable ISO timestamp. */
+/** The IST business day for a nullable ISO timestamp. Not `toLocaleDateString`, which names the
+ *  viewer's own day: the column and its date filter must agree on which day a payout was paid. */
 function fmtDate(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString("en-IN", { dateStyle: "medium" });
+  return istDay(iso) ?? "—";
 }
+
+/** Filterable columns. Loan # and txn ref are identity — nobody narrows a register by one. `paidBy`
+ *  and `paidAt` exist only on the Paid tab. */
+const SORT_KEYS = ["beneficiaryName", "beneficiaryRole", "counterpartyName", "amountPaise", "paidBy", "paidAt"] as const;
+
+const COLUMN_LABEL: Record<string, string> = {
+  beneficiaryName: "Beneficiary",
+  beneficiaryRole: "Role",
+  counterpartyName: "Referral",
+  amountPaise: "Amount",
+  paidBy: "Paid by",
+  paidAt: "Paid at",
+};
+
+const PAID_ONLY_KEYS = ["paidBy", "paidAt"];
 
 function roleLabel(role: ReferralPayout["beneficiaryRole"]): string {
   return role === "REFERRER" ? "Referrer" : "New borrower";
@@ -28,7 +47,8 @@ function roleLabel(role: ReferralPayout["beneficiaryRole"]): string {
  * (totals + CSV/PDF export). Live `/api/referral/payouts`. DISBURSEMENT_HEAD / ADMIN only.
  */
 export default function ReferralPayoutsPage() {
-  const role = useStaffMe().data?.role;
+  const me = useStaffMe().data;
+  const role = me?.role;
   const can = useCan();
   const qc = useQueryClient();
   const [tab, setTab] = React.useState<"PENDING" | "PAID">("PENDING");
@@ -74,9 +94,38 @@ export default function ReferralPayoutsPage() {
     },
   });
 
-  const rows = payoutsQ.data ?? [];
+  const rows = React.useMemo(() => payoutsQ.data ?? [], [payoutsQ.data]);
   const sum = expensesQ.data;
-  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total: rowsTotal } = usePagination(rows);
+
+  const rq = useRegisterQuery({
+    registerId: "referrals",
+    staffId: me?.id,
+    sortKeys: SORT_KEYS,
+    filterKeys: SORT_KEYS,
+    defaults: { sort: { key: "paidAt", dir: "desc" } },
+  });
+
+  // Every column is declared even though a tab shows only some: the rows are fetched per tab, so a
+  // column the tab lacks simply has nothing to filter.
+  const filterColumns = React.useMemo<Array<FilterColumn<ReferralPayout>>>(
+    () => [
+      { key: "beneficiaryName", kind: "text", value: (p) => p.beneficiaryName ?? `#${p.beneficiaryCustomerId}` },
+      // The checklist reads "New borrower"; the filter travels as REFERRED.
+      { key: "beneficiaryRole", value: (p) => roleLabel(p.beneficiaryRole), raw: (p) => p.beneficiaryRole },
+      { key: "counterpartyName", kind: "text", value: (p) => p.counterpartyName ?? (p.counterpartyCustomerId ? `#${p.counterpartyCustomerId}` : "—") },
+      // Rupees: the bound is typed next to a rupee column.
+      { key: "amountPaise", kind: "num", value: (p) => paiseToINR(p.amountPaise), num: (p) => p.amountPaise / 100 },
+      { key: "paidBy", value: (p) => p.paidBy ?? "—", raw: (p) => p.paidBy ?? "" },
+      { key: "paidAt", kind: "date", value: (p) => fmtDate(p.paidAt), date: (p) => istDay(p.paidAt) },
+    ],
+    [],
+  );
+
+  const cr = useClientRegister(rows, filterColumns, rq);
+  const { pageRows, total, pageCount } = cr;
+  const th = thBag(rq, cr, filterColumns, COLUMN_LABEL);
+  const page = rq.state.page;
+  const pageSize = rq.state.size;
 
   if (role && !allowed) {
     return <NoAccessNotice message="Disbursement Head access only." />;
@@ -101,7 +150,12 @@ export default function ReferralPayoutsPage() {
     <div>
       <PageHeader
         title="Referral payouts"
-        subtitle="Settle the ₹ rewards a referral earned — log the transaction id to credit each beneficiary."
+        subtitle={[
+          "Settle the ₹ rewards a referral earned — log the transaction id to credit each beneficiary.",
+          describeRegister(th),
+        ]
+          .filter(Boolean)
+          .join(" · ")}
       >
         {role && <span className="rounded-full bg-navy-tint px-3 py-1 text-sm font-semibold text-navy">{ROLE_LABEL[role]}</span>}
         <ExportMenu
@@ -119,7 +173,8 @@ export default function ReferralPayoutsPage() {
             { header: "Paid by", value: (p) => p.paidBy ?? "" },
             { header: "Paid at", value: (p) => fmtDate(p.paidAt) },
           ]}
-          rows={rows}
+          rows={cr.rows}
+          scope="all"
         />
         <button
           onClick={() => {
@@ -145,7 +200,15 @@ export default function ReferralPayoutsPage() {
         {(["PENDING", "PAID"] as const).map((t) => (
           <button
             key={t}
-            onClick={() => setTab(t)}
+            onClick={() => {
+              if (t === tab) return;
+              setTab(t);
+              // "What matches has changed" — back to page 1 in one update. The Paid-only filters go
+              // too: on Pending their columns are gone, so nothing on screen could clear them.
+              const filters = { ...rq.state.filters };
+              for (const k of PAID_ONLY_KEYS) delete filters[k];
+              rq.apply({ filters });
+            }}
             className={`rounded-full px-4 py-1.5 text-sm font-semibold ${
               tab === t ? "bg-navy text-white" : "border border-line text-muted hover:bg-grey-100 hover:text-ink"
             }`}
@@ -157,7 +220,7 @@ export default function ReferralPayoutsPage() {
 
       {payoutsQ.isLoading ? (
         <div className="overflow-hidden rounded border border-line bg-white shadow-sm">
-          <Skeleton variant="table" rows={8} cols={tab === "PENDING" ? 6 : 8} />
+          <Skeleton variant="table" rows={8} cols={tab === "PENDING" ? 7 : 9} />
         </div>
       ) : payoutsQ.error ? (
         <ErrorState error={payoutsQ.error} onRetry={() => void payoutsQ.refetch()} />
@@ -168,17 +231,18 @@ export default function ReferralPayoutsPage() {
               <thead>
                 <tr>
                   <th>S.No.</th>
-                  <th>Beneficiary</th>
-                  <th>Referral</th>
-                  <th className="num whitespace-nowrap text-right">Amount</th>
+                  <Th th={th} col="beneficiaryName" />
+                  <Th th={th} col="beneficiaryRole" />
+                  <Th th={th} col="counterpartyName" />
+                  <Th th={th} col="amountPaise" className="num whitespace-nowrap text-right" />
                   <th className="whitespace-nowrap">Loan #</th>
                   {tab === "PENDING" ? (
                     <th className="text-right">Pay &amp; log txn id</th>
                   ) : (
                     <>
                       <th>Txn ref</th>
-                      <th>Paid by</th>
-                      <th className="whitespace-nowrap">Paid at</th>
+                      <Th th={th} col="paidBy" />
+                      <Th th={th} col="paidAt" className="whitespace-nowrap" />
                     </>
                   )}
                 </tr>
@@ -189,8 +253,8 @@ export default function ReferralPayoutsPage() {
                     <td className="text-muted">{(page - 1) * pageSize + i + 1}</td>
                     <td>
                       <span className="block font-medium text-ink">{p.beneficiaryName ?? `#${p.beneficiaryCustomerId}`}</span>
-                      <span className="text-xs text-muted">{roleLabel(p.beneficiaryRole)}</span>
                     </td>
+                    <td className="text-muted">{roleLabel(p.beneficiaryRole)}</td>
                     <td className="text-muted">
                       with {p.counterpartyName ?? (p.counterpartyCustomerId ? `#${p.counterpartyCustomerId}` : "—")}
                     </td>
@@ -224,10 +288,17 @@ export default function ReferralPayoutsPage() {
                     )}
                   </tr>
                 ))}
-                {rows.length === 0 && (
+                {total === 0 && (
                   <EmptyState
-                    inTable={tab === "PENDING" ? 6 : 8}
-                    title={tab === "PENDING" ? "No pending referral payouts." : "No referral rewards paid yet."}
+                    // In-table so the headers stay and the filter that emptied it can be cleared.
+                    inTable={tab === "PENDING" ? 7 : 9}
+                    title={
+                      rq.activeCount > 0
+                        ? "No payouts match the column filters."
+                        : tab === "PENDING"
+                          ? "No pending referral payouts."
+                          : "No referral rewards paid yet."
+                    }
                   />
                 )}
               </tbody>
@@ -236,10 +307,10 @@ export default function ReferralPayoutsPage() {
           <PaginationBar
             page={page}
             pageCount={pageCount}
-            setPage={setPage}
-            total={rowsTotal}
+            setPage={rq.setPage}
+            total={total}
             pageSize={pageSize}
-            setPageSize={setPageSize}
+            setPageSize={rq.setSize}
           />
         </div>
       )}

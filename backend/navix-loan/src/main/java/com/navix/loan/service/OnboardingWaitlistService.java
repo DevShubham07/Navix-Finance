@@ -1,6 +1,8 @@
 package com.navix.loan.service;
 
 import com.navix.common.exception.BusinessException;
+import com.navix.common.featureflag.FeatureFlag;
+import com.navix.common.featureflag.FeatureFlagRepository;
 import com.navix.common.featureflag.FeatureFlagService;
 import com.navix.common.notification.event.WaitlistSubmittedEvent;
 import com.navix.common.security.ActorContext;
@@ -43,6 +45,7 @@ public class OnboardingWaitlistService {
     private static final Pattern PAN = Pattern.compile("^[A-Z]{5}\\d{4}[A-Z]$");
 
     private final FeatureFlagService featureFlags;
+    private final FeatureFlagRepository featureFlagRepository;
     private final OnboardingWaitlistRepository waitlistRepository;
     private final LoanRepository loanRepository;
     private final CustomerProfileRepository profileRepository;
@@ -70,13 +73,48 @@ public class OnboardingWaitlistService {
         }
     }
 
-    public record SubmitRequest(String fullName, String email, String mobile, String pan, String aadhaar) {
+    /** The admin switch: whether onboarding is paused, and who last flipped it (null if never touched). */
+    public record PausedStatus(boolean paused, String updatedBy, Instant updatedAt) {
+    }
+
+    public record SubmitRequest(@jakarta.validation.constraints.Size(max = 200) String fullName,
+                                @jakarta.validation.constraints.Size(max = 254) String email,
+                                @jakarta.validation.constraints.Size(max = 20) String mobile,
+                                @jakarta.validation.constraints.Size(max = 20) String pan,
+                                @jakarta.validation.constraints.Size(max = 20) String aadhaar) {
     }
 
     /** The one flag read the logged-out signup screen needs — nothing else leaks out anonymously. */
     @Transactional(readOnly = true)
     public boolean paused() {
         return featureFlags.isEnabled(FLAG, false);
+    }
+
+    /** ADMIN: current switch state + last change. */
+    @Transactional(readOnly = true)
+    public PausedStatus status() {
+        requireAdmin();
+        return featureFlagRepository.findByFlagKey(FLAG).map(OnboardingWaitlistService::statusOf)
+                .orElseGet(() -> new PausedStatus(false, null, null));
+    }
+
+    /** ADMIN: flip the switch — the one feature flag with a write path (Settings page). */
+    @Transactional
+    public PausedStatus setPaused(boolean paused) {
+        requireAdmin();
+        FeatureFlag flag = featureFlagRepository.findByFlagKey(FLAG).orElseGet(() -> {
+            FeatureFlag f = new FeatureFlag();
+            f.setFlagKey(FLAG);
+            f.setDescription("Pause new-customer onboarding. ON: borrowers without a loan get the waitlist form "
+                    + "instead of intake, POST /api/applications refuses ONBOARDING_PAUSED, Admin sees the waitlist.");
+            return f;
+        });
+        flag.setEnabled(paused);
+        return statusOf(featureFlagRepository.save(flag));
+    }
+
+    private static PausedStatus statusOf(FeatureFlag f) {
+        return new PausedStatus(f.isEnabled(), f.getUpdatedBy(), f.getUpdatedAt());
     }
 
     @Transactional(readOnly = true)

@@ -21,6 +21,7 @@ import com.navix.loan.pdf.SanctionLetterPdfRenderer;
 import com.navix.loan.repository.ApplicationDocumentRepository;
 import com.navix.loan.repository.ApplicationReferenceRepository;
 import com.navix.loan.repository.CustomerProfileRepository;
+import com.navix.loan.repository.ApplicationVerificationRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
 import com.navix.loan.service.ApplicationVerificationService.StepResult;
 import java.time.Instant;
@@ -70,6 +71,9 @@ public class OfferService {
     private final SanctionLetterPdfRenderer letterRenderer;
     private final DocumentStoragePort storage;
     private final LoanMath loanMath;
+    private final MandateService mandateService;
+    private final com.navix.common.featureflag.FeatureFlagService featureFlags;
+    private final ApplicationVerificationRepository verificationRepo;
 
     @Value("${navix.grievance.officer-name:Lalit Kumar}")
     private String grievanceOfficerName;
@@ -90,6 +94,7 @@ public class OfferService {
     @Transactional
     public LoanApplication chooseAmount(Long appId, long amountPaise) {
         LoanApplication app = requireSanctioned(appId);
+        requireNotSigned(appId);
         long ceiling = ceilingOf(app);
         if (amountPaise < LoanMath.MIN_LOAN_PAISE) {
             throw new BusinessException("AMOUNT_TOO_LOW", "Requested amount is below the minimum of ₹1,000");
@@ -108,8 +113,7 @@ public class OfferService {
     @Transactional(readOnly = true)
     public List<ReferenceView> references(Long appId) {
         return referenceRepo.findByApplicationIdOrderBySlotAsc(appId).stream()
-                .map(r -> new ReferenceView(r.getSlot().intValue(), r.getFullName(), r.getMobile(),
-                        r.getRelation()))
+                .map(ReferenceView::of)
                 .toList();
     }
 
@@ -152,6 +156,15 @@ public class OfferService {
             mobiles.add(mobile);
         }
 
+        boolean otp = !admin && featureFlags.isEnabled(ReferenceOtpService.FLAG, false);
+        if (otp) {
+            for (ReferenceInput in : inputs) {
+                // With the OTP on this name goes to a stranger under our brand: letters only, so no links.
+                if (!in.fullName().trim().matches("[\\p{L} .'-]{2,60}")) {
+                    throw new BusinessException("REFERENCE_INVALID", "Enter the reference's real name, using letters only");
+                }
+            }
+        }
         for (int i = 0; i < inputs.size(); i++) {
             ReferenceInput in = inputs.get(i);
             short slot = (short) (i + 1);
@@ -167,6 +180,19 @@ public class OfferService {
             row.setFullName(in.fullName().trim());
             row.setMobile(mobiles.get(i));
             row.setRelation(in.relation());
+            boolean numberChanged = !mobiles.get(i).equals(oldMobile);
+            if (numberChanged) {
+                row.clearOtp();
+            }
+            // Only a new number is asked to confirm, so a Back-and-resubmit holds nobody. An admin
+            // correction vouches for the number, and the flag going off releases a held borrower.
+            if (admin || !otp) {
+                if (!admin || numberChanged) {
+                    row.setOtpRequired(false);
+                }
+            } else if (numberChanged) {
+                row.setOtpRequired(true);
+            }
             referenceRepo.save(row);
 
             if (admin) {
@@ -177,7 +203,13 @@ public class OfferService {
             }
         }
         // Only the borrower walking the journey moves the pointer; an admin edit must not rewind it.
-        if (!admin) {
+        // With the OTP on, ReferenceOtpService moves the pointer once both have confirmed.
+        boolean waiting = otp && referenceRepo.findByApplicationIdOrderBySlotAsc(appId).stream()
+                .anyMatch(ApplicationReference::isOtpPending);
+        if (waiting) {
+            // A number changed after passing this screen: the stored pointer must not carry them past it.
+            journey.rewind(appId, JourneyService.OfferStep.OFFER_REFERENCES);
+        } else if (!admin) {
             journey.advance(appId, JourneyService.OfferStep.OFFER_SUMMARY);
         }
         return references(appId);
@@ -196,13 +228,17 @@ public class OfferService {
         long principal = drawdownOf(app);
         LocalDate repaymentDate = app.getApprovedRepaymentDate();
         int tenure = tenureDays(app);
-        long fee = loanMath.processingFeePaise(principal);
-        long gst = loanMath.gstPaise(principal);
-        long net = loanMath.netDisbursedPaise(principal);
+        // The discount pinned at reborrow comes off the fee here, in the Key Fact Statement and at
+        // disbursal alike — all three read the same application column.
+        int discount = app.feeDiscountPercentOrZero();
+        long fee = loanMath.processingFeePaise(principal, discount);
+        long gst = loanMath.gstPaise(principal, discount);
+        long net = loanMath.netDisbursedPaise(principal, discount);
         long interest = loanMath.interestPaise(principal, tenure);
         return new OfferSummaryView(appId, ceilingOf(app), principal, fee, gst, net, interest,
                 loanMath.totalRepayablePaise(principal, tenure), tenure, repaymentDate,
-                expectedDisbursalDate(ZonedDateTime.now(IST)));
+                expectedDisbursalDate(ZonedDateTime.now(IST)),
+                loanMath.feeDiscountPaise(principal, discount), discount);
     }
 
     /**
@@ -228,6 +264,15 @@ public class OfferService {
     @Transactional
     public SanctionLetterView sanctionLetter(Long appId) {
         LoanApplication app = requireSanctioned(appId);
+        if (isSigned(appId)) {
+            // The signed terms are fixed: show the letter on file, never re-render over it.
+            Optional<ApplicationDocument> existing = documentRepo.findFirstByApplicationIdAndDocTypeOrderByIdDesc(
+                    appId, ApplicationVerificationService.SANCTION_LETTER);
+            if (existing.isPresent()) {
+                return new SanctionLetterView(existing.get().getId(),
+                        storage.presignDownload(existing.get().getS3ObjectKey()));
+            }
+        }
         CustomerProfile p = profileRepo.findByApplicationId(appId).orElse(null);
         byte[] pdf = letterRenderer.render(agreementFacts(app, p));
 
@@ -269,6 +314,7 @@ public class OfferService {
     @Transactional
     public StepResult esignInit(Long appId, EsignInitRequest req) {
         requireSanctioned(appId);
+        sanctionLetter(appId); // render at the current amount so the letter sent for signing is never stale
         return verification.esignInit(appId, req.successRedirectUrl(), req.failureRedirectUrl());
     }
 
@@ -289,8 +335,12 @@ public class OfferService {
     @Transactional
     public StepResult manualEsign(Long appId, ManualEsignRequest req) {
         LoanApplication app = requireSanctioned(appId);
+        boolean alreadySigned = isSigned(appId);
         StepResult result = verification.recordManualEsign(appId, req.signatureDataUrl(),
                 req.latitude(), req.longitude(), req.accuracyMeters());
+        if (alreadySigned) {
+            return result; // a repeat must not re-render over the signed PDF
+        }
 
         CustomerProfile profile = profileRepo.findByApplicationId(appId).orElse(null);
         String signedAtValue = String.valueOf(result.derived().get("signedAt"));
@@ -412,8 +462,7 @@ public class OfferService {
 
             verification.recordBankProofPending(appId, account, ifsc);
 
-            journey.advance(appId, JourneyService.OfferStep.OFFER_DONE);
-            return flow.acceptOffer(appId, app.getAmountRequested());
+            return afterAccountConfirmed(app);
         }
         boolean verified = Boolean.TRUE.equals(app.getDisbursalAccountVerified())
                 && matches(account, ifsc, app.getDisbursalAccountNumber(), app.getDisbursalIfsc());
@@ -444,9 +493,87 @@ public class OfferService {
         app.setDisbursalConfirmedAt(Instant.now());
         applicationRepo.save(app);
 
+        return afterAccountConfirmed(app);
+    }
+
+    /**
+     * Both exits of {@link #confirmDisbursalAccount} (bank-proof and penny-drop) route here. With the
+     * {@code digio-mandate} flag on the borrower registers an eMandate next; {@link #mandateStatus}
+     * is what hands the file off once a UMRN lands. Flag off: straight to the Disbursement Head.
+     */
+    private LoanApplication afterAccountConfirmed(LoanApplication app) {
+        Long appId = app.getId();
+        if (mandateService.mandateRequired(app)) {
+            journey.advance(appId, JourneyService.OfferStep.OFFER_MANDATE);
+            return app;
+        }
         journey.advance(appId, JourneyService.OfferStep.OFFER_DONE);
         // Hands off: SANCTIONED → DISBURSEMENT_PENDING, gated on the eSign row existing.
         return flow.acceptOffer(appId, app.getAmountRequested());
+    }
+
+    // ---------------------------------------------------------------- 11. eMandate
+
+    /**
+     * Statuses from which a borrower may set up a mandate. Deliberately wide: the capability is now
+     * offered to anyone without one (a live loan never saw the mandate step), and the money guards that
+     * matter — the kill switch, the account having been proven, the attempt cap — live in
+     * {@link MandateService#init} where every caller passes through them.
+     *
+     * <p>What is excluded is what has nothing to mandate or no business mandating: a file still being
+     * decided (no proven account yet) and a dead one. DEFAULTED and WRITTEN_OFF are in, because a
+     * mandate is exactly how a defaulted balance might still be collected.
+     */
+    private static final java.util.Set<ApplicationStatus> MANDATE_SETUP_ALLOWED = java.util.EnumSet.of(
+            ApplicationStatus.PRE_APPROVED, ApplicationStatus.SANCTIONED, ApplicationStatus.DISBURSEMENT_PENDING,
+            ApplicationStatus.DISBURSEMENT_FAILED, ApplicationStatus.DISBURSED, ApplicationStatus.ACTIVE,
+            ApplicationStatus.OVERDUE, ApplicationStatus.DEFAULTED, ApplicationStatus.WRITTEN_OFF,
+            ApplicationStatus.CLOSED);
+
+    /**
+     * PRE_APPROVED is admitted alongside SANCTIONED on purpose. The reborrow fast-track in
+     * {@code ApplicationFlowService.apply} gates on the same mandate but has no offer journey behind it,
+     * so a borrower parked there was told MANDATE_REQUIRED with no endpoint that would let them register
+     * one — a dead end not even ADMIN could rescue. The money guards (kill switch, proven account,
+     * attempt cap) live in {@code MandateService.init} and apply to both statuses alike.
+     */
+    @Transactional
+    public StepResult mandateInit(Long appId) {
+        LoanApplication app = applicationRepo.findById(appId)
+                .orElseThrow(() -> new ResourceNotFoundException("LoanApplication", String.valueOf(appId)));
+        if (!MANDATE_SETUP_ALLOWED.contains(app.getStatus())) {
+            throw new BusinessException("NOT_APPLICABLE", "This offer isn't ready");
+        }
+        return mandateService.init(appId);
+    }
+
+    /** UMRN present means the borrower may proceed: that, and only that, hands the file off. */
+    @Transactional
+    public StepResult mandateStatus(Long appId) {
+        LoanApplication app = applicationRepo.findById(appId)
+                .orElseThrow(() -> new ResourceNotFoundException("LoanApplication", String.valueOf(appId)));
+        if (app.getStatus() != ApplicationStatus.SANCTIONED) {
+            // The file has already left the borrower's hands — a repeat poll after hand-off (second tab,
+            // retry), or a staff override that pushed a BANK_UNSUPPORTED file on without a mandate. Report
+            // the stored row; throwing NOT_APPLICABLE here left the page polling "Still waiting" for ever
+            // while the advance was actually moving.
+            return mandateService.status(appId);
+        }
+        StepResult result = mandateService.status(appId);
+        // disbursalConfirmedAt is load-bearing, not a nicety: with the flag off (the shipped default)
+        // mandateRequired is false for EVERY application, and acceptOffer checks the eSign but not the
+        // account — so without this a poll on any sanctioned, eSigned file would queue it for
+        // disbursement with no account number, no IFSC and no penny drop.
+        if (app.getDisbursalConfirmedAt() != null && !mandateService.mandateRequired(app)) {
+            // Either the UMRN landed, or the kill switch was turned off under a borrower who had already
+            // confirmed their account — in which case this is the pre-feature hand-off, not a skipped step.
+            journey.advance(appId, JourneyService.OfferStep.OFFER_DONE);
+            flow.acceptOffer(appId, app.getAmountRequested());
+            return ApplicationVerificationService.PASS.equals(result.status()) ? result
+                    : new StepResult(MandateService.CHECK_TYPE, ApplicationVerificationService.PASS,
+                            "eMandate not required", java.util.Map.of());
+        }
+        return result;
     }
 
     // ---------------------------------------------------------------- helpers
@@ -462,6 +589,22 @@ public class OfferService {
             throw new BusinessException("NOT_APPLICABLE", "This offer isn't ready");
         }
         return app;
+    }
+
+    private boolean isSigned(Long appId) {
+        return verificationRepo.findByApplicationIdAndCheckType(appId, ApplicationVerificationService.ESIGN)
+                .filter(v -> ApplicationVerificationService.PASS.equals(v.getStatus()))
+                .isPresent();
+    }
+
+    private void requireNotSigned(Long appId) {
+        // PENDING = an eSign session is open on the current letter; changing the amount now would
+        // let the borrower sign one amount and draw another.
+        if (isSigned(appId) || verificationRepo.findByApplicationIdAndCheckType(appId, ApplicationVerificationService.ESIGN)
+                .filter(v -> ApplicationVerificationService.PENDING.equals(v.getStatus())).isPresent()) {
+            throw new BusinessException("TERMS_LOCKED",
+                    "You have started signing your agreement, so the loan amount can no longer be changed.");
+        }
     }
 
     private static long ceilingOf(LoanApplication app) {
@@ -492,15 +635,16 @@ public class OfferService {
             LoanApplication app, CustomerProfile profile) {
         long principal = drawdownOf(app);
         int tenure = tenureDays(app);
+        int discount = app.feeDiscountPercentOrZero();
         return new SanctionLetterPdfRenderer.Facts(
                 app.getId(),
                 profile != null ? profile.getFullName() : null,
                 profile != null ? profile.getPan() : null,
                 profile != null ? profile.getMobile() : null,
                 principal,
-                loanMath.processingFeePaise(principal),
-                loanMath.gstPaise(principal),
-                loanMath.netDisbursedPaise(principal),
+                loanMath.processingFeePaise(principal, discount),
+                loanMath.gstPaise(principal, discount),
+                loanMath.netDisbursedPaise(principal, discount),
                 loanMath.interestPaise(principal, tenure),
                 loanMath.totalRepayablePaise(principal, tenure),
                 tenure,
@@ -509,7 +653,8 @@ public class OfferService {
                 app.getApprovedRepaymentDate(),
                 maskAccount(firstNonBlank(app.getDisbursalAccountNumber(),
                         profile != null ? profile.getSalaryAccountNumber() : null)),
-                grievanceOfficerName, grievanceOfficerPhone, grievanceOfficerEmail);
+                grievanceOfficerName, grievanceOfficerPhone, grievanceOfficerEmail,
+                loanMath.feeDiscountPaise(principal, discount));
     }
 
     private static String maskAccount(String account) {

@@ -85,7 +85,7 @@ export function DedupeTab({ customerId, onTabChange, onOpenApplication }: TabCtx
         {blocklistHits.length === 0 ? (
           <EmptyState title="No blocklist match" className="py-4" />
         ) : (
-          <table className="staff-data-table">
+          <div className="staff-table-scroll"><table className="staff-data-table staff-table-fit">
             <thead>
               <tr>
                 <th>Type</th>
@@ -104,7 +104,7 @@ export function DedupeTab({ customerId, onTabChange, onOpenApplication }: TabCtx
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         )}
       </Section>
 

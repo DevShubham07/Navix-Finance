@@ -106,388 +106,6 @@ class ApplicationVerificationServiceTest {
         return p;
     }
 
-    /**
-     * {@link ApplicationVerificationService#overview} used to scan every verification row, every
-     * application and every customer profile the company has ever had ({@code findAll()} on all
-     * three repositories) before filtering in memory — fine on a handful of rows, but at production
-     * scale (thousands of customers) it took 15-25s and then failed outright. These tests pin the
-     * fix: the DB query itself is scoped to the undecided queue (mocked repos never see a bare
-     * {@code findAll()} call for these three repositories), and the returned tallies/rows only ever
-     * reflect applications that still need a KYC decision — matching the page's own subtitle,
-     * "every application that needs a KYC decision".
-     */
-    /**
-     * The offer journey's checks (DigiLocker, selfie, address, eSign) run after sanction and never block
-     * the borrower, so the dashboard is the only place a failure there surfaces — and the place staff
-     * send the "redo this step" link from. A sanctioned file must therefore be in scope, while anything
-     * past disbursal stays historical.
-     */
-    @Test
-    void overview_includesSanctionedFiles_butNothingPastDisbursal() {
-        when(applicationRepo.findByStatusIn(any())).thenReturn(List.of());
-
-        service.overview(null, null, null, null, 1, 25);
-
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<java.util.Collection<ApplicationStatus>> statuses =
-                ArgumentCaptor.forClass(java.util.Collection.class);
-        verify(applicationRepo).findByStatusIn(statuses.capture());
-        assertThat(statuses.getValue())
-                .contains(ApplicationStatus.KYC_PENDING, ApplicationStatus.SANCTIONED)
-                .doesNotContain(ApplicationStatus.DISBURSEMENT_PENDING, ApplicationStatus.DISBURSED,
-                        ApplicationStatus.ACTIVE, ApplicationStatus.CLOSED);
-    }
-
-    @Test
-    void overview_scopesToUndecidedApplications_notTheWholeCompany() {
-        LoanApplication undecidedApp = new LoanApplication();
-        undecidedApp.setId(APP);
-        undecidedApp.setCustomerId(501L);
-        undecidedApp.setStatus(ApplicationStatus.KYC_PENDING);
-        when(applicationRepo.findByStatusIn(any())).thenReturn(List.of(undecidedApp));
-
-        ApplicationVerification undecidedRow = row(APP, "PAN", "PASS");
-        when(verificationRepo.findByApplicationIdIn(any())).thenReturn(List.of(undecidedRow));
-
-        CustomerProfile p = profile();
-        when(profileRepo.findByApplicationIdIn(any())).thenReturn(List.of(p));
-
-        var result = service.overview(null, null, null, null, 1, 25);
-
-        assertThat(result.passed()).isEqualTo(1);
-        assertThat(result.rows()).hasSize(1);
-        assertThat(result.rows().get(0).applicationId()).isEqualTo(APP);
-        assertThat(result.rows().get(0).borrowerName()).isEqualTo("SHUBHAM");
-
-        // The whole point of the fix: never fall back to loading everything.
-        verify(applicationRepo, never()).findAll();
-        verify(verificationRepo, never()).findAll();
-        verify(profileRepo, never()).findAll();
-    }
-
-    /** The empty-queue case must short-circuit before querying the other two repositories at all —
-     *  {@code findByApplicationIdIn}/{@code findByStatusIn} with an empty collection is invalid SQL
-     *  ({@code in ()}), which is exactly why those repository methods carry that warning. */
-    @Test
-    void overview_withNoUndecidedApplications_returnsZeroedResultWithoutFurtherQueries() {
-        when(applicationRepo.findByStatusIn(any())).thenReturn(List.of());
-
-        var result = service.overview(null, null, null, null, 1, 25);
-
-        assertThat(result.passed()).isZero();
-        assertThat(result.failed()).isZero();
-        assertThat(result.rows()).isEmpty();
-        assertThat(result.notStarted()).isEmpty();
-        assertThat(result.notStartedTotal()).isZero();
-        verifyNoInteractions(verificationRepo);
-        // profileRepo.save/findByApplicationId are stubbed lenient() elsewhere in this class but not
-        // called here — this asserts no interaction on the specific method overview() would use.
-        verify(profileRepo, never()).findByApplicationIdIn(any());
-    }
-
-    /** A DECIDED application's checks (e.g. already sanctioned) must not pollute the tallies or rows
-     *  — they are historical evidence, not this dashboard's triage work. Belt-and-suspenders on top
-     *  of the DB-level scoping: confirms the service never even asks the repo for rows outside the
-     *  undecided set in the first place (it can't return what it never fetched). */
-    @Test
-    void overview_neverIncludesCheckTypesFromApplicationsOutsideTheUndecidedQueue() {
-        LoanApplication undecidedApp = new LoanApplication();
-        undecidedApp.setId(APP);
-        undecidedApp.setStatus(ApplicationStatus.DRAFT);
-        when(applicationRepo.findByStatusIn(any())).thenReturn(List.of(undecidedApp));
-        // Only rows for the undecided application are ever handed back — a SANCTIONED application's
-        // rows are never fetched at all, because findByApplicationIdIn is called with only {APP}.
-        when(verificationRepo.findByApplicationIdIn(java.util.Set.of(APP)))
-                .thenReturn(List.of(row(APP, "PAN", "FAIL")));
-        when(profileRepo.findByApplicationIdIn(any())).thenReturn(List.of());
-
-        var result = service.overview(null, null, null, null, 1, 25);
-
-        assertThat(result.failed()).isEqualTo(1);
-        assertThat(result.rows()).extracting("applicationId").containsExactly(APP);
-    }
-
-    // ------------------------------------------------------- overview paging + attention default
-    //
-    // The undecided queue is dominated by abandoned DRAFT intakes, so returning every row of it on a
-    // 15s poll shipped 418KB per poll over the live book and only grew. Rows are now paged by
-    // application (the page renders one card per application, so a row-sliced page would draw cards
-    // from half their checks) and default to the applications the dashboard's own bucket rule counts
-    // as work. The five tallies stay over the whole queue so the headline numbers never move.
-
-    /** Every gating check PASSing is the page's "all checks passed" bucket — not attention work. */
-    @Test
-    void overview_defaultExcludesApplicationsWhoseGatingChecksAllPass() {
-        LoanApplication cleared = appWithStatus(APP, ApplicationStatus.KYC_PENDING);
-        LoanApplication needsWork = appWithStatus(43L, ApplicationStatus.KYC_PENDING);
-        when(applicationRepo.findByStatusIn(any())).thenReturn(List.of(cleared, needsWork));
-        java.util.List<ApplicationVerification> rows = new java.util.ArrayList<>();
-        for (String check : List.of("PAN", "EMAIL", "ADDRESS", "AADHAAR", "BUREAU", "SALARY",
-                "PENNY_DROP", "SELFIE")) {
-            rows.add(row(APP, check, "PASS"));
-        }
-        rows.add(row(43L, "PAN", "FAIL"));
-        when(verificationRepo.findByApplicationIdIn(any())).thenReturn(rows);
-        when(profileRepo.findByApplicationIdIn(any())).thenReturn(List.of());
-
-        var result = service.overview(null, null, null, null, 1, 25);
-
-        assertThat(result.total()).isEqualTo(1);
-        assertThat(result.rows()).extracting("applicationId").containsOnly(43L);
-        // Tallies still cover the whole queue, cleared application included.
-        assertThat(result.passed()).isEqualTo(8);
-        assertThat(result.failed()).isEqualTo(1);
-    }
-
-    /**
-     * The V75 duplicate-Aadhaar flag exists only on a collision: its absence must not hold every clean
-     * file in the attention queue, while a REVIEW row for it must — until a reviewer clears it.
-     */
-    @Test
-    void overview_aadhaarDuplicateFlag_countsOnlyWhenPresent() {
-        LoanApplication cleared = appWithStatus(APP, ApplicationStatus.KYC_PENDING);
-        LoanApplication flagged = appWithStatus(43L, ApplicationStatus.KYC_PENDING);
-        when(applicationRepo.findByStatusIn(any())).thenReturn(List.of(cleared, flagged));
-        java.util.List<ApplicationVerification> rows = new java.util.ArrayList<>();
-        for (Long app : List.of(APP, 43L)) {
-            for (String check : List.of("PAN", "EMAIL", "ADDRESS", "AADHAAR", "BUREAU", "SALARY",
-                    "PENNY_DROP", "SELFIE")) {
-                rows.add(row(app, check, "PASS"));
-            }
-        }
-        rows.add(row(43L, "AADHAAR_DUPLICATE", "REVIEW"));
-        when(verificationRepo.findByApplicationIdIn(any())).thenReturn(rows);
-        when(profileRepo.findByApplicationIdIn(any())).thenReturn(List.of());
-
-        var result = service.overview(null, null, null, null, 1, 25);
-
-        assertThat(result.rows()).extracting("applicationId").containsOnly(43L);
-    }
-
-    /** A gating check that never ran is outstanding borrower work, so the file stays in the default. */
-    @Test
-    void overview_defaultKeepsApplicationsMissingAGatingCheck() {
-        LoanApplication partial = appWithStatus(APP, ApplicationStatus.DRAFT);
-        when(applicationRepo.findByStatusIn(any())).thenReturn(List.of(partial));
-        when(verificationRepo.findByApplicationIdIn(any()))
-                .thenReturn(List.of(row(APP, "PAN", "PASS"), row(APP, "EMAIL", "PASS")));
-        when(profileRepo.findByApplicationIdIn(any())).thenReturn(List.of());
-
-        var result = service.overview(null, null, null, null, 1, 25);
-
-        assertThat(result.total()).isEqualTo(1);
-        assertThat(result.rows()).hasSize(2);
-    }
-
-    /** needsAttention=false is the escape hatch back to the full undecided queue. */
-    @Test
-    void overview_needsAttentionFalseReturnsEveryUndecidedApplication() {
-        LoanApplication cleared = appWithStatus(APP, ApplicationStatus.KYC_PENDING);
-        when(applicationRepo.findByStatusIn(any())).thenReturn(List.of(cleared));
-        java.util.List<ApplicationVerification> rows = new java.util.ArrayList<>();
-        for (String check : List.of("PAN", "EMAIL", "ADDRESS", "AADHAAR", "BUREAU", "SALARY",
-                "PENNY_DROP", "SELFIE")) {
-            rows.add(row(APP, check, "PASS"));
-        }
-        when(verificationRepo.findByApplicationIdIn(any())).thenReturn(rows);
-        when(profileRepo.findByApplicationIdIn(any())).thenReturn(List.of());
-
-        var result = service.overview(null, null, null, false, 1, 25);
-
-        assertThat(result.total()).isEqualTo(1);
-        assertThat(result.rows()).hasSize(8);
-    }
-
-    /** Paging counts applications, and never splits one application's checks across two pages. */
-    @Test
-    void overview_pagesByApplicationNotByRow() {
-        when(applicationRepo.findByStatusIn(any())).thenReturn(List.of(
-                appWithStatus(1L, ApplicationStatus.DRAFT),
-                appWithStatus(2L, ApplicationStatus.DRAFT),
-                appWithStatus(3L, ApplicationStatus.DRAFT)));
-        when(verificationRepo.findByApplicationIdIn(any())).thenReturn(List.of(
-                row(1L, "PAN", "FAIL"), row(1L, "EMAIL", "PENDING"),
-                row(2L, "PAN", "FAIL"), row(2L, "EMAIL", "PENDING"),
-                row(3L, "PAN", "FAIL"), row(3L, "EMAIL", "PENDING")));
-        when(profileRepo.findByApplicationIdIn(any())).thenReturn(List.of());
-
-        var first = service.overview(null, null, null, null, 1, 2);
-
-        assertThat(first.total()).isEqualTo(3);          // applications, not the 6 rows
-        assertThat(first.page()).isEqualTo(1);
-        assertThat(first.size()).isEqualTo(2);
-        assertThat(first.rows()).hasSize(4);             // two applications, both checks each
-        // Whole cards, never half of one: exactly two distinct applications, two rows apiece.
-        assertThat(first.rows()).extracting("applicationId")
-                .containsOnly(1L, 2L)
-                .filteredOn(id -> id.equals(1L)).hasSize(2);
-
-        var second = service.overview(null, null, null, null, 2, 2);
-        assertThat(second.rows()).hasSize(2);
-        // Tallies are identical on both pages — they describe the queue, not the page.
-        assertThat(second.failed()).isEqualTo(first.failed());
-        assertThat(second.pending()).isEqualTo(first.pending());
-    }
-
-    /** An explicit status filter is the reviewer asking for something specific — it wins over the default. */
-    @Test
-    void overview_explicitStatusFilterBypassesTheAttentionDefault() {
-        LoanApplication cleared = appWithStatus(APP, ApplicationStatus.KYC_PENDING);
-        when(applicationRepo.findByStatusIn(any())).thenReturn(List.of(cleared));
-        java.util.List<ApplicationVerification> rows = new java.util.ArrayList<>();
-        for (String check : List.of("PAN", "EMAIL", "ADDRESS", "AADHAAR", "BUREAU", "SALARY",
-                "PENNY_DROP", "SELFIE")) {
-            rows.add(row(APP, check, "PASS"));
-        }
-        when(verificationRepo.findByApplicationIdIn(any())).thenReturn(rows);
-        when(profileRepo.findByApplicationIdIn(any())).thenReturn(List.of());
-
-        var result = service.overview("PASS", null, null, null, 1, 25);
-
-        assertThat(result.rows()).hasSize(8);
-        assertThat(result.total()).isEqualTo(1);
-    }
-
-    /** Page and size are clamped the same way the customer book clamps them. */
-    @Test
-    void overview_clampsPageAndSize() {
-        when(applicationRepo.findByStatusIn(any())).thenReturn(List.of());
-
-        var result = service.overview(null, null, null, null, 0, 5_000);
-
-        assertThat(result.page()).isEqualTo(1);
-        assertThat(result.size()).isEqualTo(100);
-    }
-
-    // ------------------------------------------------------- overview "Not started" bucket
-    //
-    // The page used to build this bucket itself: every KYC_PENDING application (a second, unpaginated
-    // poll) that was not on the CURRENT page of rows. A file whose checks sat on page 2, or that was
-    // fully cleared and so filtered out of the default page, was shown to a reviewer as never verified.
-    // The server now names the bucket from the whole undecided queue it has already loaded.
-
-    /** A KYC_PENDING file with no verification row at all is "Not started", with its borrower context. */
-    @Test
-    void overview_notStarted_listsKycPendingApplicationsWithNoRows() {
-        LoanApplication untouched = appWithStatus(APP, ApplicationStatus.KYC_PENDING);
-        untouched.setCustomerId(501L);
-        LoanApplication started = appWithStatus(43L, ApplicationStatus.KYC_PENDING);
-        when(applicationRepo.findByStatusIn(any())).thenReturn(List.of(untouched, started));
-        when(verificationRepo.findByApplicationIdIn(any())).thenReturn(List.of(row(43L, "PAN", "FAIL")));
-        when(profileRepo.findByApplicationIdIn(any())).thenReturn(List.of(profile()));
-
-        var result = service.overview(null, null, null, null, 1, 25);
-
-        assertThat(result.notStarted()).containsExactly(new ApplicationVerificationService.NotStartedApplication(
-                APP, 501L, "SHUBHAM", "7206485966"));
-        assertThat(result.notStartedTotal()).isEqualTo(1);
-        // The bucket rides beside the rows; it does not change what the rows page over.
-        assertThat(result.total()).isEqualTo(1);
-        assertThat(result.rows()).extracting("applicationId").containsOnly(43L);
-    }
-
-    /**
-     * The defect this replaces: a file with rows is never "Not started", whether its rows are on a
-     * page the reviewer is not looking at or were dropped from the default page as fully cleared.
-     */
-    @Test
-    void overview_notStarted_excludesFilesWhoseRowsAreOnAnotherPageOrCleared() {
-        LoanApplication onPageOne = appWithStatus(1L, ApplicationStatus.KYC_PENDING);
-        LoanApplication onPageTwo = appWithStatus(2L, ApplicationStatus.KYC_PENDING);
-        LoanApplication cleared = appWithStatus(3L, ApplicationStatus.KYC_PENDING);
-        when(applicationRepo.findByStatusIn(any())).thenReturn(List.of(onPageOne, onPageTwo, cleared));
-        java.util.List<ApplicationVerification> rows = new java.util.ArrayList<>();
-        rows.add(row(1L, "PAN", "FAIL"));
-        rows.add(row(2L, "PAN", "FAIL"));
-        for (String check : List.of("PAN", "EMAIL", "ADDRESS", "AADHAAR", "BUREAU", "SALARY",
-                "PENNY_DROP", "SELFIE")) {
-            rows.add(row(3L, check, "PASS"));
-        }
-        when(verificationRepo.findByApplicationIdIn(any())).thenReturn(rows);
-        when(profileRepo.findByApplicationIdIn(any())).thenReturn(List.of());
-
-        var firstPage = service.overview(null, null, null, null, 1, 1);
-
-        assertThat(firstPage.total()).isEqualTo(2);          // the cleared file is off the default
-        assertThat(firstPage.rows()).extracting("applicationId").containsOnly(1L);
-        assertThat(firstPage.notStarted()).isEmpty();
-        assertThat(firstPage.notStartedTotal()).isZero();
-    }
-
-    /**
-     * Only KYC_PENDING: DASHBOARD_STATUSES also holds DRAFT (about a thousand abandoned intakes) and
-     * SANCTIONED, neither of which is a file waiting for its first check.
-     */
-    @Test
-    void overview_notStarted_ignoresDraftAndOtherStatusesWithNoRows() {
-        when(applicationRepo.findByStatusIn(any())).thenReturn(List.of(
-                appWithStatus(1L, ApplicationStatus.DRAFT),
-                appWithStatus(2L, ApplicationStatus.REVIEW_PENDING),
-                appWithStatus(3L, ApplicationStatus.SANCTIONED),
-                appWithStatus(4L, ApplicationStatus.KYC_PENDING)));
-        when(verificationRepo.findByApplicationIdIn(any())).thenReturn(List.of());
-        when(profileRepo.findByApplicationIdIn(any())).thenReturn(List.of());
-
-        var result = service.overview(null, null, null, null, 1, 25);
-
-        assertThat(result.notStarted()).extracting("applicationId").containsExactly(4L);
-        assertThat(result.notStartedTotal()).isEqualTo(1);
-    }
-
-    /** The list is capped, newest first, while notStartedTotal keeps the true count. */
-    @Test
-    void overview_notStarted_capsTheListNewestFirstButReportsTheTrueTotal() {
-        int count = ApplicationVerificationService.OVERVIEW_NOT_STARTED_CAP + 5;
-        java.time.Instant base = java.time.Instant.parse("2026-10-01T00:00:00Z");
-        java.util.List<LoanApplication> apps = new java.util.ArrayList<>();
-        for (long id = 1; id <= count; id++) {
-            LoanApplication a = appWithStatus(id, ApplicationStatus.KYC_PENDING);
-            a.setCreatedAt(base.plusSeconds(id * 60));       // higher id = newer
-            apps.add(a);
-        }
-        java.util.Collections.shuffle(apps, new java.util.Random(7));
-        when(applicationRepo.findByStatusIn(any())).thenReturn(apps);
-        when(verificationRepo.findByApplicationIdIn(any())).thenReturn(List.of());
-        when(profileRepo.findByApplicationIdIn(any())).thenReturn(List.of());
-
-        var result = service.overview(null, null, null, null, 1, 25);
-
-        assertThat(result.notStarted()).hasSize(ApplicationVerificationService.OVERVIEW_NOT_STARTED_CAP);
-        assertThat(result.notStartedTotal()).isEqualTo(count);
-        assertThat(result.notStarted().get(0).applicationId()).isEqualTo((long) count);
-        // The five oldest are the ones left out.
-        assertThat(result.notStarted()).extracting("applicationId")
-                .doesNotContain(1L, 2L, 3L, 4L, 5L)
-                .contains(6L);
-    }
-
-    /** The bucket honours the same free-text search as the rows: name, mobile, app id, customer id. */
-    @Test
-    void overview_notStarted_appliesTheSearch() {
-        LoanApplication shubham = appWithStatus(APP, ApplicationStatus.KYC_PENDING);
-        shubham.setCustomerId(501L);
-        LoanApplication other = appWithStatus(77L, ApplicationStatus.KYC_PENDING);
-        other.setCustomerId(902L);
-        when(applicationRepo.findByStatusIn(any())).thenReturn(List.of(shubham, other));
-        when(verificationRepo.findByApplicationIdIn(any())).thenReturn(List.of());
-        CustomerProfile otherProfile = new CustomerProfile();
-        otherProfile.setApplicationId(77L);
-        otherProfile.setFullName("Asha Rao");
-        otherProfile.setMobile("9000000001");
-        when(profileRepo.findByApplicationIdIn(any())).thenReturn(List.of(profile(), otherProfile));
-
-        var byName = service.overview(null, null, "  shub ", null, 1, 25);
-        assertThat(byName.notStarted()).extracting("applicationId").containsExactly(APP);
-        assertThat(byName.notStartedTotal()).isEqualTo(1);
-
-        var byCustomer = service.overview(null, null, "902", null, 1, 25);
-        assertThat(byCustomer.notStarted()).extracting("applicationId").containsExactly(77L);
-
-        var noMatch = service.overview(null, null, "nobody", null, 1, 25);
-        assertThat(noMatch.notStarted()).isEmpty();
-        assertThat(noMatch.notStartedTotal()).isZero();
-    }
-
     private static LoanApplication appWithStatus(Long id, ApplicationStatus status) {
         LoanApplication a = new LoanApplication();
         a.setId(id);
@@ -2388,6 +2006,62 @@ class ApplicationVerificationServiceTest {
         verify(documentRepo, never()).save(any());
     }
 
+    private void stubSalaryApp(ApplicationStatus status) {
+        lenient().when(applicationRepo.findById(APP)).thenReturn(Optional.of(appWithStatus(APP, status)));
+        lenient().when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(profile()));
+    }
+
+    @Test
+    void verifySalary_isRefusedForABorrowerAfterDraft_withNoWrite() {
+        ActorContext.set(new CurrentActor("7", "Borrower", "BORROWER"));
+        stubSalaryApp(ApplicationStatus.SANCTIONED);
+
+        assertThatThrownBy(() -> service.verifySalary(APP, 4_000_000L, null, null, null))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "SALARY_INCREASE_NEEDS_REVIEW");
+        verify(profileRepo, never()).save(any());
+        verify(applicationRepo, never()).save(any());
+        verify(verificationRepo, never()).save(any());
+    }
+
+    @Test
+    void verifySalary_isAllowedForABorrowerInDraft() {
+        ActorContext.set(new CurrentActor("7", "Borrower", "BORROWER"));
+        stubSalaryApp(ApplicationStatus.DRAFT);
+
+        service.verifySalary(APP, 4_000_000L, null, null, null);
+
+        verify(profileRepo).save(any());
+    }
+
+    @Test
+    void verifySalary_isAllowedForAdminAfterDraft() {
+        ActorContext.set(new CurrentActor("1", "Admin", "ADMIN"));
+        stubSalaryApp(ApplicationStatus.SANCTIONED);
+
+        service.verifySalary(APP, 4_000_000L, null, null, null);
+
+        verify(profileRepo).save(any());
+    }
+
+    @Test
+    void verifyAddress_overwritesAnExistingProfileAddressWithTheResolvedOne() {
+        CustomerProfile p = profile();
+        p.setAddress("Old address");
+        LoanApplication app = appWithStatus(APP, ApplicationStatus.SANCTIONED);
+        app.setCustomerId(9L);
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(verification.verifyAddress(anyDouble(), anyDouble(), anyString())).thenReturn(
+                new com.navix.common.verification.VerificationPort.AddressCheck(
+                        "t1", "DIGITAP", true, "New resolved address", "122001", "HR", "Gurugram", "IN", 0.9));
+
+        service.verifyAddress(APP, 28.4, 77.0);
+
+        assertThat(p.getAddress()).isEqualTo("New resolved address");
+        verify(changeLogger).logIfChanged(9L, APP, "address", "Old address", "New resolved address");
+    }
+
     @Test
     void verifySalary_refusesASlipKeyFromAnotherApplication() {
         assertThatThrownBy(() -> service.verifySalary(APP, 4_000_000L,
@@ -3396,5 +3070,137 @@ class ApplicationVerificationServiceTest {
         verify(storage, never()).presignDownload(anyString());
         verify(documentRepo, never()).save(any());
         verifyNoInteractions(verification);
+    }
+
+    // ---- duplicate-Aadhaar rule at submit-kyc ----
+
+    private LoanApplication draftFor(Long customerId) {
+        LoanApplication a = appWithStatus(APP, ApplicationStatus.DRAFT);
+        a.setCustomerId(customerId);
+        return a;
+    }
+
+    @Test
+    void aadhaarOnAnotherCustomersSubmittedApplicationRejectsPermanentlyWithReference() {
+        CustomerProfile p = profile();
+        p.setAadhaar("234567890124");
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(draftFor(7L)));
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(profileRepo.findSubmittedApplicationIdsByAadhaarForOtherCustomers("234567890124", 7L))
+                .thenReturn(List.of(1934L));
+        LoanApplication earlier = appWithStatus(1934L, ApplicationStatus.CLOSED);
+        earlier.setCustomerId(812L);
+        when(applicationRepo.findById(1934L)).thenReturn(Optional.of(earlier));
+        LoanApplication rejected = appWithStatus(APP, ApplicationStatus.REJECTED);
+        when(flow.autoRejectSystem(eq(APP), anyString(), anyString(), any(java.time.Instant.class), anyString(), anyString()))
+                .thenReturn(rejected);
+
+        assertThat(service.rejectIfAadhaarDuplicate(APP)).isSameAs(rejected);
+
+        org.mockito.ArgumentCaptor<String> detail = org.mockito.ArgumentCaptor.forClass(String.class);
+        org.mockito.ArgumentCaptor<String> notes = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(flow).autoRejectSystem(eq(APP), eq(com.navix.loan.entity.ApplicationRejection.AADHAAR_DUPLICATE),
+                detail.capture(), eq(com.navix.loan.entity.ApplicationRejection.INDEFINITE),
+                eq("AUTO_REJECT_IDENTITY"), notes.capture());
+        assertThat(detail.getValue()).contains("customer #812").contains("application #1934")
+                .doesNotContain("234567890124");
+        // The borrower can read event notes: no other customer's reference there.
+        assertThat(notes.getValue()).doesNotContain("812").doesNotContain("1934");
+    }
+
+    @Test
+    void noSubmittedMatchOrNoAadhaarLeavesTheFileAlone() {
+        CustomerProfile p = profile();
+        p.setAadhaar("234567890124");
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(draftFor(7L)));
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(profileRepo.findSubmittedApplicationIdsByAadhaarForOtherCustomers("234567890124", 7L))
+                .thenReturn(List.of());
+        assertThat(service.rejectIfAadhaarDuplicate(APP)).isNull();
+
+        p.setAadhaar(null);
+        assertThat(service.rejectIfAadhaarDuplicate(APP)).isNull();
+        verify(flow, never()).autoRejectSystem(any(), any(), any(), any(java.time.Instant.class), any(), any());
+    }
+
+    @Test
+    void neverRejectsAFileAlreadyPastIntake() {
+        CustomerProfile p = profile();
+        p.setAadhaar("234567890124");
+        LoanApplication pending = appWithStatus(APP, ApplicationStatus.CREDIT_EXEC_PENDING);
+        pending.setCustomerId(7L);
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(pending));
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        assertThat(service.rejectIfAadhaarDuplicate(APP)).isNull();
+        verify(profileRepo, never()).findSubmittedApplicationIdsByAadhaarForOtherCustomers(any(), any());
+    }
+
+    // ---- DOB fraud rule at DigiLocker completion ----
+
+    private CustomerProfile digilockerReady(LocalDate enteredDob) {
+        CustomerProfile p = profile();
+        p.setDigilockerClientId("CL1");
+        p.setDob(enteredDob);
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(verification.digilockerAadhaar("CL1")).thenReturn(aadhaar("XXXXXXXX1234"));
+        LoanApplication sanctioned = appWithStatus(APP, ApplicationStatus.SANCTIONED);
+        lenient().when(applicationRepo.findById(APP)).thenReturn(Optional.of(sanctioned));
+        return p;
+    }
+
+    @Test
+    void digilockerComplete_dobEnteredDiffersFromAadhaar_rejectsAsFraud() {
+        CustomerProfile p = digilockerReady(LocalDate.of(2003, 4, 24));   // Aadhaar says 2003-03-24
+
+        var result = service.digilockerComplete(APP);
+
+        assertThat(result.status()).isEqualTo("FAIL");
+        assertThat(result.derived()).containsEntry("dobMismatch", true)
+                .containsEntry("enteredDob", "2003-04-24")
+                .containsEntry("applicationRejected", true)
+                .doesNotContainKey("aadhaarMismatch");
+        assertThat(p.getAadhaarVerified()).isFalse();
+        assertThat(p.getDob()).isEqualTo(LocalDate.of(2003, 4, 24));   // evidence kept, not overwritten
+        org.mockito.ArgumentCaptor<String> detail = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(flow).autoRejectSystem(eq(APP), eq(com.navix.loan.entity.ApplicationRejection.FRAUD_REJECTED),
+                detail.capture(), eq(ApplicationFlowService.FRAUD_REJECT_BLOCK_DAYS));
+        assertThat(detail.getValue()).contains("2003-04-24").contains("2003-03-24");
+    }
+
+    @Test
+    void digilockerComplete_dobMismatchStaysOnARerunOfAFileThatCouldNotBeRejected() {
+        CustomerProfile p = digilockerReady(LocalDate.of(2003, 4, 24));
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(appWithStatus(APP, ApplicationStatus.ACTIVE)));
+        service.digilockerComplete(APP);
+        p.setDigilockerClientId("CL1");
+        var rerun = service.digilockerComplete(APP);
+        assertThat(rerun.status()).isEqualTo("FAIL");
+        assertThat(rerun.derived()).containsEntry("dobMismatch", true);
+        assertThat(p.getAadhaarVerified()).isFalse();
+    }
+
+    @Test
+    void digilockerComplete_sameDobOrNoneEntered_doesNotReject() {
+        CustomerProfile p = digilockerReady(LocalDate.of(2003, 3, 24));
+        assertThat(service.digilockerComplete(APP).derived()).doesNotContainKey("dobMismatch");
+        assertThat(p.getAadhaarVerified()).isTrue();
+
+        p.setDob(null);
+        p.setDigilockerClientId("CL1");
+        assertThat(service.digilockerComplete(APP).derived()).doesNotContainKey("dobMismatch");
+        verify(flow, never()).autoRejectSystem(any(), any(), any(), anyInt());
+    }
+
+    @Test
+    void dobMismatch_onlyWhenBothDatesKnownAndDifferent() {
+        LocalDate d = LocalDate.of(2003, 3, 24);
+        assertThat(ApplicationVerificationService.dobMismatch(d, d)).isNull();
+        assertThat(ApplicationVerificationService.dobMismatch(null, d)).isNull();
+        assertThat(ApplicationVerificationService.dobMismatch(d, null)).isNull();   // year-only Aadhaar DOB
+        assertThat(ApplicationVerificationService.dobMismatch(d, d.plusDays(1))).isNotNull();
+        // Year-of-birth-only Aadhaar, rendered 01/01/YYYY: the year decides.
+        LocalDate yobOnly = LocalDate.of(2003, 1, 1);
+        assertThat(ApplicationVerificationService.dobMismatch(d, yobOnly)).isNull();
+        assertThat(ApplicationVerificationService.dobMismatch(d.minusYears(1), yobOnly)).isNotNull();
     }
 }

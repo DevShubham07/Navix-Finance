@@ -7,7 +7,13 @@ import { ThirdPartyTab } from "@/components/staff/customer-360/third-party-tab";
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
+
+/** Signs in as `role` for PermissionGate (it reads /api/auth/staff/me). */
+function signInAs(role: string) {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ session: { id: "7", name: "Meera", role } }))));
+}
 
 function renderTab(steps: StepResult[], applicationId: number | null = 318, profile: Record<string, unknown> = {}) {
   vi.spyOn(staffApi, "verifications").mockResolvedValue(steps);
@@ -124,5 +130,63 @@ describe("Third-party tab", () => {
     expect(await screen.findByText("No bureau report to analyse")).toBeInTheDocument();
     expect(screen.getByText("Analysed")).toBeInTheDocument();
     expect(screen.queryByText("Analysis pending")).not.toBeInTheDocument();
+  });
+
+  it("admin: every API row carries a compact Run / Re-run, borrower-only steps disabled", async () => {
+    signInAs("ADMIN");
+    renderTab([pan]);
+    await screen.findByText("Personal Information");
+    expect(await screen.findByRole("button", { name: "Re-run PAN Detail" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Run Penny Drop" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Run UAN / EPFO Detail" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Run Skip Trace" })).toBeEnabled();
+    // Borrower-only steps offer Send link, not Run — disabled until the file is sanctioned.
+    expect(screen.getByRole("button", { name: "Send link for eSign" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Send link for Aadhaar Detail (DigiLocker)" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /Run eSign|Run Aadhaar Detail/ })).not.toBeInTheDocument();
+  });
+
+  it("admin: Send link on a sanctioned file opens the borrower link dialog", async () => {
+    signInAs("ADMIN");
+    const preview = vi.spyOn(staffApi, "resumeLink").mockReturnValue(new Promise(() => {}));
+    vi.spyOn(staffApi, "verifications").mockResolvedValue([pan]);
+    vi.spyOn(skipTraceApi, "history").mockResolvedValue([]);
+    const app = { id: 318, status: "SANCTIONED" } as unknown as ApplicationView;
+    const detail = { customerId: 42, profile: {}, applications: [app], loans: [] } as unknown as CustomerDetail;
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <ThirdPartyTab detail={detail} customerId={42} applicationId={318} app={app} onChanged={() => {}} />
+      </QueryClientProvider>,
+    );
+    const btn = await screen.findByRole("button", { name: "Send link for eSign" });
+    expect(btn).toBeEnabled();
+    fireEvent.click(btn);
+    await vi.waitFor(() => expect(preview).toHaveBeenCalledWith(318, "ESIGN"));
+  });
+
+  it("admin: Run opens the retry dialog and calls the admin retry endpoint", async () => {
+    signInAs("ADMIN");
+    const retry = vi.spyOn(staffApi, "retryVerification").mockResolvedValue({ ...pan, checkType: "EMPLOYMENT" } as StepResult);
+    renderTab([pan]);
+    fireEvent.click(await screen.findByRole("button", { name: "Run UAN / EPFO Detail" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
+    await vi.waitFor(() => expect(retry).toHaveBeenCalledWith(318, "EMPLOYMENT", {}));
+  });
+
+  it("admin: skip trace runs from the row after a confirm", async () => {
+    signInAs("ADMIN");
+    const run = vi.spyOn(skipTraceApi, "run").mockResolvedValue({ id: 1, status: "SUCCESS" } as never);
+    renderTab([pan]);
+    fireEvent.click(await screen.findByRole("button", { name: "Run Skip Trace" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Run skip trace" }));
+    await vi.waitFor(() => expect(run).toHaveBeenCalledWith(42));
+  });
+
+  it("non-admin roles see no Run buttons", async () => {
+    signInAs("CREDIT_EXECUTIVE");
+    renderTab([pan]);
+    await screen.findByText("Personal Information");
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByRole("button", { name: /^(Run|Re-run) / })).not.toBeInTheDocument();
   });
 });

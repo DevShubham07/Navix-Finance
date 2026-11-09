@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -24,12 +23,6 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
-import jakarta.persistence.criteria.CriteriaBuilder;
-import jakarta.persistence.criteria.CriteriaQuery;
-import jakarta.persistence.criteria.Expression;
-import jakarta.persistence.criteria.Path;
-import jakarta.persistence.criteria.Predicate;
-import jakarta.persistence.criteria.Root;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -37,11 +30,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
-import org.springframework.data.jpa.domain.Specification;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 @ExtendWith(MockitoExtension.class)
@@ -51,12 +39,13 @@ class LeadServiceTest {
     @Mock private StaffDirectory staffDirectory;
     @Mock private JdbcTemplate jdbc;
     @Mock private DsaAttributionService attributionService;
+    @Mock private LeadBookQuery bookQuery;
 
     private LeadService service;
 
     @BeforeEach
     void setUp() {
-        service = new LeadService(leadRepository, staffDirectory, attributionService, jdbc);
+        service = new LeadService(leadRepository, staffDirectory, attributionService, jdbc, bookQuery);
     }
 
     @AfterEach
@@ -243,189 +232,108 @@ class LeadServiceTest {
                 .isEqualTo("FORBIDDEN_ROLE");
     }
 
-    @Test
-    void list_withoutFilters_usesAnIdDescendingSpecificationQuery() {
-        ActorContext.set(new CurrentActor("42", "Tara", "TELECALLER"));
-        ArgumentCaptor<Specification<Lead>> spec = specificationCaptor();
-        stubPage(spec, List.of(), 0L);
-
-        assertThat(service.list(null, null, null, null, null, null, null, null, null, 1, 25).rows())
-                .isEmpty();
-
-        // Still newest-first — the paging change must not reorder the queue.
-        verify(leadRepository).findAll(
-                any(Specification.class),
-                eq(PageRequest.of(0, 25, Sort.by(Sort.Direction.DESC, "id"))));
-        // Even with no explicit filters, the "exclude DSA-owned leads" predicate is always present —
-        // so the built query is never a bare conjunction any more.
-        CriteriaBuilder cb = mock(CriteriaBuilder.class);
-        Root<Lead> root = mock(Root.class);
-        Path<Long> ownerDsaId = mock(Path.class);
-        when(root.<Long>get("ownerDsaId")).thenReturn(ownerDsaId);
-        Predicate ownerIsNull = mock(Predicate.class);
-        Predicate combined = mock(Predicate.class);
-        when(cb.isNull(ownerDsaId)).thenReturn(ownerIsNull);
-        when(cb.and(any(Predicate[].class))).thenReturn(combined);
-        assertThat(spec.getValue().toPredicate(root, mock(CriteriaQuery.class), cb)).isSameAs(combined);
-        verify(cb).isNull(ownerDsaId);
+    private LeadBookQuery.LeadFilter listFiltered(String q, String status, String source, Long by,
+            LocalDate from, LocalDate to, Integer min, Integer max, String outcome) {
+        when(bookQuery.count(any(), any())).thenReturn(0L);
+        when(bookQuery.pageIds(any(), any(), org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn(List.of());
+        service.list(q, status, source, by, from, to, min, max, outcome, 1, 25);
+        ArgumentCaptor<LeadBookQuery.LeadFilter> cap = ArgumentCaptor.forClass(LeadBookQuery.LeadFilter.class);
+        verify(bookQuery).count(cap.capture(), any());
+        return cap.getValue();
     }
 
+    /** The staff-only gate stays exactly as it was: the query is never reached by another role. */
     @Test
-    void list_excludesDsaOwnedLeads_regardlessOfOtherFilters() {
-        ActorContext.set(new CurrentActor("1", "Admin", "ADMIN"));
-        ArgumentCaptor<Specification<Lead>> spec = specificationCaptor();
-        stubPage(spec, List.of(), 0L);
-
-        service.list(null, null, null, null, null, null, null, null, null, 1, 25);
-
-        CriteriaBuilder cb = mock(CriteriaBuilder.class);
-        Root<Lead> root = mock(Root.class);
-        Path<Long> ownerDsaId = mock(Path.class);
-        when(root.<Long>get("ownerDsaId")).thenReturn(ownerDsaId);
-        when(cb.isNull(ownerDsaId)).thenReturn(mock(Predicate.class));
-        when(cb.and(any(Predicate[].class))).thenReturn(mock(Predicate.class));
-
-        spec.getValue().toPredicate(root, mock(CriteriaQuery.class), cb);
-
-        verify(cb).isNull(ownerDsaId);
+    void list_isForbiddenForNonLeadWriters() {
+        ActorContext.set(new CurrentActor("7", "Exec", "CREDIT_EXECUTIVE"));
+        assertThatThrownBy(() -> service.list(null, null, null, null, null, null, null, null, null, 1, 25))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getCode())
+                .isEqualTo("FORBIDDEN_ROLE");
+        assertThatThrownBy(() -> service.facets("source", null, null, null, null, null, null, null, null, null,
+                java.util.Map.of()))
+                .isInstanceOf(BusinessException.class);
+        org.mockito.Mockito.verifyNoInteractions(bookQuery);
     }
 
+    /** The window is half-open UTC: [from 00:00, day-after-to 00:00) — the boundary the Specification used. */
     @Test
     void list_withFromAndToOnly_buildsExclusiveUtcDateRange() {
         ActorContext.set(new CurrentActor("42", "Tara", "TELECALLER"));
-        ArgumentCaptor<Specification<Lead>> spec = specificationCaptor();
-        stubPage(spec, List.of(), 0L);
 
-        service.list(null, null, null, null,
-                LocalDate.of(2026, 7, 13), LocalDate.of(2026, 8, 12), null, null, null, 1, 25);
+        LeadBookQuery.LeadFilter f = listFiltered(null, null, null, null,
+                LocalDate.of(2026, 7, 13), LocalDate.of(2026, 8, 12), null, null, null);
 
-        CriteriaBuilder cb = mock(CriteriaBuilder.class);
-        Root<Lead> root = mock(Root.class);
-        Path<Instant> createdAt = mock(Path.class);
-        Path<Long> ownerDsaId = mock(Path.class);
-        when(root.<Instant>get("createdAt")).thenReturn(createdAt);
-        when(root.<Long>get("ownerDsaId")).thenReturn(ownerDsaId);
-        Predicate lower = mock(Predicate.class);
-        Predicate upper = mock(Predicate.class);
-        Predicate combined = mock(Predicate.class);
-        when(cb.greaterThanOrEqualTo(createdAt, Instant.parse("2026-07-13T00:00:00Z"))).thenReturn(lower);
-        when(cb.lessThan(createdAt, Instant.parse("2026-08-13T00:00:00Z"))).thenReturn(upper);
-        when(cb.isNull(ownerDsaId)).thenReturn(mock(Predicate.class));
-        when(cb.and(any(Predicate[].class))).thenReturn(combined);
-
-        assertThat(spec.getValue().toPredicate(root, mock(CriteriaQuery.class), cb)).isSameAs(combined);
-        verify(cb).greaterThanOrEqualTo(createdAt, Instant.parse("2026-07-13T00:00:00Z"));
-        verify(cb).lessThan(createdAt, Instant.parse("2026-08-13T00:00:00Z"));
+        assertThat(f.from()).isEqualTo(Instant.parse("2026-07-13T00:00:00Z"));
+        assertThat(f.to()).isEqualTo(Instant.parse("2026-08-13T00:00:00Z"));
     }
 
     @Test
-    void list_withQOnly_normalisesWhitespaceIntoOneCaseInsensitiveTerm() {
-        ActorContext.set(new CurrentActor("42", "Tara", "TELECALLER"));
-        ArgumentCaptor<Specification<Lead>> spec = specificationCaptor();
-        stubPage(spec, List.of(), 0L);
-
-        service.list("  Ravi  ", null, null, null, null, null, null, null, null, 1, 25);
-
-        CriteriaBuilder cb = mock(CriteriaBuilder.class);
-        Root<Lead> root = mock(Root.class);
-        Path<String> name = mock(Path.class);
-        Path<String> mobile = mock(Path.class);
-        Path<Long> ownerDsaId = mock(Path.class);
-        Expression<String> lowerName = mock(Expression.class);
-        when(root.<String>get("name")).thenReturn(name);
-        when(root.<String>get("mobile")).thenReturn(mobile);
-        when(root.<Long>get("ownerDsaId")).thenReturn(ownerDsaId);
-        when(cb.lower(name)).thenReturn(lowerName);
-        when(cb.isNull(ownerDsaId)).thenReturn(mock(Predicate.class));
-        Predicate byName = mock(Predicate.class);
-        Predicate byMobile = mock(Predicate.class);
-        Predicate either = mock(Predicate.class);
-        when(cb.like(lowerName, "%ravi%")).thenReturn(byName);
-        when(cb.like(mobile, "%Ravi%")).thenReturn(byMobile);
-        when(cb.or(byName, byMobile)).thenReturn(either);
-        when(cb.and(any(Predicate[].class))).thenReturn(mock(Predicate.class));
-
-        spec.getValue().toPredicate(root, mock(CriteriaQuery.class), cb);
-
-        verify(cb).like(lowerName, "%ravi%");
-        verify(cb).like(mobile, "%Ravi%");
-    }
-
-    @Test
-    void list_withCombinedFilters_includesEverySuppliedConstraint() {
+    void list_normalisesTrimmingAndOutcomeCase() {
         ActorContext.set(new CurrentActor("1", "Admin", "ADMIN"));
-        ArgumentCaptor<Specification<Lead>> spec = specificationCaptor();
-        stubPage(spec, List.of(), 0L);
 
-        service.list(null, " CALLBACK ", " DSA ", 42L, null, null, 2, 4, null, 1, 25);
+        LeadBookQuery.LeadFilter f = listFiltered("  Ravi  ", " CALLBACK ", " DSA ", 42L, null, null, 2, 4, " new ");
 
-        CriteriaBuilder cb = mock(CriteriaBuilder.class);
-        Root<Lead> root = mock(Root.class);
-        Path<String> callStatus = mock(Path.class);
-        Path<String> source = mock(Path.class);
-        Path<Long> createdBy = mock(Path.class);
-        Path<Integer> rating = mock(Path.class);
-        Path<Long> ownerDsaId = mock(Path.class);
-        when(root.<String>get("callStatus")).thenReturn(callStatus);
-        when(root.<String>get("source")).thenReturn(source);
-        when(root.<Long>get("createdByStaffId")).thenReturn(createdBy);
-        when(root.<Integer>get("qualityRating")).thenReturn(rating);
-        when(root.<Long>get("ownerDsaId")).thenReturn(ownerDsaId);
-        when(cb.isNull(ownerDsaId)).thenReturn(mock(Predicate.class));
-        when(cb.equal(callStatus, "CALLBACK")).thenReturn(mock(Predicate.class));
-        when(cb.equal(source, "DSA")).thenReturn(mock(Predicate.class));
-        when(cb.equal(createdBy, 42L)).thenReturn(mock(Predicate.class));
-        when(cb.greaterThanOrEqualTo(rating, 2)).thenReturn(mock(Predicate.class));
-        when(cb.lessThanOrEqualTo(rating, 4)).thenReturn(mock(Predicate.class));
-        when(cb.and(any(Predicate[].class))).thenReturn(mock(Predicate.class));
-
-        spec.getValue().toPredicate(root, mock(CriteriaQuery.class), cb);
-
-        verify(cb).equal(callStatus, "CALLBACK");
-        verify(cb).equal(source, "DSA");
-        verify(cb).equal(createdBy, 42L);
-        verify(cb).greaterThanOrEqualTo(rating, 2);
-        verify(cb).lessThanOrEqualTo(rating, 4);
+        assertThat(f).isEqualTo(new LeadBookQuery.LeadFilter(
+                "Ravi", "CALLBACK", "DSA", 42L, null, null, 2, 4, "NEW"));
     }
 
-    /**
-     * The page is what the caller asked for; {@code total} is the whole filter behind it. The list
-     * used to come back unpaged and be sliced in the browser — 2,000 rows a fetch.
-     */
+    @Test
+    void list_blankParamsAreNoFilter() {
+        ActorContext.set(new CurrentActor("1", "Admin", "ADMIN"));
+
+        LeadBookQuery.LeadFilter f = listFiltered("  ", "", " ", null, null, null, null, null, "");
+
+        assertThat(f).isEqualTo(new LeadBookQuery.LeadFilter(null, null, null, null, null, null, null, null, null));
+    }
+
+    /** Only the ids on the page are loaded, in the QUERY's order (findAllById promises none). */
     @Test
     void list_pagesAndReportsTheTotalAcrossTheWholeFilter() {
         ActorContext.set(new CurrentActor("42", "Tara", "TELECALLER"));
-        ArgumentCaptor<Specification<Lead>> spec = specificationCaptor();
-        stubPage(spec, List.of(lead(11L, "Ravi"), lead(10L, "Asha")), 5L);
-        ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
+        when(bookQuery.count(any(), any())).thenReturn(5L);
+        when(bookQuery.pageIds(any(), any(), eq(2), eq(2))).thenReturn(List.of(11L, 10L));
+        when(leadRepository.findAllById(List.of(11L, 10L)))
+                .thenReturn(List.of(lead(10L, "Asha"), lead(11L, "Ravi")));
 
-        LeadPage result = service.list(null, null, null, null, null, null, null, null, null, 1, 2);
+        LeadPage result = service.list(null, null, null, null, null, null, null, null, null, 2, 2);
 
         assertThat(result.rows()).extracting(LeadView::name).containsExactly("Ravi", "Asha");
-        assertThat(result.page()).isEqualTo(1);
+        assertThat(result.page()).isEqualTo(2);
         assertThat(result.size()).isEqualTo(2);
         assertThat(result.total()).isEqualTo(5L);
-        verify(leadRepository).findAll(any(Specification.class), pageable.capture());
-        assertThat(pageable.getValue())
-                .isEqualTo(PageRequest.of(0, 2, Sort.by(Sort.Direction.DESC, "id")));
     }
 
     /** A 1-indexed page and a ceiling on size, exactly like the Customers book. */
     @Test
     void list_clampsPageAndSize() {
         ActorContext.set(new CurrentActor("42", "Tara", "TELECALLER"));
-        ArgumentCaptor<Specification<Lead>> spec = specificationCaptor();
-        stubPage(spec, List.of(), 0L);
-        ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
+        when(bookQuery.count(any(), any())).thenReturn(0L);
+        when(bookQuery.pageIds(any(), any(), eq(0), eq(LeadService.MAX_PAGE_SIZE))).thenReturn(List.of());
 
         LeadPage result = service.list(null, null, null, null, null, null, null, null, null, 0, 500);
 
         assertThat(result.page()).isEqualTo(1);
         assertThat(result.size()).isEqualTo(LeadService.MAX_PAGE_SIZE);
-        verify(leadRepository).findAll(any(Specification.class), pageable.capture());
-        assertThat(pageable.getValue())
-                .isEqualTo(PageRequest.of(0, LeadService.MAX_PAGE_SIZE,
-                        Sort.by(Sort.Direction.DESC, "id")));
+        verify(bookQuery).pageIds(any(), any(), eq(0), eq(LeadService.MAX_PAGE_SIZE));
+    }
+
+    /** An unregistered column (the DSA scope among them) never becomes a filter, however it is spelled. */
+    @Test
+    void list_dropsUnregisteredColumnFilters() {
+        ActorContext.set(new CurrentActor("1", "Admin", "ADMIN"));
+        when(bookQuery.count(any(), any())).thenReturn(0L);
+        when(bookQuery.pageIds(any(), any(), org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn(List.of());
+
+        service.list(null, null, null, null, null, null, null, null, null, 1, 25,
+                java.util.Map.of("f.ownerDsaId", "in:7", "f.source", "in:DSA"));
+
+        ArgumentCaptor<com.navix.common.query.FilterSpec> spec =
+                ArgumentCaptor.forClass(com.navix.common.query.FilterSpec.class);
+        verify(bookQuery).count(any(), spec.capture());
+        assertThat(spec.getValue().filters().keySet()).containsExactly("source");
     }
 
     private static Lead lead(Long id, String name) {
@@ -436,16 +344,5 @@ class LeadServiceTest {
         l.setCallStatus("NOT_CALLED");
         l.setCreatedByStaffId(42L);
         return l;
-    }
-
-    /** Stub the paged repository read: {@code rows} as the requested page, {@code total} behind it. */
-    private void stubPage(ArgumentCaptor<Specification<Lead>> spec, List<Lead> rows, long total) {
-        when(leadRepository.findAll(spec.capture(), any(Pageable.class)))
-                .thenAnswer(inv -> new PageImpl<>(rows, inv.getArgument(1), total));
-    }
-
-    @SuppressWarnings({"rawtypes", "unchecked"})
-    private static ArgumentCaptor<Specification<Lead>> specificationCaptor() {
-        return (ArgumentCaptor) ArgumentCaptor.forClass(Specification.class);
     }
 }

@@ -11,10 +11,12 @@ import com.navix.loan.dto.CustomerDtos.AddCallLogRequest;
 import com.navix.loan.dto.CustomerDtos.AddRemarkRequest;
 import com.navix.loan.dto.CustomerDtos.ApplicationDocumentGroup;
 import com.navix.loan.dto.CustomerDtos.AssignOwnerRequest;
+import com.navix.loan.dto.CustomerDtos.BlockCustomerRequest;
 import com.navix.loan.dto.CustomerDtos.BookStats;
 import com.navix.loan.dto.CustomerDtos.CallLogView;
 import com.navix.loan.dto.CustomerDtos.ChangeSanctionedAmountRequest;
 import com.navix.loan.dto.CustomerDtos.ConfirmMobileChangeRequest;
+import com.navix.loan.dto.CustomerDtos.CustomerBlockView;
 import com.navix.loan.dto.CustomerDtos.CustomerDetail;
 import com.navix.loan.dto.CustomerDtos.CustomerPage;
 import com.navix.loan.dto.CustomerDtos.CustomerSummary;
@@ -26,6 +28,8 @@ import com.navix.loan.dto.CustomerDtos.RequestMobileChangeRequest;
 import com.navix.loan.dto.CustomerDtos.SalaryDayRequest;
 import com.navix.loan.dto.CustomerDtos.UpdateCustomerRequest;
 import com.navix.loan.dto.ReviewDtos.ProfileView;
+import com.navix.loan.dto.AnalyzerDtos.AnalyzerView;
+import com.navix.loan.service.BorrowerAnalyzerService;
 import com.navix.loan.service.CustomerService;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -52,6 +56,8 @@ import org.springframework.web.bind.annotation.RestController;
 public class CustomerController {
 
     private final CustomerService customerService;
+    private final BorrowerAnalyzerService analyzerService;
+    private final com.navix.loan.service.ReapplyAllowanceService reapplyAllowanceService;
 
     /**
      * One page of the customer book — a search {@code q} (name / PAN / mobile / customer id) and an
@@ -73,9 +79,34 @@ public class CustomerController {
             @RequestParam(required = false) String seg,
             @RequestParam(defaultValue = "false") boolean mine,
             @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "25") int size) {
+            @RequestParam(defaultValue = "25") int size,
+            @RequestParam(required = false) String sort,
+            @RequestParam(required = false) String dir,
+            @RequestParam java.util.Map<String, String> all) {
         requireStaff();
-        return ApiResponse.ok(customerService.page(q, from, to, seg, mine, page, size));
+        return ApiResponse.ok(customerService.page(q, from, to, seg, mine, page, size, sort, dir, all));
+    }
+
+    /**
+     * The distinct values of one filterable column ({@code col}), for its checklist. Takes the OTHER
+     * columns' {@code f.*} filters and ignores {@code col}'s own, so choosing a value does not hide
+     * the alternatives. Runs inside the caller's scope (see {@link CustomerService#facets}).
+     */
+    @GetMapping("/facets")
+    public ApiResponse<com.navix.common.query.SqlFacets.Facet> facets(
+            @RequestParam("column") String col,
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false)
+            @org.springframework.format.annotation.DateTimeFormat(
+                    iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate from,
+            @RequestParam(required = false)
+            @org.springframework.format.annotation.DateTimeFormat(
+                    iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate to,
+            @RequestParam(defaultValue = "false") boolean mine,
+            @RequestParam(required = false) String search,
+            @RequestParam java.util.Map<String, String> all) {
+        requireStaff();
+        return ApiResponse.ok(customerService.facets(q, from, to, mine, col, all, search));
     }
 
     /** The segment-chip counts over the whole (scoped, filtered) book. */
@@ -88,9 +119,10 @@ public class CustomerController {
             @RequestParam(required = false)
             @org.springframework.format.annotation.DateTimeFormat(
                     iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate to,
-            @RequestParam(defaultValue = "false") boolean mine) {
+            @RequestParam(defaultValue = "false") boolean mine,
+            @RequestParam java.util.Map<String, String> all) {
         requireStaff();
-        return ApiResponse.ok(customerService.summary(q, from, to, mine));
+        return ApiResponse.ok(customerService.summary(q, from, to, mine, all));
     }
 
     /**
@@ -138,9 +170,10 @@ public class CustomerController {
             @org.springframework.format.annotation.DateTimeFormat(
                     iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate to,
             @RequestParam(required = false) String seg,
-            @RequestParam(defaultValue = "false") boolean mine) {
+            @RequestParam(defaultValue = "false") boolean mine,
+            @RequestParam java.util.Map<String, String> all) {
         requireStaff();
-        return ApiResponse.ok(customerService.export(q, from, to, seg, mine));
+        return ApiResponse.ok(customerService.export(q, from, to, seg, mine, all));
     }
 
     /** One customer's full history: profile + applications + loans + payments. */
@@ -214,6 +247,30 @@ public class CustomerController {
         return ApiResponse.ok(customerService.setLimitOverride(customerId, req.limitPaise(), req.note()));
     }
 
+    /** Staff-only AI Analyzer: a rule-based, advisory summary of comparable past loans. Never blocks a loan. */
+    @GetMapping("/{customerId}/analyzer")
+    public ApiResponse<AnalyzerView> analyzer(@PathVariable Long customerId) {
+        requireStaff();
+        return ApiResponse.ok(analyzerService.analyze(customerId));
+    }
+
+    /** ADMIN — whether the customer is currently disqualified and any unused re-application allowance (V95). */
+    @GetMapping("/{customerId}/reapply-allowance")
+    public ApiResponse<com.navix.loan.dto.MessagingDtos.ReapplyAllowanceStatus> reapplyAllowance(
+            @PathVariable Long customerId) {
+        requireStaff();
+        return ApiResponse.ok(reapplyAllowanceService.status(customerId));
+    }
+
+    /** ADMIN — one-use "Allow re-application" with a required reason and supporting document (V95). */
+    @PostMapping("/{customerId}/reapply-allowance")
+    public ApiResponse<com.navix.loan.dto.MessagingDtos.AllowanceView> grantReapplyAllowance(
+            @PathVariable Long customerId,
+            @Valid @RequestBody com.navix.loan.dto.MessagingDtos.ReapplyAllowanceRequest req) {
+        requireStaff();
+        return ApiResponse.ok(reapplyAllowanceService.grant(customerId, req.reason(), req.documentId()));
+    }
+
     /** Every document across ALL of this customer's applications, grouped by application (newest
      *  first) — so a reborrow's prior-application uploads stay reachable (work item 4). */
     /**
@@ -268,6 +325,21 @@ public class CustomerController {
                                                    @RequestBody AssignOwnerRequest req) {
         requireStaff();
         return ApiResponse.ok(customerService.assignOwner(customerId, req.staffId()));
+    }
+
+    /** ACCOUNTANT / ADMIN — block the customer for future loans (indefinite, reason required). */
+    @PostMapping("/{customerId}/block")
+    public ApiResponse<CustomerBlockView> block(@PathVariable Long customerId,
+                                                @Valid @RequestBody BlockCustomerRequest req) {
+        requireStaff();
+        return ApiResponse.ok(customerService.block(customerId, req.reason()));
+    }
+
+    /** ADMIN — lift a staff block. */
+    @DeleteMapping("/{customerId}/block")
+    public ApiResponse<CustomerBlockView> unblock(@PathVariable Long customerId) {
+        requireStaff();
+        return ApiResponse.ok(customerService.unblock(customerId));
     }
 
     /** Staff call logs on a customer, optionally narrowed to one loan via {@code ?loanId=}. */

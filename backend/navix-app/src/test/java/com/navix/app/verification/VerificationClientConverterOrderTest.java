@@ -53,7 +53,7 @@ class VerificationClientConverterOrderTest {
     void everyProviderClientWritesItsBodyWithJsonNotYaml() {
         List<RestClient> clients = List.of(
                 new VerificationClientConfig().signzyRestClient(
-                        new SignzyProperties("https://signzy.test", "tok", "cid", null, null), chain()),
+                        new SignzyProperties("https://signzy.test", "tok", "cid", null, null, null), chain()),
                 new VerificationClientConfig().fintrixRestClient(
                         new FintrixProperties("https://fintrix.test", "id", "secret"), chain()),
                 new VerificationClientConfig().digitapSvcRestClient(

@@ -59,12 +59,12 @@ function renderBre(opts: { applicationId?: number | null; brief?: Partial<Credit
 }
 
 describe("BRE tab", () => {
-  it("lists all nine rules with a validated / flagged result each", async () => {
+  it("lists all ten rules with a validated / flagged result each", async () => {
     renderBre();
     expect(await screen.findByText("Business rule engine")).toBeInTheDocument();
     const table = screen.getByRole("table", { name: "Business rules overview" });
-    expect(within(table).getAllByRole("row")).toHaveLength(10); // header + 9 rules
-    expect(screen.getByText(/^\d\/9 validated$/)).toBeInTheDocument();
+    expect(within(table).getAllByRole("row")).toHaveLength(11); // header + 10 rules
+    expect(screen.getByText(/^\d\/10 validated$/)).toBeInTheDocument();
     expect(screen.getByText(/Flags only — these rules never reject or block a loan/)).toBeInTheDocument();
   });
 

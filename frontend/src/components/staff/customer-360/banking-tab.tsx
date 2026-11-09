@@ -1,14 +1,15 @@
 "use client";
 
 import * as React from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Building2, FileSearch, IndianRupee, TrendingUp } from "lucide-react";
-import { Badge, EmptyState, Skeleton, toast } from "@/components/ui";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Building2, FileSearch, IndianRupee, Loader2, TrendingUp } from "lucide-react";
+import { Badge, ConfirmDialog, EmptyState, Skeleton, toast } from "@/components/ui";
 import { Field, FieldGrid } from "@/components/ui/field-grid";
 import { DocCard } from "@/components/staff/doc-card";
 import { Section, docTypeLabel, useCustomerDocumentGroups, viewDocument } from "@/components/staff/detail-parts";
 import type { TabCtx } from "@/components/staff/customer-360/types";
 import { CrifAnalysisSection } from "@/components/staff/customer-360/crif-analysis-panel";
+import { PermissionGate, errMessage } from "@/components/staff/live-pipeline";
 import { bankAnalysisApi } from "@/lib/api/bank-analysis";
 import { paiseToINR } from "@/lib/api/applications";
 import { formatDate, formatDateTime } from "@/lib/utils";
@@ -33,9 +34,28 @@ export function BankingTab({ detail, customerId, applicationId }: TabCtx) {
     }
   };
   const p = detail.profile;
+  const qc = useQueryClient();
   const analysisQ = useQuery({
     queryKey: ["bank-analysis", customerId],
     queryFn: () => bankAnalysisApi.get(customerId),
+    // Signzy's analysis is asynchronous; the backend advances the stored row on each read, so while
+    // one is running the tab keeps asking. It stops the moment the report lands or fails.
+    refetchInterval: (q) => (q.state.data?.status === "PENDING" ? 15_000 : false),
+  });
+  const [confirmRun, setConfirmRun] = React.useState(false);
+  const runAnalysis = useMutation({
+    mutationFn: () => bankAnalysisApi.run(customerId),
+    onSuccess: () => {
+      setConfirmRun(false);
+      toast.success("Statements submitted. Signzy is analysing them now.");
+      void qc.invalidateQueries({ queryKey: ["bank-analysis", customerId] });
+    },
+    onError: (e) => {
+      setConfirmRun(false);
+      toast.error(errMessage(e));
+      // A failed submission is still recorded server-side; show it.
+      void qc.invalidateQueries({ queryKey: ["bank-analysis", customerId] });
+    },
   });
   const { groupsQ, groups } = useCustomerDocumentGroups(customerId);
   const docsOf = (type: string) =>
@@ -98,25 +118,70 @@ export function BankingTab({ detail, customerId, applicationId }: TabCtx) {
         icon={TrendingUp}
         pill={analysisPill}
         action={
-          a?.excelUrl ? (
-            <a href={a.excelUrl} target="_blank" rel="noreferrer" className="btn btn-sm btn-outline">
-              ⬇ Download Excel
-            </a>
-          ) : undefined
+          <div className="flex items-center gap-2">
+            {a?.excelUrl ? (
+              <a href={a.excelUrl} target="_blank" rel="noreferrer" className="btn btn-sm btn-outline">
+                ⬇ Download Excel
+              </a>
+            ) : null}
+            {a?.jsonUrl ? (
+              <a href={a.jsonUrl} target="_blank" rel="noreferrer" className="btn btn-sm btn-outline">
+                ⬇ JSON
+              </a>
+            ) : null}
+            {/* Billed per statement, so it is never automatic — and never a second run while one is
+                still in flight (the backend refuses that too). */}
+            <PermissionGate permission={["kyc:approve", "loan:approve"]}>
+              <button
+                type="button"
+                className="btn btn-sm btn-primary"
+                disabled={runAnalysis.isPending || a?.status === "PENDING"}
+                onClick={() => setConfirmRun(true)}
+              >
+                {runAnalysis.isPending ? <Loader2 size={14} className="animate-spin" /> : null}
+                {a ? "Re-run analysis" : "Run analysis"}
+              </button>
+            </PermissionGate>
+          </div>
         }
       >
+        <ConfirmDialog
+          open={confirmRun}
+          title="Run bank statement analysis?"
+          body="Signzy charges for every statement analysed. This sends every bank statement on file for this customer."
+          confirmLabel="Run analysis"
+          busy={runAnalysis.isPending}
+          onClose={() => setConfirmRun(false)}
+          onConfirm={() => runAnalysis.mutate()}
+        />
         {analysisQ.isLoading ? (
           <Skeleton variant="line" rows={3} />
         ) : !a ? (
           <EmptyState
             icon={<FileSearch size={22} />}
-            title="Analysis pending"
+            title="Not analysed"
             hint="The bank-statement analyser has not run for this customer yet."
           />
+        ) : a.status !== "ANALYSED" ? (
+          <div className="space-y-2 text-sm">
+            <p className="text-muted">
+              {a.status === "PENDING"
+                ? `Signzy is analysing the statements${a.reportStatusDescription ? ` — ${a.reportStatusDescription}` : ""}. This page refreshes itself.`
+                : a.message || a.reportStatusDescription || "Signzy could not analyse these statements."}
+            </p>
+            <FieldGrid cols={3}>
+              <Field label="Report">{a.reportId}</Field>
+              <Field label="Run by">{a.runByName}</Field>
+              <Field label="Started">{formatDateTime(a.createdAt)}</Field>
+            </FieldGrid>
+          </div>
         ) : (
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2">
               <span className="cal-preset on">{a.bank}</span>
+              {a.bankScore ? (
+                <Badge variant="info" size="sm">{`Bank score ${a.bankScore}`}</Badge>
+              ) : null}
               {a.accounts.map((ac) => (
                 <span key={ac.maskedNumber} className="rounded-full bg-navy-tint px-2.5 py-0.5 text-xs font-semibold text-navy">
                   {`${ac.maskedNumber} · ${ac.type} · ${ac.txnCount} txns`}
@@ -136,6 +201,12 @@ export function BankingTab({ detail, customerId, applicationId }: TabCtx) {
                   {ac.periodFrom && ac.periodTo ? `${formatDate(ac.periodFrom)} – ${formatDate(ac.periodTo)}` : null}
                 </Field>
                 <Field label="Transactions">{ac.txnCount}</Field>
+                <Field
+                  label="Document authenticity"
+                  tone={ac.authenticity === "ORIGINAL" ? "success" : ac.authenticity ? "warning" : "ink"}
+                >
+                  {ac.authenticity}
+                </Field>
                 <Field label="Opening balance">
                   {ac.openingBalancePaise != null ? paiseToINR(ac.openingBalancePaise) : null}
                 </Field>

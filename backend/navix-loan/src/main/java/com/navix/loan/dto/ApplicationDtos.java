@@ -122,10 +122,31 @@ public final class ApplicationDtos {
              */
             Long availableLimitPaise,
             /** Bureau / UAN / work-email trust stars; staff list paths only, null elsewhere. */
-            com.navix.common.loan.TrustSignals trust) {
+            com.navix.common.loan.TrustSignals trust,
+            /** Stored {@code journey_step} pointer (JourneyService.Step / OfferStep name); null if never set. */
+            String journeyStep) {
 
         public static ApplicationView of(LoanApplication a) {
             return of(a, null, null);
+        }
+
+        /**
+         * The borrower's own read: drops what the credit team wrote or the staff roster implies
+         * (assignee, sanction remarks, the "marked pending" tag and its reason). A no-op for staff.
+         */
+        public ApplicationView forReader() {
+            var actor = com.navix.common.security.ActorContext.get();
+            if (actor == null || !"BORROWER".equals(actor.role())) {
+                return this;
+            }
+            return new ApplicationView(id, customerId, status, amountRequestedPaise, eligibleLimitPaise, purpose,
+                    null, loanId, salaryCreditDay, fastTrack, null, null, null,
+                    customerName, customerMobile, pan, salaryAccountNumber, salaryIfsc, loanStatus, loanDueDate,
+                    sanctionedAmountPaise, approvedRepaymentDate, sanctionTenureDays, null, sanctionedAt,
+                    null, null, disbursalAccountNumber, disbursalIfsc, disbursalHolderName, disbursalBank,
+                    disbursalAccountChanged, disbursalAccountVerified, assignedExecutiveName, currentStageEnteredAt,
+                    createdAt, creditDecidedByName, disbursedByName, collectionOfficerName, availableLimitPaise,
+                    trust, journeyStep);
         }
 
         public static ApplicationView of(LoanApplication a, CustomerProfile p) {
@@ -173,7 +194,7 @@ public final class ApplicationDtos {
                     a.getDisbursalAccountNumber(), a.getDisbursalIfsc(), a.getDisbursalHolderName(),
                     a.getDisbursalBank(), a.getDisbursalAccountChanged(),
                     a.getDisbursalAccountVerified(), null, null, a.getCreatedAt(), null, null, null,
-                    null, null);
+                    null, null, a.getJourneyStep());
         }
 
         /**
@@ -191,7 +212,7 @@ public final class ApplicationDtos {
                     disbursalAccountNumber, disbursalIfsc, disbursalHolderName, disbursalBank,
                     disbursalAccountChanged, disbursalAccountVerified, assignedExecutiveName,
                     currentStageEnteredAt, createdAt,
-                    creditDecidedByName, disbursedByName, collectionOfficerName, availableLimitPaise, trust);
+                    creditDecidedByName, disbursedByName, collectionOfficerName, availableLimitPaise, trust, journeyStep);
         }
 
         /**
@@ -209,7 +230,7 @@ public final class ApplicationDtos {
                     disbursalAccountNumber, disbursalIfsc, disbursalHolderName, disbursalBank,
                     disbursalAccountChanged, disbursalAccountVerified, assignedExecutiveName,
                     currentStageEnteredAt, createdAt,
-                    creditDecidedByName, disbursedByName, collectionOfficerName, availableLimitPaise, trust);
+                    creditDecidedByName, disbursedByName, collectionOfficerName, availableLimitPaise, trust, journeyStep);
         }
 
         /**
@@ -226,7 +247,7 @@ public final class ApplicationDtos {
                     disbursalAccountNumber, disbursalIfsc, disbursalHolderName, disbursalBank,
                     disbursalAccountChanged, disbursalAccountVerified, assignedExecutiveName,
                     currentStageEnteredAt, createdAt,
-                    creditDecidedByName, disbursedByName, collectionOfficerName, availableLimitPaise, trust);
+                    creditDecidedByName, disbursedByName, collectionOfficerName, availableLimitPaise, trust, journeyStep);
         }
 
         /** Wither for the trust stars; only the batched staff list paths pay for the lookup. */
@@ -239,7 +260,7 @@ public final class ApplicationDtos {
                     disbursalAccountNumber, disbursalIfsc, disbursalHolderName, disbursalBank,
                     disbursalAccountChanged, disbursalAccountVerified, assignedExecutiveName,
                     currentStageEnteredAt, createdAt,
-                    creditDecidedByName, disbursedByName, collectionOfficerName, availableLimitPaise, trust);
+                    creditDecidedByName, disbursedByName, collectionOfficerName, availableLimitPaise, trust, journeyStep);
         }
     }
 
@@ -268,6 +289,11 @@ public final class ApplicationDtos {
         public static EventView of(ApplicationEvent e, String actorName) {
             return new EventView(e.getId(), e.getFromStatus(), e.getToStatus(), e.getActorId(),
                     e.getActorRole(), e.getActingRole(), actorName, e.getAction(), e.getNotes(), e.getAt());
+        }
+
+        /** What the borrower's timeline needs: the transition and when, never the remark or who made it. */
+        public EventView forBorrower() {
+            return new EventView(id, fromStatus, toStatus, null, null, null, null, action, null, at);
         }
     }
 }

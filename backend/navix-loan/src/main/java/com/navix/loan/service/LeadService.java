@@ -3,6 +3,8 @@ package com.navix.loan.service;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
+import com.navix.common.query.FilterSpec;
+import com.navix.common.query.SqlFacets;
 import com.navix.common.staff.StaffDirectory;
 import com.navix.common.staff.StaffSummary;
 import com.navix.loan.dto.LeadDtos.CreateLeadRequest;
@@ -29,12 +31,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
-import org.springframework.data.jpa.domain.Specification;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -63,6 +60,7 @@ public class LeadService {
     // Resolves the derived CONFIRMED outcome. Read-only; this service never writes DSA state.
     private final DsaAttributionService attributionService;
     private final JdbcTemplate jdbc;
+    private final LeadBookQuery bookQuery;
 
     @Transactional
     public LeadView create(CreateLeadRequest req) {
@@ -85,6 +83,7 @@ public class LeadService {
         return toView(leadRepository.save(l));
     }
 
+    /** As {@link #list(String, String, String, Long, LocalDate, LocalDate, Integer, Integer, String, int, int, Map)} with no column filters. */
     @Transactional(readOnly = true)
     public LeadPage list(
             String q,
@@ -98,62 +97,84 @@ public class LeadService {
             String leadOutcome,
             int page,
             int size) {
+        return list(q, callStatus, source, createdBy, from, to, minRating, maxRating, leadOutcome,
+                page, size, Map.of());
+    }
+
+    /**
+     * One page of the telecaller queue, newest first. Filtering, counting and paging all run in SQL
+     * ({@link LeadBookQuery}); only the ids on the page are hydrated. {@code columnFilters} is the raw
+     * {@code f.*} request params — {@link FilterSpec} drops anything that is not a registered column.
+     */
+    @Transactional(readOnly = true)
+    public LeadPage list(
+            String q,
+            String callStatus,
+            String source,
+            Long createdBy,
+            LocalDate from,
+            LocalDate to,
+            Integer minRating,
+            Integer maxRating,
+            String leadOutcome,
+            int page,
+            int size,
+            Map<String, String> columnFilters) {
         requireLeadWriter();
-        Instant fromInst = from == null ? null : from.atStartOfDay(ZoneOffset.UTC).toInstant();
-        Instant toInst = to == null ? null : to.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
-        String query = blankToNull(q);
-        String status = blankToNull(callStatus);
-        String leadSource = blankToNull(source);
-        String outcome = blankToNull(leadOutcome) == null
-                ? null : leadOutcome.trim().toUpperCase(Locale.ROOT);
-        Specification<Lead> spec = (root, ignored, cb) -> {
-            List<Predicate> predicates = new ArrayList<>();
-            // DSA-owned leads never appear to a telecaller/ADMIN here — they stay out of the
-            // telecalling queue entirely; ADMIN reaches them only through /api/admin/dsa/**.
-            predicates.add(cb.isNull(root.get("ownerDsaId")));
-            if (query != null) {
-                predicates.add(cb.or(
-                        cb.like(cb.lower(root.get("name")), "%" + query.toLowerCase(Locale.ROOT) + "%"),
-                        cb.like(root.get("mobile"), "%" + query + "%")));
-            }
-            if (status != null) {
-                predicates.add(cb.equal(root.get("callStatus"), status));
-            }
-            if (leadSource != null) {
-                predicates.add(cb.equal(root.get("source"), leadSource));
-            }
-            if (createdBy != null) {
-                predicates.add(cb.equal(root.get("createdByStaffId"), createdBy));
-            }
-            if (outcome != null) {
-                predicates.add(cb.equal(root.get("leadOutcome"), outcome));
-            }
-            if (fromInst != null) {
-                predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), fromInst));
-            }
-            if (toInst != null) {
-                predicates.add(cb.lessThan(root.get("createdAt"), toInst));
-            }
-            if (minRating != null) {
-                predicates.add(cb.greaterThanOrEqualTo(root.get("qualityRating"), minRating));
-            }
-            if (maxRating != null) {
-                predicates.add(cb.lessThanOrEqualTo(root.get("qualityRating"), maxRating));
-            }
-            return predicates.isEmpty() ? cb.conjunction() : cb.and(predicates.toArray(Predicate[]::new));
-        };
+        LeadBookQuery.LeadFilter filter = bookFilter(
+                q, callStatus, source, createdBy, from, to, minRating, maxRating, leadOutcome);
+        FilterSpec spec = FilterSpec.parse(columnFilters, LeadBookQuery.FILTER_COLUMNS);
         int safeSize = Math.max(1, Math.min(size, MAX_PAGE_SIZE));
         int safePage = Math.max(1, page);
-        Page<Lead> result = leadRepository.findAll(
-                spec, PageRequest.of(safePage - 1, safeSize, Sort.by(Sort.Direction.DESC, "id")));
-        List<Lead> rows = result.getContent();
+        long total = bookQuery.count(filter, spec);
+        List<Long> ids = bookQuery.pageIds(filter, spec, (safePage - 1) * safeSize, safeSize);
+        // findAllById makes no ordering promise; the page order is the query's.
+        Map<Long, Lead> byId = new HashMap<>();
+        leadRepository.findAllById(ids).forEach(l -> byId.put(l.getId(), l));
+        List<Lead> rows = ids.stream().map(byId::get).filter(java.util.Objects::nonNull).toList();
         Map<Long, String> names = new HashMap<>();
         // ONE attribution query for the whole page, not one per row.
         Map<Long, AttributedApplication> attributions = attributionService.attributedApplications(rows);
         List<LeadView> views = rows.stream()
                 .map(l -> toView(l, names, attributions.get(l.getId())))
                 .toList();
-        return new LeadPage(views, safePage, safeSize, result.getTotalElements());
+        return new LeadPage(views, safePage, safeSize, total);
+    }
+
+    /**
+     * The distinct values of one column, for its filter checklist — under the same view params and the
+     * same DSA exclusion as {@link #list}, with the column's own filter dropped so it can still switch.
+     */
+    @Transactional(readOnly = true)
+    public SqlFacets.Facet facets(
+            String column,
+            String q,
+            String callStatus,
+            String source,
+            Long createdBy,
+            LocalDate from,
+            LocalDate to,
+            Integer minRating,
+            Integer maxRating,
+            String leadOutcome,
+            Map<String, String> columnFilters) {
+        requireLeadWriter();
+        LeadBookQuery.LeadFilter filter = bookFilter(
+                q, callStatus, source, createdBy, from, to, minRating, maxRating, leadOutcome);
+        return bookQuery.facet(filter, FilterSpec.parse(columnFilters, LeadBookQuery.FILTER_COLUMNS), column);
+    }
+
+    /** The window, trimming and outcome upper-casing the Specification applied, unchanged. */
+    static LeadBookQuery.LeadFilter bookFilter(
+            String q, String callStatus, String source, Long createdBy, LocalDate from, LocalDate to,
+            Integer minRating, Integer maxRating, String leadOutcome) {
+        Instant fromInst = from == null ? null : from.atStartOfDay(ZoneOffset.UTC).toInstant();
+        Instant toInst = to == null ? null : to.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+        String outcome = blankToNull(leadOutcome) == null
+                ? null : leadOutcome.trim().toUpperCase(Locale.ROOT);
+        return new LeadBookQuery.LeadFilter(
+                blankToNull(q), blankToNull(callStatus), blankToNull(source), createdBy,
+                fromInst, toInst, minRating, maxRating, outcome);
     }
 
     @Transactional(readOnly = true)

@@ -12,7 +12,6 @@ set -euo pipefail
 export AWS_PROFILE=navix-dev
 export AWS_REGION=ap-south-1
 export NAVIX_ENV=dev
-export NAVIX_SMS_MOCK=true     # demo OTP 123456 — no real SMS
 
 # ── 1. Verify AWS credentials ────────────────────────────────────────────────
 echo "→ Checking AWS credentials (profile: navix-dev)…"
@@ -58,4 +57,4 @@ echo "   Health:     http://localhost:8080/actuator/health"
 echo ""
 
 ./mvnw -pl navix-app spring-boot:run \
-  -Dspring-boot.run.jvmArguments="-DAWS_PROFILE=navix-dev -DAWS_REGION=ap-south-1 -DNAVIX_ENV=dev -DNAVIX_SMS_MOCK=true"
+  -Dspring-boot.run.jvmArguments="-DAWS_PROFILE=navix-dev -DAWS_REGION=ap-south-1 -DNAVIX_ENV=dev -Dserver.address=127.0.0.1"

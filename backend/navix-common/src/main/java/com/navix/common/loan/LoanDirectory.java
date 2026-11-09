@@ -31,6 +31,16 @@ public interface LoanDirectory {
      */
     Map<Long, LoanSummary> findLoans(Collection<Long> loanIds);
 
+    /**
+     * Batched itemised dues (interest, penalty, verified payments) plus borrower contact/bank
+     * details for every id that resolves — for registers, like settlements, that show the cost
+     * make-up beside each loan. A fixed number of queries for the whole page. Defaults to empty so
+     * test doubles need not implement it.
+     */
+    default Map<Long, LoanDues> findDues(Collection<Long> loanIds) {
+        return Map.of();
+    }
+
 
     /**
      * The collections worklist as of {@code asOf}: every live loan (ACTIVE / OVERDUE /
@@ -70,9 +80,10 @@ public interface LoanDirectory {
 
     /**
      * Post a collections-side payment to the loan ledger as an already-verified repayment, and
-     * return its {@code payment.id}. Called only when the Accountant validates a
-     * {@code collection_payment} — collections itself never moves the balance, which is the whole
-     * point of routing every collected rupee past a checker (revamp.md decision 44).
+     * return its {@code payment.id}. Two callers: the Accountant validating a {@code collection_payment}
+     * — collections itself never moves the balance, which is the whole point of routing every collected
+     * rupee past a checker (revamp.md decision 44) — and a <b>succeeded NACH debit</b> (V84), which needs
+     * no checker because the bank, not a staff member, is the one asserting the money moved.
      *
      * <p>Recorded verified in one step rather than PENDING_VERIFICATION: the validation <em>is</em>
      * the verification, and leaving it pending would put the same payment in the Accountant's
@@ -86,4 +97,11 @@ public interface LoanDirectory {
      */
     Long creditCollectionPayment(Long loanId, long amountPaise, String txnRef,
                                  String proofRef, LocalDate paidOn);
+
+    /**
+     * Re-evaluate the loan's penalty- and settlement-aware balance and close it (loan and application)
+     * if nothing is owed. Called when a settlement is approved: the cap applies at once, so a borrower
+     * who has already paid the settled figure must not wait for another payment to be closed.
+     */
+    void recomputeOutstanding(Long loanId);
 }

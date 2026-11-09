@@ -59,25 +59,57 @@ public class LoanMath {
     /** Legacy/default tenure used only when a salary-derived tenure is unavailable. */
     public static final int TERM_DAYS = 30;
 
-    /** Grace after the due date before any penalty accrues (paying the day after salary is free). */
-    public static final int SALARY_GRACE_DAYS = 1;
+    /**
+     * Grace after the due date before any penalty accrues, for loans disbursed <b>from now on</b>:
+     * none — the penalty starts the day after the salary day. Stamped onto {@code loan.grace_days} at
+     * disbursal; the pricing reads the row, never this constant, so loans disbursed before V91 keep
+     * the 1 day they were given.
+     */
+    public static final int SALARY_GRACE_DAYS = 0;
 
     /** Floor on a sanctioned advance: ₹1,000 = 100,000 paise. */
     public static final long MIN_LOAN_PAISE = 100_000L;
 
     /** Up-front processing fee = round(principal × 10%). */
     public long processingFeePaise(long principalPaise) {
-        return roundPaise(BigDecimal.valueOf(principalPaise).multiply(PROCESSING_FEE_RATE));
+        return processingFeePaise(principalPaise, 0);
+    }
+
+    /** Fee after the repayment discount: max(0, base fee − discount). 0 percent = no discount. */
+    public long processingFeePaise(long principalPaise, int feeDiscountPercent) {
+        long base = roundPaise(BigDecimal.valueOf(principalPaise).multiply(PROCESSING_FEE_RATE));
+        return Math.max(0L, base - feeDiscountPaise(principalPaise, feeDiscountPercent));
+    }
+
+    /** Repayment discount taken off the fee = round(principal × percent / 100). Never interest/penalty. */
+    public long feeDiscountPaise(long principalPaise, int feeDiscountPercent) {
+        if (feeDiscountPercent <= 0) {
+            return 0L;
+        }
+        return roundPaise(BigDecimal.valueOf(principalPaise)
+                .multiply(BigDecimal.valueOf(feeDiscountPercent))
+                .divide(BigDecimal.valueOf(100)));
     }
 
     /** GST on the processing fee = round(fee × 18%). */
     public long gstPaise(long principalPaise) {
-        return roundPaise(BigDecimal.valueOf(processingFeePaise(principalPaise)).multiply(GST_RATE));
+        return gstPaise(principalPaise, 0);
+    }
+
+    /** GST recomputed on the discounted fee. */
+    public long gstPaise(long principalPaise, int feeDiscountPercent) {
+        return roundPaise(BigDecimal.valueOf(processingFeePaise(principalPaise, feeDiscountPercent))
+                .multiply(GST_RATE));
     }
 
     /** Net amount credited to the borrower = principal − fee − GST. */
     public long netDisbursedPaise(long principalPaise) {
-        return principalPaise - processingFeePaise(principalPaise) - gstPaise(principalPaise);
+        return netDisbursedPaise(principalPaise, 0);
+    }
+
+    public long netDisbursedPaise(long principalPaise, int feeDiscountPercent) {
+        return principalPaise - processingFeePaise(principalPaise, feeDiscountPercent)
+                - gstPaise(principalPaise, feeDiscountPercent);
     }
 
     /** Interest accrued over {@code days} = round(principal × 1%/day × days). Negative days clamp to 0. */
@@ -125,8 +157,8 @@ public class LoanMath {
      *
      * <p>{@code outstanding = principal + interest(daysHeld) + penalty(daysLate) − payments}.
      * Prepayment falls out naturally: pass the actual days held so interest is charged only to
-     * the day paid. {@code daysLate} is 0 until the due date (the 1-day grace is applied by the
-     * caller, e.g. paying the day after salary passes {@code daysLate = 0}).
+     * the day paid. {@code daysLate} is 0 until the due date (the loan's own {@code grace_days} is
+     * applied by the caller, {@code RepaymentService.breakdown}).
      *
      * @param principalPaise principal in paise
      * @param daysHeld       whole days from disbursement to the as-of date (interest accrues)

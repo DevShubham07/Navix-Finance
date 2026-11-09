@@ -84,6 +84,8 @@ public class JourneyService {
         OFFER_ESIGN("esign"),
         OFFER_SANCTIONED("sanctioned"),
         OFFER_DISBURSAL_ACCOUNT("disbursal-account"),
+        /** Digio NACH eMandate; gated by the {@code digio-mandate} flag, dropped for UMRN holders. */
+        OFFER_MANDATE("mandate"),
         OFFER_DONE(null);
 
         public final String seg;
@@ -113,6 +115,7 @@ public class JourneyService {
     private final ApplicationVerificationRepository verificationRepository;
     private final ApplicationReferenceRepository referenceRepository;
     private final ApplicationDocumentRepository documentRepository;
+    private final MandateService mandateService;
 
     @Transactional(readOnly = true)
     public JourneyView current(Long appId) {
@@ -155,6 +158,11 @@ public class JourneyService {
         List<OfferStep> all = java.util.Arrays.stream(OfferStep.values())
                 .filter(s -> s != OfferStep.OFFER_DONE && s != OfferStep.OFFER_ESIGN)
                 .toList();
+        // Outside the reapply branch: a first-loan application for a customer who already holds a
+        // mandate (or any application while the flag is off) must skip the step too.
+        if (!mandateService.mandateRequired(app)) {
+            all = all.stream().filter(s -> s != OfferStep.OFFER_MANDATE).toList();
+        }
         if (app.getReappliedFrom() == null) {
             return all;
         }
@@ -322,8 +330,8 @@ public class JourneyService {
      * SET_PASSWORD in the intake; only the stored pointer can hold a borrower on one.
      *
      * <p>DigiLocker, selfie and address are satisfied by a row in <em>any</em> terminal status, not
-     * by a PASS: a Phase-3 check that fails passes through silently and surfaces only on the staff
-     * Verification Dashboard (revamp.md decision 11).
+     * by a PASS: a Phase-3 check that fails passes through silently and surfaces only in the staff
+     * verification view (revamp.md decision 11).
      *
      * <p>The signature is the one exception, because it is not a check but the borrower's agreement to
      * the Key Fact Statement: only a {@code PASS} row proves it. A {@code PENDING} row is a provider
@@ -341,7 +349,8 @@ public class JourneyService {
         if (!checks.contains(ApplicationVerificationService.AADHAAR)) {
             return OfferStep.OFFER_DIGILOCKER;
         }
-        if (referenceRepository.findByApplicationIdOrderBySlotAsc(app.getId()).size() < 2) {
+        var references = referenceRepository.findByApplicationIdOrderBySlotAsc(app.getId());
+        if (references.size() < 2 || references.stream().anyMatch(r -> r.isOtpPending())) {
             return OfferStep.OFFER_REFERENCES;
         }
         if (!checks.contains(ApplicationVerificationService.SELFIE)) {
@@ -355,6 +364,9 @@ public class JourneyService {
         }
         if (app.getDisbursalConfirmedAt() == null) {
             return OfferStep.OFFER_DISBURSAL_ACCOUNT;
+        }
+        if (mandateService.mandateRequired(app)) {
+            return OfferStep.OFFER_MANDATE;
         }
         return OfferStep.OFFER_DONE;
     }

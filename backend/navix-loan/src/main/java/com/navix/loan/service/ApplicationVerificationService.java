@@ -152,6 +152,12 @@ public class ApplicationVerificationService {
      */
     public static final String BUREAU_CONSENT = "BUREAU_CONSENT";
     /**
+     * Signzy PAN-KYC ID link status — is the PAN linked to the Aadhaar number the borrower typed.
+     * Run at submit-kyc beside the credit checks; deliberately NOT in {@link #REQUIRED} (never gates a
+     * submission) and a miss is {@code REVIEW} for the credit team, not a decline. Shown as BRE rule 2.
+     */
+    public static final String PAN_AADHAAR_LINK = "PAN_AADHAAR_LINK";
+    /**
      * The borrower's OTP-proven ownership of their PERSONAL email. Deliberately NOT in
      * {@link #REQUIRED} (non-blocking — additive to the existing intake) nor in {@link #KNOWN_CHECKS}
      * (staff must not be able to manually assert that a borrower controls an inbox). Distinct from
@@ -224,37 +230,7 @@ public class ApplicationVerificationService {
 
     /** Every recognised check type — guards the staff manual-override target. */
     static final Set<String> KNOWN_CHECKS = Set.of(PAN, EMAIL, ADDRESS, DIGILOCKER, AADHAAR, BUREAU,
-            SALARY, EMPLOYMENT, PENNY_DROP, SELFIE, AGREEMENT, ESIGN, AADHAAR_DUPLICATE);
-
-    /**
-     * Checks that inform the credit decision but gate nothing, so they stay out of the
-     * pending-API dashboard's bucket maths. Mirrors the frontend constant of the same meaning
-     * (`frontend/src/lib/staff/verification-dashboard.ts`) — the two must agree, or the server's default
-     * "needs attention" page and the card the page draws from it would disagree about the same file.
-     */
-    private static final Set<String> OVERVIEW_NON_GATING =
-            Set.of(EMPLOYMENT, DIGILOCKER, AGREEMENT, ESIGN);
-
-    /**
-     * The gating checks the dashboard counts: every known check that is not {@link #OVERVIEW_NON_GATING}
-     * — minus {@link #AADHAAR_DUPLICATE}, which exists only on a collision. It must not be a check every
-     * file has to "pass" (almost none have a row), yet when a row IS present and not PASS it still
-     * demands attention: {@link #needsAttention}'s second loop catches it because it is deliberately
-     * absent from {@link #OVERVIEW_NON_GATING}. The frontend mirrors this for free — its bucket maths
-     * only ever subtracts the non-gating list and only requires {@code REQUIRED_CHECKS} to be present.
-     */
-    private static final Set<String> OVERVIEW_GATING_CHECKS = KNOWN_CHECKS.stream()
-            .filter(c -> !OVERVIEW_NON_GATING.contains(c) && !AADHAAR_DUPLICATE.equals(c))
-            .collect(Collectors.toUnmodifiableSet());
-
-    /** Page-size ceiling for {@link #overview}, mirroring {@code CustomerService.MAX_PAGE_SIZE}. */
-    private static final int OVERVIEW_MAX_PAGE_SIZE = 100;
-
-    /**
-     * Ceiling on {@link VerificationOverview#notStarted()}. The list is not paged, so it is capped
-     * instead; {@link VerificationOverview#notStartedTotal()} still reports the full count.
-     */
-    static final int OVERVIEW_NOT_STARTED_CAP = 200;
+            SALARY, EMPLOYMENT, PENNY_DROP, SELFIE, AGREEMENT, ESIGN, AADHAAR_DUPLICATE, PAN_AADHAAR_LINK);
 
     /** Permissive name-match cutoff: below this is REVIEW (not hard fail) — approver decides. */
     static final double NAME_MATCH_THRESHOLD = 0.60;
@@ -269,17 +245,6 @@ public class ApplicationVerificationService {
      */
     private static final Set<ApplicationStatus> UNDECIDED_STATUSES =
             Set.of(ApplicationStatus.DRAFT, ApplicationStatus.KYC_PENDING, ApplicationStatus.REVIEW_PENDING);
-
-    /**
-     * What the Verification Dashboard lists: the undecided files plus {@code SANCTIONED} ones. The
-     * offer journey's checks (DigiLocker, selfie, address, eSign) run <em>after</em> the credit decision
-     * and a failure there does not block the borrower (revamp.md decision 11) — the dashboard is the one
-     * place it surfaces, and where staff send the "redo this step" link from. The employment-retry sweep
-     * deliberately keeps {@link #UNDECIDED_STATUSES}: re-running EPFO on a sanctioned file is not its job.
-     */
-    private static final Set<ApplicationStatus> DASHBOARD_STATUSES = Set.of(
-            ApplicationStatus.DRAFT, ApplicationStatus.KYC_PENDING, ApplicationStatus.REVIEW_PENDING,
-            ApplicationStatus.SANCTIONED);
 
     private final ApplicationVerificationRepository verificationRepo;
     private final CustomerProfileRepository profileRepo;
@@ -353,40 +318,6 @@ public class ApplicationVerificationService {
 
     /** Result of a staff-triggered KYC reminder (Phase 3.4). */
     public record ReminderResult(boolean sent, int pendingCount, String pendingSteps) {
-    }
-
-    /** One row in the cross-application pending-API dashboard (Phase 3.3). */
-    public record VerificationOverviewRow(Long applicationId, Long customerId, String borrowerName,
-                                          String borrowerMobile,
-                                          String checkType, String status, String provider,
-                                          String message, Instant updatedAt,
-                                          String applicationStatus) {
-    }
-
-    /**
-     * Pending-API dashboard payload: status tallies + one page of rows (Phase 3.3).
-     *
-     * <p>The five tallies are always computed over the <b>whole</b> undecided queue — they are the
-     * page's headline counts and must not move when the reviewer turns a page. {@code rows} is the
-     * requested page, and {@code total} counts <b>applications</b> (not rows), because the page groups
-     * rows into one card per application and pages at that granularity.
-     *
-     * <p>{@code notStarted} is the page's "Not started" bucket: {@code KYC_PENDING} applications with no
-     * verification row at all, newest first, capped at {@link #OVERVIEW_NOT_STARTED_CAP}. It is not
-     * paged (it rides along on every page) and {@code notStartedTotal} carries the true count when the
-     * list is capped. It used to be assembled in the browser by subtracting the <em>current page's</em>
-     * applications from an unpaginated KYC_PENDING list, which showed a file whose checks sat on another
-     * page, or which was fully cleared and so filtered out, as "never verified".
-     */
-    public record VerificationOverview(int passed, int review, int failed, int pending, int neverRun,
-                                       List<VerificationOverviewRow> rows,
-                                       int page, int size, long total,
-                                       List<NotStartedApplication> notStarted, long notStartedTotal) {
-    }
-
-    /** One {@code KYC_PENDING} application with no verification row yet — see {@link VerificationOverview}. */
-    public record NotStartedApplication(Long applicationId, Long customerId, String borrowerName,
-                                        String borrowerMobile) {
     }
 
     // ---------------------------------------------------------------- steps
@@ -482,6 +413,35 @@ public class ApplicationVerificationService {
     }
 
     /**
+     * PAN-Aadhaar link check (Signzy {@code kycIdLinkStatus}) on the typed Aadhaar number. Best-effort and
+     * non-blocking: linked = PASS; not linked, no number typed or a provider outage = REVIEW.
+     */
+    @Transactional
+    public StepResult verifyPanAadhaarLink(Long appId) {
+        CustomerProfile profile = profile(appId);
+        String pan = profile.getPan();
+        String aadhaar = com.navix.common.util.Aadhaar.normalize(profile.getAadhaar());
+        String ref = ref(appId, PAN_AADHAAR_LINK);
+        if (isBlank(pan) || isBlank(aadhaar)) {
+            return view(upsert(appId, PAN_AADHAAR_LINK, REVIEW, null, null, ref, null, null, null,
+                    new LinkedHashMap<>(), "PAN or Aadhaar number missing — link not checked"));
+        }
+        VerificationPort.PanAadhaarLinkCheck r;
+        try {
+            r = verification.verifyPanAadhaarLink(pan, aadhaar, ref);
+        } catch (RuntimeException providerFailure) {
+            return providerUnavailable(appId, PAN_AADHAAR_LINK, providerFailure,
+                    "PAN-Aadhaar link check unavailable — pending manual review");
+        }
+        Map<String, Object> derived = new LinkedHashMap<>();
+        derived.put("linked", r.linked());
+        derived.put("maskedAadhaar", r.maskedAadhaar());
+        derived.put("code", r.code());
+        return view(upsert(appId, PAN_AADHAAR_LINK, r.linked() ? PASS : REVIEW, r.provider(), null, ref,
+                null, null, null, derived, r.linked() ? "PAN linked to Aadhaar" : "PAN not linked to Aadhaar"));
+    }
+
+    /**
      * The V75 cross-check. Null when the two agree or when either side is missing (no number typed —
      * a pre-V75 file — or a provider that returns no masked Aadhaar); otherwise a staff-readable
      * description of the disagreement. Compares only the digits the provider's mask reveals
@@ -498,6 +458,23 @@ public class ApplicationVerificationService {
     }
 
     /**
+     * The DOB fraud check: null when the two agree or when either side is missing (no DOB entered, or
+     * DigiLocker returned only a year of birth, which {@link #parseDob} does not read as a date);
+     * otherwise a staff-readable description of the disagreement. An Aadhaar DOB of 1 January is
+     * compared on the year alone: a record holding only a year of birth is rendered as 01/01/YYYY, and
+     * the borrower's true date must not read as fraud.
+     */
+    static String dobMismatch(LocalDate entered, LocalDate aadhaar) {
+        if (entered == null || aadhaar == null || entered.equals(aadhaar)) {
+            return null;
+        }
+        if (aadhaar.getDayOfYear() == 1 && entered.getYear() == aadhaar.getYear()) {
+            return null;
+        }
+        return "date of birth entered " + entered + ", Aadhaar " + aadhaar;
+    }
+
+    /**
      * Auto-reject into the register as {@link ApplicationRejection#FRAUD_REJECTED} with the
      * {@link ApplicationFlowService#FRAUD_REJECT_BLOCK_DAYS} block. Guarded on the state machine: the
      * PAN check also runs from the staff retry button on files that are no longer rejectable (e.g.
@@ -505,16 +482,53 @@ public class ApplicationVerificationService {
      * decides. Never lets a rejection failure fail the check that found the problem.
      */
     private void rejectForAadhaarMismatch(Long appId, String source, String mismatch) {
+        rejectForIdentityMismatch(appId, "Aadhaar number entered does not match the " + source + " (" + mismatch + ")",
+                source);
+    }
+
+    /** {@link #rejectForAadhaarMismatch} with the register detail spelled out by the caller. */
+    private void rejectForIdentityMismatch(Long appId, String detail, String source) {
         LoanApplication app = applicationRepo.findById(appId).orElse(null);
         if (app == null || !app.getStatus().canTransitionTo(ApplicationStatus.REJECTED)) {
-            log.warn("aadhaar mismatch on application={} in status={} — not rejectable, left for review",
+            log.warn("identity mismatch on application={} in status={} — not rejectable, left for review",
                     appId, app != null ? app.getStatus() : null);
             return;
         }
-        flow.autoRejectSystem(appId, ApplicationRejection.FRAUD_REJECTED,
-                "Aadhaar number entered does not match the " + source + " (" + mismatch + ")",
+        flow.autoRejectSystem(appId, ApplicationRejection.FRAUD_REJECTED, detail,
                 ApplicationFlowService.FRAUD_REJECT_BLOCK_DAYS);
-        log.info("application={} auto-rejected FRAUD_REJECTED (aadhaar mismatch vs {})", appId, source);
+        log.info("application={} auto-rejected FRAUD_REJECTED (identity mismatch vs {})", appId, source);
+    }
+
+    /**
+     * Duplicate-Aadhaar rule, run at submit-kyc: when the typed number is already on a submitted
+     * application of another customer, reject this file permanently into the register with a reference
+     * to the earlier case. Full 12-digit number only — a masked Aadhaar reveals four digits, far too few
+     * to call two people the same. The borrower sees only the generic rejection; the reference lives in
+     * the staff-only register detail. Returns the rejected application, or null when the rule did not fire.
+     */
+    @Transactional
+    public LoanApplication rejectIfAadhaarDuplicate(Long appId) {
+        LoanApplication app = applicationRepo.findById(appId).orElse(null);
+        CustomerProfile profile = profileRepo.findByApplicationId(appId).orElse(null);
+        String aadhaar = profile == null ? null : com.navix.common.util.Aadhaar.normalize(profile.getAadhaar());
+        // Only a DRAFT being submitted: submit-kyc is also staff-callable, and must never reject a file
+        // already past intake.
+        if (app == null || isBlank(aadhaar) || app.getStatus() != ApplicationStatus.DRAFT) {
+            return null;
+        }
+        List<Long> earlier = profileRepo.findSubmittedApplicationIdsByAadhaarForOtherCustomers(aadhaar, app.getCustomerId());
+        if (earlier.isEmpty()) {
+            return null;
+        }
+        Long earlierAppId = earlier.get(0);
+        Long earlierCustomerId = applicationRepo.findById(earlierAppId).map(LoanApplication::getCustomerId).orElse(null);
+        String detail = "Aadhaar " + com.navix.common.util.Masking.maskAadhaar(aadhaar)
+                + " already used by customer #" + earlierCustomerId + " (application #" + earlierAppId + ")"
+                + (earlier.size() > 1 ? " and " + (earlier.size() - 1) + " more application(s)" : "");
+        LoanApplication rejected = flow.autoRejectSystem(appId, ApplicationRejection.AADHAAR_DUPLICATE, detail,
+                ApplicationRejection.INDEFINITE, "AUTO_REJECT_IDENTITY", "Identity check failed");
+        log.info("application={} auto-rejected AADHAAR_DUPLICATE (earlier application={})", appId, earlierAppId);
+        return rejected;
     }
 
     /** Official email + EPFO employer corroboration. */
@@ -601,8 +615,13 @@ public class ApplicationVerificationService {
         // resolve at all goes to REVIEW.
         boolean resolved = r.address() != null && !r.address().isBlank();
         profile.setAddressVerified(resolved);
-        if (resolved && (profile.getAddress() == null || profile.getAddress().isBlank())) {
+        if (resolved) {
+            String old = profile.getAddress();
             profile.setAddress(r.address());
+            if (old != null && !old.isBlank() && !old.equals(r.address())) {
+                changeLogger.logIfChanged(requireApplication(appId).getCustomerId(), appId, "address",
+                        old, r.address());
+            }
         }
         profileRepo.save(profile);
 
@@ -662,7 +681,7 @@ public class ApplicationVerificationService {
     /** docTypes a borrower may persist via {@link #saveUploadedDocuments}. SALARY_SLIP is deliberately
      *  excluded — that persistence stays inside {@link #verifySalary}, which also records the declared
      *  monthly salary; this generic path is for documents with no accompanying verification step. */
-    private static final java.util.Set<String> UPLOADABLE_DOC_TYPES =
+    static final java.util.Set<String> UPLOADABLE_DOC_TYPES =
             java.util.Set.of("BANK_STATEMENT", BANK_PROOF, AADHAAR_FRONT, AADHAAR_BACK,
                     AADHAAR_CARD_FRONT, AADHAAR_CARD_BACK, PAN_CARD_FRONT, PAN_CARD_BACK);
 
@@ -713,8 +732,19 @@ public class ApplicationVerificationService {
             if (!key.startsWith(ownFolder) || key.contains("..")) {
                 throw new BusinessException("INVALID_DOCUMENT_KEY", "That upload does not belong to this application");
             }
+            // Folders the system writes (the credit brief, the bureau report, the sanction letter and the
+            // signed agreement) are staff or generated evidence: never re-registerable as borrower uploads.
+            String folder = key.substring(ownFolder.length());
+            int slash = folder.indexOf('/');
+            if (RESERVED_KEY_FOLDERS.contains(slash < 0 ? folder : folder.substring(0, slash))) {
+                throw new BusinessException("INVALID_DOCUMENT_KEY", "That upload does not belong to this application");
+            }
         }
     }
+
+    /** Lower-case key folders written by the system (see {@code buildApplicationKey} and the PDF generators). */
+    private static final Set<String> RESERVED_KEY_FOLDERS =
+            Set.of("credit_brief", "bureau_report", "sanction_letter", "signed_agreement");
 
     /**
      * Normalize a borrower-supplied document password (V56): trim, blank becomes null, and cap at the
@@ -1075,9 +1105,15 @@ public class ApplicationVerificationService {
         }
 
         // Aadhaar is the authoritative DOB source — persist it onto the profile (overriding any
-        // earlier PAN-derived value) so the borrower's stored date of birth reflects KYC.
+        // earlier PAN-derived value) so the borrower's stored date of birth reflects KYC. First compare
+        // it with the DOB the borrower entered at intake: a disagreement is the same fraud rule as an
+        // Aadhaar-number mismatch below.
         LocalDate aadhaarDob = parseDob(a.dob());
-        if (aadhaarDob != null) {
+        LocalDate enteredDob = profile.getDob();
+        String dobMismatch = dobMismatch(enteredDob, aadhaarDob);
+        // On a mismatch the entered DOB stays: it is the evidence, and a later DigiLocker run (a file that
+        // could not be rejected) must compare against it again rather than against the Aadhaar DOB itself.
+        if (aadhaarDob != null && dobMismatch == null) {
             profile.setDob(aadhaarDob);
         }
         // Fill blank address from DigiLocker so CRM Personal shows KYC address without a separate step.
@@ -1088,7 +1124,9 @@ public class ApplicationVerificationService {
         // V75: the typed Aadhaar number must agree with the one DigiLocker just fetched (last four
         // digits — the masked form is all the provider returns). A disagreement is the fraud rule, so
         // the card is NOT marked verified and the file is rejected below once the evidence is stored.
-        String aadhaarMismatch = aadhaarMismatch(profile, a.maskedAadhaar());
+        String numberMismatch = aadhaarMismatch(profile, a.maskedAadhaar());
+        String aadhaarMismatch = numberMismatch == null ? dobMismatch
+                : dobMismatch == null ? numberMismatch : numberMismatch + "; " + dobMismatch;
         profile.setAadhaarVerified(aadhaarMismatch == null);
         profileRepo.save(profile);
 
@@ -1142,8 +1180,14 @@ public class ApplicationVerificationService {
         }
 
         Map<String, Object> derived = aadhaarDerived(a);
-        if (aadhaarMismatch != null) {
+        if (numberMismatch != null) {
             derived.put("aadhaarMismatch", true);
+        }
+        if (dobMismatch != null) {
+            derived.put("dobMismatch", true);
+            derived.put("enteredDob", enteredDob.toString());
+        }
+        if (aadhaarMismatch != null) {
             derived.put("applicationRejected", true);
         }
         ApplicationVerification row = upsert(appId, AADHAAR, aadhaarMismatch == null ? PASS : FAIL,
@@ -1157,7 +1201,8 @@ public class ApplicationVerificationService {
             verificationRepo.save(row);
         }
         if (aadhaarMismatch != null) {
-            rejectForAadhaarMismatch(appId, "Aadhaar DigiLocker returned", aadhaarMismatch);
+            rejectForIdentityMismatch(appId, "Details entered do not match the Aadhaar DigiLocker returned ("
+                    + aadhaarMismatch + ")", "DigiLocker Aadhaar");
         }
         // Signzy's requestId is single-use consent state, not customer data. Clear it from the
         // profile and replace the temporary DIGILOCKER row so it cannot be retained in CRM/audits.
@@ -1177,7 +1222,7 @@ public class ApplicationVerificationService {
         String type = checkType == null ? "" : checkType.trim().toUpperCase();
         Map<String, Object> values = input == null ? Map.of() : input;
         CustomerProfile p = profile(appId);
-        if (!Set.of(PAN, EMAIL, ADDRESS, BUREAU, EMPLOYMENT, PENNY_DROP, SELFIE).contains(type)) {
+        if (!Set.of(PAN, PAN_AADHAAR_LINK, EMAIL, ADDRESS, BUREAU, EMPLOYMENT, PENNY_DROP, SELFIE).contains(type)) {
             throw new BusinessException("RETRY_NOT_SUPPORTED", "This verification requires a borrower session and cannot be retried here");
         }
         verificationRepo.findByApplicationIdAndCheckType(appId, type).ifPresent(row -> {
@@ -1194,6 +1239,7 @@ public class ApplicationVerificationService {
             case BUREAU -> pullBureau(appId, value(values, "otp", null), true);
             // Every input comes off the stored profile, so this one needs no borrower session at all.
             case EMPLOYMENT -> verifyEmployment(appId, true);
+            case PAN_AADHAAR_LINK -> verifyPanAadhaarLink(appId);
             case PENNY_DROP -> verifyPennyDrop(appId, value(values, "accountNumber", p.getSalaryAccountNumber()), value(values, "ifsc", p.getSalaryIfsc()), true);
             case SELFIE -> verifySelfie(appId, value(values, "selfieObjectKey", null));
             default -> throw new BusinessException("RETRY_NOT_SUPPORTED", "Unsupported verification retry");
@@ -2044,7 +2090,9 @@ public class ApplicationVerificationService {
      * Declared salary + salary-slip keys (min 3 months) → provisional eligible limit (25% cap). On a
      * reborrow the customer may re-declare salary and/or salary-credit day: when {@code salaryCreditDay}
      * is supplied it overwrites the application's day, the eligible limit is recomputed inline, and any
-     * change to a previously-recorded salary/day is audited to {@code profile_change_log}.
+     * change to a previously-recorded salary/day is audited to {@code profile_change_log}. A BORROWER may
+     * only do this while the application is {@code DRAFT} (the signup payslips step); afterwards a salary
+     * change needs staff verification, so the call is refused. ADMIN is unrestricted.
      *
      * <p>{@code filePassword} is the borrower's optional key for password-protected slip PDFs (V56);
      * it is stored on every slip row this call persists.
@@ -2054,6 +2102,11 @@ public class ApplicationVerificationService {
                                    Integer salaryCreditDay, String filePassword) {
         if (monthlySalaryPaise <= 0) {
             throw new BusinessException("INVALID_SALARY", "Monthly salary must be positive");
+        }
+        if ("BORROWER".equals(ActorContext.get().role())
+                && requireApplication(appId).getStatus() != ApplicationStatus.DRAFT) {
+            throw new BusinessException("SALARY_INCREASE_NEEDS_REVIEW",
+                    "To update your salary, please contact support. We need to verify the new amount first.");
         }
         if (slipObjectKeys != null) {
             requireOwnApplicationKeys(appId, slipObjectKeys);
@@ -2938,6 +2991,11 @@ public class ApplicationVerificationService {
         }
         Optional<ApplicationVerification> done = passed(appId, ESIGN);
         if (done.isPresent()) {
+            // A provider (Aadhaar/DSC) signature already stands: the drawn fallback must not overwrite
+            // that signed agreement. Only a repeat of the drawn signature itself stays idempotent.
+            if (!"MANUAL".equals(done.get().getProvider())) {
+                throw new BusinessException("ESIGN_ALREADY_COMPLETED", "This agreement is already signed");
+            }
             return view(done.get());
         }
         String key = "applications/" + appId + "/signed_agreement/signature.png";
@@ -3406,20 +3464,50 @@ public class ApplicationVerificationService {
      * Strip fields the borrower must not see from a step result. No-op for every other audience —
      * ADMIN reads through the same endpoint and keeps the full view.
      */
-    private static StepResult withoutStaffOnlyFields(StepResult step) {
+    public static StepResult withoutStaffOnlyFields(StepResult step) {
         CurrentActor actor = ActorContext.get();
         if (actor == null || !"BORROWER".equals(actor.role())) {
             return step;
         }
-        if (!EMPLOYMENT.equals(step.checkType()) || step.derived() == null
-                || !step.derived().containsKey("uan")) {
-            return step;
+        String type = step.checkType();
+        Map<String, Object> safe = step.derived() == null ? null : new LinkedHashMap<>(step.derived());
+        Double nameMatch = step.nameMatch();
+        Long score = step.score();
+        if (safe != null) {
+            if (EMPLOYMENT.equals(type)) {
+                safe.remove("uan");
+            } else if (PAN.equals(type)) {
+                // The provider's PAN record (name, DOB, masked Aadhaar, state/PIN) is identity data the
+                // borrower must not read back; the UI only needs the reject flag.
+                safe.keySet().retainAll(Set.of("applicationRejected", "panNotFound"));
+            } else if (PENNY_DROP.equals(type)) {
+                safe.keySet().removeAll(Set.of("fullName", "beneficiaryName", "bankRrn", "providerNameMatch", "nameMatch"));
+            } else if (EMAIL.equals(type)) {
+                safe.keySet().removeAll(Set.of("personName", "companyName", "matchedEstablishment"));
+            } else if (BUREAU.equals(type)) {
+                // The credit score and tradeline aggregates are staff-only; only the KBA question state is theirs.
+                safe.keySet().removeIf(k -> !k.startsWith("bureauChallenge"));
+            }
         }
-        Map<String, Object> safe = new LinkedHashMap<>(step.derived());
-        safe.remove("uan");
-        return new StepResult(step.checkType(), step.status(), step.message(), safe,
+        if (PENNY_DROP.equals(type)) {
+            nameMatch = null;
+        }
+        if (BUREAU.equals(type)) {
+            score = null;
+        }
+        return new StepResult(type, step.status(), step.message(), safe,
                 step.provider(), step.providerTxnId(), step.clientRefNum(),
-                step.nameMatch(), step.score(), step.checkedAt());
+                nameMatch, score, step.checkedAt(), step.reopenedAt());
+    }
+
+    /** The PAN saved on this application's own profile — the only one a borrower may have verified. */
+    @Transactional(readOnly = true)
+    public String ownPan(Long appId) {
+        String pan = profile(appId).getPan();
+        if (pan == null || pan.isBlank()) {
+            throw new BusinessException("PAN_REQUIRED", "Save your PAN before verifying it");
+        }
+        return pan.trim().toUpperCase(java.util.Locale.ROOT);
     }
 
     /**
@@ -3529,6 +3617,8 @@ public class ApplicationVerificationService {
         if (!KNOWN_CHECKS.contains(type)) {
             throw new BusinessException("UNKNOWN_CHECK", "Unknown verification check: " + checkType);
         }
+        // An Executive may only rule on a file assigned to them (CREDIT_FILE_NOT_ASSIGNED otherwise).
+        flow.get(appId);
         LoanApplication app = requireApplication(appId);
         String actor = ActorContext.get().name();
         String trimmed = notes != null ? notes.trim() : "";
@@ -3690,184 +3780,6 @@ public class ApplicationVerificationService {
         String pendingSteps = String.join(", ", pending);
         eventPublisher.publishEvent(new KycReminderEvent(app.getCustomerId(), appId, pendingSteps, Instant.now()));
         return new ReminderResult(true, pending.size(), pendingSteps);
-    }
-
-    /**
-     * Cross-application pending-API dashboard (Phase 3.3): status tallies (passed / review / failed /
-     * pending / never-run) plus the verification rows, enriched with borrower context and filterable by
-     * status, check type and a free-text query (borrower name / application id / customer id).
-     *
-     * <p>Scoped to {@link #DASHBOARD_STATUSES} — the files that still need a KYC decision, plus the
-     * sanctioned ones still walking the offer journey (whose DigiLocker/selfie/address/eSign checks are
-     * live triage work, not history). A disbursed or closed application's checks are historical evidence
-     * and stay out, here just as they do in the frontend's client-side card grouping. This used to load
-     * {@code verificationRepo.findAll()}, {@code applicationRepo.findAll()} and
-     * {@code profileRepo.findAll()} — the whole company's history, unfiltered — which was always the
-     * wrong scope for what this method reports, and at production data volumes made the endpoint take
-     * ~15-25s before failing outright (a company-wide unbounded scan, not this page's small live queue).
-     */
-    @Transactional(readOnly = true)
-    public VerificationOverview overview(String statusFilter, String checkTypeFilter, String q,
-                                         Boolean needsAttention, int page, int size) {
-        List<LoanApplication> undecided = applicationRepo.findByStatusIn(DASHBOARD_STATUSES);
-        Map<Long, LoanApplication> appById = undecided.stream()
-                .collect(Collectors.toMap(LoanApplication::getId, a -> a, (a, b) -> a));
-        int safeSize = Math.max(1, Math.min(size, OVERVIEW_MAX_PAGE_SIZE));
-        int safePage = Math.max(1, page);
-        if (appById.isEmpty()) {
-            return new VerificationOverview(0, 0, 0, 0, 0, List.of(), safePage, safeSize, 0L, List.of(), 0L);
-        }
-        List<ApplicationVerification> all = verificationRepo.findByApplicationIdIn(appById.keySet());
-        Map<Long, CustomerProfile> profByApp = profileRepo.findByApplicationIdIn(appById.keySet()).stream()
-                .collect(Collectors.toMap(CustomerProfile::getApplicationId, p -> p, (a, b) -> a));
-
-        int passed = 0, review = 0, failed = 0, pending = 0;
-        Map<Long, Set<String>> presentByApp = new java.util.HashMap<>();
-        Map<Long, Map<String, String>> statusesByApp = new java.util.HashMap<>();
-        for (ApplicationVerification v : all) {
-            String s = v.getStatus();
-            if (PASS.equals(s)) {
-                passed++;
-            } else if (REVIEW.equals(s)) {
-                review++;
-            } else if (FAIL.equals(s)) {
-                failed++;
-            } else {
-                pending++;
-            }
-            presentByApp.computeIfAbsent(v.getApplicationId(), k -> new HashSet<>()).add(v.getCheckType());
-            statusesByApp.computeIfAbsent(v.getApplicationId(), k -> new HashMap<>())
-                    .put(v.getCheckType(), s);
-        }
-        // Never-run: required checks with no row, on applications that have at least started verification.
-        int neverRun = 0;
-        for (Set<String> present : presentByApp.values()) {
-            for (String r : REQUIRED) {
-                if (!present.contains(r)) {
-                    neverRun++;
-                }
-            }
-        }
-
-        String statusF = norm(statusFilter);
-        String typeF = norm(checkTypeFilter);
-        String needle = q != null ? q.trim().toLowerCase() : "";
-        List<VerificationOverviewRow> matched = all.stream()
-                .filter(v -> statusF.isEmpty() || statusF.equals(v.getStatus()))
-                .filter(v -> typeF.isEmpty() || typeF.equals(v.getCheckType()))
-                .map(v -> {
-                    LoanApplication a = appById.get(v.getApplicationId());
-                    CustomerProfile p = profByApp.get(v.getApplicationId());
-                    Instant ts = v.getUpdatedAt() != null ? v.getUpdatedAt() : v.getCreatedAt();
-                    return new VerificationOverviewRow(v.getApplicationId(),
-                            a != null ? a.getCustomerId() : null,
-                            p != null ? p.getFullName() : null,
-                            p != null ? p.getMobile() : null,
-                            v.getCheckType(), v.getStatus(), v.getProvider(), v.getMessage(), ts,
-                            a != null && a.getStatus() != null ? a.getStatus().name() : null);
-                })
-                .filter(r -> needle.isEmpty() || overviewMatches(r, needle))
-                .sorted(java.util.Comparator.comparing(VerificationOverviewRow::updatedAt,
-                        java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())))
-                .toList();
-
-        // Page by APPLICATION, not by row: the dashboard renders one card per application and its
-        // bucket maths needs that application's whole row set, so a row-sliced page would show cards
-        // built from half their checks. Rows keep the updatedAt ordering within each card.
-        boolean attentionOnly = statusF.isEmpty() && typeF.isEmpty() && !Boolean.FALSE.equals(needsAttention);
-        Map<Long, List<VerificationOverviewRow>> rowsByApp = new LinkedHashMap<>();
-        for (VerificationOverviewRow r : matched) {
-            if (attentionOnly && !needsAttention(statusesByApp.get(r.applicationId()))) {
-                continue;
-            }
-            rowsByApp.computeIfAbsent(r.applicationId(), k -> new ArrayList<>()).add(r);
-        }
-        List<Long> pageAppIds = rowsByApp.keySet().stream()
-                .skip((long) (safePage - 1) * safeSize)
-                .limit(safeSize)
-                .toList();
-        List<VerificationOverviewRow> rows = new ArrayList<>();
-        for (Long appId : pageAppIds) {
-            rows.addAll(rowsByApp.get(appId));
-        }
-
-        // "Not started": KYC_PENDING files with no verification row at all, from the applications and
-        // profiles already loaded above — no extra query. KYC_PENDING only: DASHBOARD_STATUSES also
-        // holds DRAFT, and the abandoned intakes there are not files waiting on a reviewer. Same free-
-        // text search as the rows; the row-level status/checkType filters have no row to match here.
-        List<NotStartedApplication> notStarted = appById.values().stream()
-                .filter(a -> a.getStatus() == ApplicationStatus.KYC_PENDING)
-                .filter(a -> !presentByApp.containsKey(a.getId()))
-                .sorted(java.util.Comparator.comparing(LoanApplication::getCreatedAt,
-                                java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder()))
-                        .thenComparing(LoanApplication::getId,
-                                java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())))
-                .map(a -> {
-                    CustomerProfile p = profByApp.get(a.getId());
-                    return new NotStartedApplication(a.getId(), a.getCustomerId(),
-                            p != null ? p.getFullName() : null,
-                            p != null ? p.getMobile() : null);
-                })
-                .filter(n -> needle.isEmpty() || overviewMatches(n.borrowerName(), n.borrowerMobile(),
-                        n.applicationId(), n.customerId(), needle))
-                .toList();
-        List<NotStartedApplication> notStartedPage = notStarted.size() > OVERVIEW_NOT_STARTED_CAP
-                ? List.copyOf(notStarted.subList(0, OVERVIEW_NOT_STARTED_CAP))
-                : notStarted;
-
-        return new VerificationOverview(passed, review, failed, pending, neverRun,
-                List.copyOf(rows), safePage, safeSize, rowsByApp.size(),
-                notStartedPage, notStarted.size());
-    }
-
-    /**
-     * Does this application still need a reviewer's attention? Mirrors the dashboard's own bucket
-     * rule (`frontend/src/lib/staff/verification-dashboard.ts`): an application is "all checks passed"
-     * only when every gating check has a row reading PASS. Anything else — a FAIL, a REVIEW, a
-     * PENDING, or a gating check that never ran — is the failures or awaiting bucket, i.e. work.
-     *
-     * <p>Gating means {@link #KNOWN_CHECKS} minus {@link #OVERVIEW_NON_GATING}: the checks that inform
-     * the credit decision but gate nothing are kept out of the maths on both sides.
-     */
-    private static boolean needsAttention(Map<String, String> statusesByCheck) {
-        if (statusesByCheck == null) {
-            return true; // nothing recorded at all — every gating check is outstanding
-        }
-        for (String gating : OVERVIEW_GATING_CHECKS) {
-            if (!PASS.equals(statusesByCheck.get(gating))) {
-                return true;
-            }
-        }
-        // A gating row of an unrecognised type that is not PASS is still outstanding work.
-        for (Map.Entry<String, String> e : statusesByCheck.entrySet()) {
-            if (!OVERVIEW_NON_GATING.contains(e.getKey()) && !PASS.equals(e.getValue())) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean overviewMatches(VerificationOverviewRow r, String needle) {
-        return overviewMatches(r.borrowerName(), r.borrowerMobile(), r.applicationId(), r.customerId(), needle);
-    }
-
-    /** The dashboard's free-text search — shared by the rows and the "Not started" list so they agree. */
-    private static boolean overviewMatches(String borrowerName, String borrowerMobile, Long applicationId,
-                                           Long customerId, String needle) {
-        if (borrowerName != null && borrowerName.toLowerCase().contains(needle)) {
-            return true;
-        }
-        if (borrowerMobile != null && borrowerMobile.contains(needle)) {
-            return true;
-        }
-        if (applicationId != null && String.valueOf(applicationId).contains(needle)) {
-            return true;
-        }
-        return customerId != null && String.valueOf(customerId).contains(needle);
-    }
-
-    private static String norm(String s) {
-        return s == null ? "" : s.trim().toUpperCase();
     }
 
     private static String humanizeCheckType(String t) {

@@ -83,25 +83,15 @@ export function BusinessSnapshot(props: DashTabProps) {
       {/* ------------------------------------------------------------- overview */}
       {s && <SnapshotOverview s={s} params={params} open={open} />}
 
-      {/* ------------------------------------------------------------- KPIs */}
-      <SectionTitle>Key Performance Indicators</SectionTitle>
-      {q.isError ? (
-        <ChartCard title="Key Performance Indicators" error={q.error} onRetry={() => void q.refetch()} />
-      ) : !s ? (
-        placeholder(4)
-      ) : (
-        <div className={kpiGrid}>
-          <KpiCard title="Total Applications" tone="navy" icon={FileText} kpi={s.kpis.applications} onOpen={(m) => openMetric(m, "Total applications")} />
-          <KpiCard title="Disbursed Cases" tone="emerald" icon={CheckCircle2} kpi={s.kpis.disbursed} shareLabel={shareOf(s.kpis.disbursed.count, total, "applications")} onOpen={(m) => openMetric(m, "Disbursed cases")} />
-          <KpiCard title="Pending Cases" tone="orange" icon={Clock} kpi={s.kpis.pending} shareLabel={shareOf(s.kpis.pending.count, total, "applications")} onOpen={(m) => openMetric(m, "Pending cases")} />
-          <KpiCard title="Rejected Cases" tone="red" icon={XCircle} kpi={s.kpis.rejected} lowerIsBetter shareLabel={shareOf(s.kpis.rejected.count, total, "applications")} onOpen={(m) => openMetric(m, "Rejected cases")} />
-        </div>
-      )}
-
+      {/* ------------------------------------------------- Business position */}
+      {/* The money row comes first: it is what an admin wants to see on landing. */}
       {!q.isError && (!s || pos) && (
         <>
           <SectionTitle>Business position</SectionTitle>
-          <p className="-mt-2 mb-3 text-xs text-muted">Loans disbursed in the selected period</p>
+          <p className="-mt-2 mb-3 text-xs text-grey-500">
+            Every card follows the same loans: those <b>disbursed</b> in the selected period, valued as of today. A loan
+            disbursed earlier is not counted here even if it was repaid in this period — Collection Amount below shows that.
+          </p>
         </>
       )}
       {q.isError || (s && !pos) ? null : !pos ? (
@@ -114,12 +104,19 @@ export function BusinessSnapshot(props: DashTabProps) {
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           {(
             [
-              ["Principal disbursed", "navy", Banknote, pos.principalPaise, "POSITION_PRINCIPAL", undefined, "Sum of principal on loans disbursed in the period."],
-              ["Net disbursed", "teal", Landmark, pos.netDisbursedPaise, "POSITION_NET", "after fee + GST", "Cash actually sent to borrowers: principal less processing fee and GST."],
-              ["Net receivable", "violet", Receipt, pos.receivablePaise, "POSITION_RECEIVABLE", "principal + interest to date", "Principal plus interest accrued to date, excluding late penalty."],
-              ["Total penalty", "red", TriangleAlert, pos.penaltyPaise, "POSITION_PENALTY", undefined, "Late penalty accrued on these loans."],
-              ["Net received", "emerald", CheckCircle2, pos.receivedPaise, "POSITION_RECEIVED", "verified payments", "Verified repayments received against these loans."],
-              ["Pending", "orange", Hourglass, pos.pendingPaise, "POSITION_PENDING", pos.waivedPaise > 0 ? `owed today · ${paiseToINR(pos.waivedPaise)} waived` : "owed today, after settlements", "Still owed today on these loans, after settlements."],
+              ["Principal disbursed", "navy", Banknote, pos.principalPaise, "POSITION_PRINCIPAL", "Loan amount given out",
+                "The full loan amount on these loans. Customers repay all of it, plus interest."],
+              ["Net disbursed", "teal", Landmark, pos.netDisbursedPaise, "POSITION_NET", "Cash sent to customers' banks",
+                "Loan amount minus the 10% processing fee and 18% GST on that fee: a ₹100 loan puts ₹88.20 in the customer's account."],
+              ["Net receivable", "violet", Receipt, pos.receivablePaise, "POSITION_RECEIVABLE", "Principal + interest so far",
+                "What customers owe before late fees: the loan amount plus 1% a day interest from disbursal to the due date (plus 1 grace day on older loans). Interest stops there; late fees take over."],
+              ["Total penalty", "red", TriangleAlert, pos.penaltyPaise, "POSITION_PENALTY", "Late fees",
+                "2% a day on the loan amount once a loan is past its due date (and its grace day, on older loans), capped at 30 days."],
+              ["Net received", "emerald", CheckCircle2, pos.receivedPaise, "POSITION_RECEIVED", "Repayments verified",
+                "Money customers have paid back on these loans and the accountant has verified, whenever it was paid."],
+              ["Outstanding", "orange", Hourglass, pos.pendingPaise, "POSITION_PENDING",
+                pos.waivedPaise > 0 ? `Still to collect · ${paiseToINR(pos.waivedPaise)} waived` : "Still to collect today",
+                "Receivable + penalty − received − anything waived in a settlement. Zero once every loan is repaid."],
             ] as const
           ).map(([title, tone, icon, paise, metric, caption, definition]) => (
             <PositionCard
@@ -151,14 +148,29 @@ export function BusinessSnapshot(props: DashTabProps) {
         </div>
       )}
 
+      {/* ------------------------------------------------------------- KPIs */}
+      <SectionTitle>Key Performance Indicators</SectionTitle>
+      {q.isError ? (
+        <ChartCard title="Key Performance Indicators" error={q.error} onRetry={() => void q.refetch()} />
+      ) : !s ? (
+        placeholder(4)
+      ) : (
+        <div className={kpiGrid}>
+          <KpiCard title="Total Applications" tone="navy" icon={FileText} kpi={s.kpis.applications} onOpen={(m) => openMetric(m, "Total applications")} />
+          <KpiCard title="Disbursed Cases" tone="emerald" icon={CheckCircle2} kpi={s.kpis.disbursed} shareLabel={shareOf(s.kpis.disbursed.count, total, "applications")} onOpen={(m) => openMetric(m, "Disbursed cases")} />
+          <KpiCard title="Pending Cases" tone="orange" icon={Clock} kpi={s.kpis.pending} shareLabel={shareOf(s.kpis.pending.count, total, "applications")} onOpen={(m) => openMetric(m, "Pending cases")} />
+          <KpiCard title="Rejected Cases" tone="red" icon={XCircle} kpi={s.kpis.rejected} shareLabel={shareOf(s.kpis.rejected.count, total, "applications")} onOpen={(m) => openMetric(m, "Rejected cases")} />
+        </div>
+      )}
+
       <SectionTitle>Financial Overview</SectionTitle>
       {q.isError ? null : !s || !avg ? (
         placeholder(4)
       ) : (
         <div className={kpiGrid}>
           <KpiCard title="Total Loan Amount" tone="violet" icon={IndianRupee} mode="money" kpi={s.financial.totalLoan} onOpen={(m) => openMetric(m, "Total loan amount (disbursed)")} />
-          <KpiCard title="Pending Sanctioned Amount" tone="teal" icon={Scale} mode="money" kpi={s.financial.pendingSanctioned} onOpen={(m) => openMetric(m, "Pending sanctioned")} />
-          <KpiCard title="Pending Amount" tone="sky" icon={Timer} mode="money" kpi={s.financial.pendingDisbursal} onOpen={(m) => openMetric(m, "Pending disbursal")} />
+          <KpiCard title="Sanctioned, Awaiting Borrower" tone="teal" icon={Scale} mode="money" kpi={s.financial.pendingSanctioned} onOpen={(m) => openMetric(m, "Sanctioned, awaiting borrower")} />
+          <KpiCard title="Awaiting Disbursal" tone="sky" icon={Timer} mode="money" kpi={s.financial.pendingDisbursal} onOpen={(m) => openMetric(m, "Awaiting disbursal")} />
           <KpiCard title="Average Loan Size" tone="royal" icon={TrendingUp} mode="money" kpi={avg} onOpen={(m) => openMetric(m, "Disbursed loans (average size)")} />
         </div>
       )}

@@ -3,7 +3,7 @@
 /** Loan tab (design §3.2): the current loan's card, sanction details and disbursal details. */
 
 import * as React from "react";
-import { Landmark } from "lucide-react";
+import { IndianRupee, Landmark } from "lucide-react";
 import { Badge, EmptyState } from "@/components/ui";
 import { Field, FieldGrid } from "@/components/ui/field-grid";
 import { Section } from "@/components/staff/detail-parts";
@@ -17,8 +17,9 @@ import {
 import type { TabCtx } from "@/components/staff/customer-360/types";
 import { daysBetween } from "@/lib/calc/loan-math";
 import { isoDayToLocalDate, istCalendarToday } from "@/lib/customers/customer-360";
+import { customerEarnings } from "@/lib/customers/customer-earnings";
 import { formatDate, formatDateTime } from "@/lib/utils";
-import { paiseToINR, statusLabel } from "@/lib/api/applications";
+import { paiseToINR, statusLabel, type CustomerDetail } from "@/lib/api/applications";
 
 const inr = (p: number | null | undefined) => (p == null ? null : paiseToINR(p));
 
@@ -44,7 +45,7 @@ export function LoanTab({ listing, ...ctx }: TabCtx & { listing?: React.ReactNod
         <Section title="Loan">
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <LoanSelector loans={detail.loans} value={loan.id} onChange={setLoanId} />
+              <LoanSelector loans={detail.loans} value={loan.id} onChange={setLoanId} outstandingByLoanId={detail.outstandingByLoanId} />
             </div>
             <LoanCardHeader ctx={ctx} loan={loan} collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} />
             {!collapsed && (
@@ -57,7 +58,71 @@ export function LoanTab({ listing, ...ctx }: TabCtx & { listing?: React.ReactNod
         </Section>
       )}
       {listing}
+      {detail.loans.length > 0 && <EarnedFromCustomer detail={detail} />}
     </div>
+  );
+}
+
+const pct = (r: number | null) => (r == null ? null : `${(r * 100).toFixed(1)}%`);
+
+/**
+ * The business done with this customer across every loan (see `customerEarnings`): what we lent and
+ * still have out, what we made, and whether the cash is back yet.
+ */
+function EarnedFromCustomer({ detail }: { detail: CustomerDetail }) {
+  const e = customerEarnings(detail, istCalendarToday());
+  const ahead = e.netCashPaise >= 0;
+  return (
+    <Section title="Business with this customer" icon={IndianRupee}>
+      <h4 className="mb-1 text-[9.6px] font-bold uppercase tracking-wide text-muted">Lending</h4>
+      <FieldGrid cols={4}>
+        <Field label="Loans taken" keyLabel caption={`${e.closedLoanCount} repaid · ${e.openLoanCount} running`}>
+          {e.disbursedLoanCount}
+        </Field>
+        <Field label="Total lent" caption="principal, all loans">{inr(e.totalLentPaise)}</Field>
+        <Field label="Currently disbursed" tone={e.openLoanCount > 0 ? "navy" : "ink"} caption="principal still out">
+          {inr(e.currentlyDisbursedPaise)}
+        </Field>
+        <Field label="Currently due" keyLabel tone={e.outstandingPaise > 0 ? "error" : "ink"} caption="owed today, penalty included">
+          {inr(e.outstandingPaise)}
+        </Field>
+      </FieldGrid>
+
+      <h4 className="mb-1 mt-3 text-[9.6px] font-bold uppercase tracking-wide text-muted">Profit</h4>
+      <FieldGrid cols={4}>
+        <Field label="Processing fees" caption="10%, upfront · GST excluded">{inr(e.processingFeesPaise)}</Field>
+        <Field label="Interest received" caption="verified payments">{inr(e.interestReceivedPaise)}</Field>
+        <Field label="Penalty received" caption="verified payments">{inr(e.penaltyReceivedPaise)}</Field>
+        <Field label="Total profit" keyLabel tone="navy" caption="made till now">{inr(e.totalEarnedPaise)}</Field>
+      </FieldGrid>
+
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <div className="rounded-lg border border-success-100 bg-success-50 px-3 py-2">
+          <p className="m-0 text-[8.8px] font-bold uppercase tracking-wide text-success-700">Profit on money lent</p>
+          <p className="m-0 font-serif text-lg font-bold text-success-700">{pct(e.profitOnLentRatio) ?? "—"}</p>
+          <p className="m-0 text-[8.8px] text-muted">total profit ÷ total lent</p>
+        </div>
+        <div className={`rounded-lg border px-3 py-2 ${ahead ? "border-success-100 bg-success-50" : "border-warning-100 bg-warning-50"}`}>
+          <p className={`m-0 text-[8.8px] font-bold uppercase tracking-wide ${ahead ? "text-success-700" : "text-warning-800"}`}>
+            Net cash so far
+          </p>
+          <p className={`m-0 font-serif text-lg font-bold ${ahead ? "text-success-700" : "text-warning-800"}`}>
+            {ahead ? "" : "−"}{paiseToINR(Math.abs(e.netCashPaise))}
+          </p>
+          <p className="m-0 text-[8.8px] text-muted">
+            received {paiseToINR(e.cashInPaise)} − sent out {paiseToINR(e.cashOutPaise)}
+            {ahead ? "" : " · still recovering"}
+          </p>
+        </div>
+      </div>
+
+      {e.waivedPaise > 0 && (
+        <p className="mt-2 text-[8.8px] font-bold text-error-700">
+          {paiseToINR(e.waivedPaise)} waived via settlement on {e.settledLoanCount}{" "}
+          {e.settledLoanCount === 1 ? "loan" : "loans"}
+        </p>
+      )}
+    </Section>
   );
 }
 

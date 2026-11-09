@@ -25,6 +25,9 @@ describe("safeNextPath", () => {
       "/\n/evil.example",
       "javascript:alert(1)",
       " /dashboard",
+      "/.//evil.example",
+      "/..//evil.example",
+      "/x/..//evil.example",
     ]) {
       expect(safeNextPath(evil, "/dashboard")).toBe("/dashboard");
     }

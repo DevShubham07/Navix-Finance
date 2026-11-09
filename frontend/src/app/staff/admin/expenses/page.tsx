@@ -8,7 +8,12 @@ import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage, useStaffMe, useCan, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { adminApi, storageApi, paiseToINR, rupeesToPaise, type ExpenseResponse } from "@/lib/api/applications";
-import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
+import { PaginationBar } from "@/components/staff/pipeline/pagination";
+import { type FilterColumn } from "@/components/staff/column-filter";
+import { istDay } from "@/lib/staff/column-filter-match";
+import { useRegisterQuery } from "@/lib/staff/register-query";
+import { useClientRegister } from "@/lib/staff/use-client-register";
+import { Th, thBag, describeRegister } from "@/lib/staff/register-th";
 
 /** Today as ISO yyyy-mm-dd (local), for the date field default. */
 function todayIso(): string {
@@ -16,12 +21,26 @@ function todayIso(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+/** Sortable + filterable columns. Notes are free text and the receipt is a presigned URL, so neither
+ *  gets a dropdown of its own values — the Receipt column filters on has/hasn't instead. */
+const SORT_KEYS = ["expenseDate", "description", "paidTo", "amountPaise", "receiptUrl", "addedBy"] as const;
+
+const COLUMN_LABEL: Record<string, string> = {
+  expenseDate: "Date",
+  description: "Description",
+  paidTo: "Paid to",
+  amountPaise: "Amount",
+  receiptUrl: "Receipt",
+  addedBy: "Added by",
+};
+
 /**
  * Admin · company expenses — record operational spend (description, amount, payee, notes) and review
  * it in a sheet-style table with CSV / PDF export. Live `/api/admin/expenses`. ADMIN only.
  */
 export default function AdminExpensesPage() {
-  const myRole = useStaffMe().data?.role;
+  const me = useStaffMe().data;
+  const myRole = me?.role;
   const can = useCan();
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["admin-expenses"], queryFn: adminApi.listExpenses });
@@ -86,9 +105,39 @@ export default function AdminExpensesPage() {
     },
   });
 
-  const rows = q.data ?? [];
-  const total = rows.reduce((sum, e) => sum + e.amountPaise, 0);
-  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total: rowsTotal } = usePagination(rows);
+  const rows = React.useMemo(() => q.data ?? [], [q.data]);
+
+  const rq = useRegisterQuery({
+    registerId: "expenses",
+    staffId: me?.id,
+    sortKeys: SORT_KEYS,
+    filterKeys: SORT_KEYS,
+    defaults: { sort: { key: "expenseDate", dir: "desc" } },
+  });
+
+  const filterColumns = React.useMemo<Array<FilterColumn<ExpenseResponse>>>(
+    () => [
+      // `expenseDate` is already a bare calendar day, which `istDay` passes through untouched.
+      { key: "expenseDate", kind: "date", value: (e) => istDay(e.expenseDate) ?? "—", date: (e) => istDay(e.expenseDate) },
+      { key: "description", kind: "text", value: (e) => e.description },
+      { key: "paidTo", value: (e) => e.paidTo },
+      // Rupees: the bound is typed next to a rupee column.
+      { key: "amountPaise", kind: "num", value: (e) => paiseToINR(e.amountPaise), num: (e) => e.amountPaise / 100 },
+      // The stored value is a one-off presigned URL; the question a human asks is "is there one".
+      { key: "receiptUrl", value: (e) => (e.receiptUrl ? "Attached" : "None"), raw: (e) => (e.receiptUrl ? "YES" : "NO") },
+      { key: "addedBy", value: (e) => e.addedBy || "Unknown", raw: (e) => e.addedBy ?? "" },
+    ],
+    [],
+  );
+
+  const cr = useClientRegister(rows, filterColumns, rq);
+  const { pageRows, total: rowsTotal, pageCount } = cr;
+  const th = thBag(rq, cr, filterColumns, COLUMN_LABEL);
+  const page = rq.state.page;
+  const pageSize = rq.state.size;
+  // The footer sums what the filters leave, not the whole ledger — a total beside a filtered table
+  // that ignores the filter reads as an error.
+  const total = cr.rows.reduce((sum, e) => sum + e.amountPaise, 0);
 
   if (myRole && !can("staff:manage")) {
     return <NoAccessNotice message="Admin access only." />;
@@ -96,7 +145,12 @@ export default function AdminExpensesPage() {
 
   return (
     <div>
-      <PageHeader title="Company expenses" subtitle="Track operational spend — payee, amount and notes. Admin only.">
+      <PageHeader
+        title="Company expenses"
+        subtitle={["Track operational spend — payee, amount and notes. Admin only.", describeRegister(th)]
+          .filter(Boolean)
+          .join(" · ")}
+      >
         <ExportMenu
           title="Company expenses"
           subtitle="Operational expense ledger"
@@ -110,7 +164,8 @@ export default function AdminExpensesPage() {
             { header: "Receipt", value: (e) => (e.receiptUrl ? "Yes" : "No") },
             { header: "Added by", value: (e) => e.addedBy ?? "" },
           ]}
-          rows={rows}
+          rows={cr.rows}
+          scope="all"
         />
         <button
           onClick={() => q.refetch()}
@@ -157,13 +212,13 @@ export default function AdminExpensesPage() {
               <thead>
                 <tr>
                   <th>S.No.</th>
-                  <th className="whitespace-nowrap">Date</th>
-                  <th>Description</th>
-                  <th>Paid to</th>
-                  <th className="num whitespace-nowrap text-right">Amount</th>
+                  <Th th={th} col="expenseDate" className="whitespace-nowrap" />
+                  <Th th={th} col="description" />
+                  <Th th={th} col="paidTo" />
+                  <Th th={th} col="amountPaise" className="num whitespace-nowrap text-right" />
                   <th>Notes</th>
-                  <th>Receipt</th>
-                  <th className="whitespace-nowrap">Added by</th>
+                  <Th th={th} col="receiptUrl" />
+                  <Th th={th} col="addedBy" className="whitespace-nowrap" />
                   <th className="text-right">Action</th>
                 </tr>
               </thead>
@@ -204,15 +259,19 @@ export default function AdminExpensesPage() {
                     </td>
                   </tr>
                 ))}
-                {rows.length === 0 && (
-                  <EmptyState title="No expenses recorded yet." inTable={9} />
+                {rowsTotal === 0 && (
+                  // In-table so the headers survive an emptying filter and it can still be cleared.
+                  <EmptyState
+                    title={rq.activeCount > 0 && rows.length > 0 ? "No expenses match the column filters." : "No expenses recorded yet."}
+                    inTable={9}
+                  />
                 )}
               </tbody>
-              {rows.length > 0 && (
+              {rowsTotal > 0 && (
                 <tfoot className="border-t border-line bg-grey-50">
                   <tr>
                     <td className="whitespace-nowrap text-xs font-semibold uppercase tracking-wide text-muted" colSpan={4}>
-                      Total · {rows.length} {rows.length === 1 ? "expense" : "expenses"}
+                      Total · {rowsTotal} {rowsTotal === 1 ? "expense" : "expenses"}
                     </td>
                     <td className="num whitespace-nowrap text-right font-bold text-navy">{paiseToINR(total)}</td>
                     <td colSpan={4} />
@@ -224,10 +283,10 @@ export default function AdminExpensesPage() {
           <PaginationBar
             page={page}
             pageCount={pageCount}
-            setPage={setPage}
+            setPage={rq.setPage}
             total={rowsTotal}
             pageSize={pageSize}
-            setPageSize={setPageSize}
+            setPageSize={rq.setSize}
           />
         </div>
       )}

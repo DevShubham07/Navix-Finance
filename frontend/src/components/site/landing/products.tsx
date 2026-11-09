@@ -112,7 +112,7 @@ export function ProductsPage() {
           <SectionHead label="Every product includes" id="promise-title" lead="The DhanBoost promise" />
           <BlueprintGrid cols={4} className="reveal mt-14">
             <BlueprintItem icon={<CircleCheck size={22} strokeWidth={1.9} />} title="No advance fees">
-              You never pay anything upfront.
+              You never pay anything before your loan is disbursed.
             </BlueprintItem>
             <BlueprintItem icon={<Percent size={22} strokeWidth={1.9} />} title="No pre-closure charge">
               Repay early and save.

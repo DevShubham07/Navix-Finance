@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.security.ActorContext;
+import com.navix.common.storage.DocumentStoragePort;
 import com.navix.loan.dto.LeadDtos.ImportFileRequest;
 import com.navix.loan.dto.LeadDtos.ImportIssue;
 import com.navix.loan.dto.LeadDtos.ImportJobView;
@@ -55,6 +56,7 @@ public class LeadImportJobService {
     private final LeadImportJobRepository jobRepository;
     private final ApplicationEventPublisher events;
     private final ObjectMapper objectMapper;
+    private final DocumentStoragePort storage;
 
     /**
      * Accept an uploaded file and queue it. Returns immediately — the work happens off-thread.
@@ -84,7 +86,8 @@ public class LeadImportJobService {
         job.setFileName(req.fileName());
         job.setUploadedByStaffId(staffId);
         job.setUploaderRole(role);
-        job.setMergeRequested(req.merge());
+        // A DSA's upload never merges into existing leads: a merge would let them probe/fill leads they do not own.
+        job.setMergeRequested(req.merge() && !"DSA".equals(role));
         job.setCreatedAt(Instant.now());
 
         String rejection = rejectionReason(req, staffId);
@@ -126,12 +129,22 @@ public class LeadImportJobService {
         String role = ActorContext.get().role();
         LeadImportJob job = jobRepository.findById(id)
                 .orElseThrow(() -> new BusinessException("NOT_FOUND", "Import not found"));
-        // A DSA must not be able to enumerate other people's uploads; staff who can see the lead
-        // register may read any import.
-        if (!DETAIL_ROLES.contains(role) && !job.getUploadedByStaffId().equals(staffId)) {
-            throw new BusinessException("FORBIDDEN_ROLE", "Not your import");
+        // An import carries the uploaded list's contact detail, so only its uploader or an ADMIN
+        // may read it; anyone else gets the same not-found as a missing id.
+        if (!"ADMIN".equals(role) && !job.getUploadedByStaffId().equals(staffId)) {
+            throw new BusinessException("NOT_FOUND", "Import not found");
         }
         return toView(job, role);
+    }
+
+    /** Short-lived GET url for the job's own stored file; uploader or ADMIN, never a DSA. */
+    @Transactional(readOnly = true)
+    public String downloadUrl(Long id) {
+        ImportJobView view = get(id);
+        if (!view.downloadable()) {
+            throw new BusinessException("NOT_FOUND", "Import not found");
+        }
+        return storage.presignDownload(jobRepository.findById(id).orElseThrow().getS3Key());
     }
 
     @Transactional(readOnly = true)
@@ -197,7 +210,7 @@ public class LeadImportJobService {
                 skippedCustomers,
                 job.getIssueCount(),
                 issues,
-                maySeeDetail ? job.getS3Key() : null,
+                maySeeDetail && job.getS3Key() != null,
                 job.getErrorMessage(),
                 job.getStartedAt(),
                 job.getFinishedAt(),

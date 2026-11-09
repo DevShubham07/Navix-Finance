@@ -108,7 +108,7 @@ export function SnapshotMonthly({ params, open, realAdmin, topOnly = false }: Da
         {/* Collection % ------------------------------------------------- */}
         <ChartCard
           title={`Collection % (last ${MONTHS_BACK} months)`}
-          info="Per due month: collected ÷ total repayable of the loans due that month. Verified payments only."
+          info="Each loan sits in the month it is DUE — not the month it was disbursed or paid. Collected = every verified payment on those loans, whenever it arrived, so a month keeps rising as late payments come in. Owed = what the loans actually had to pay: interest only to the day repaid if early, plus late penalty (and grace-day interest on older loans) if late; loans not yet due count at their contract amount."
           accent={SERIES.collected}
           {...shared}
         >
@@ -147,7 +147,7 @@ export function SnapshotMonthly({ params, open, realAdmin, topOnly = false }: Da
                   content={
                     <ChartTooltip
                       kinds={{ tloan: "paise", collected: "paise", pct: "pct" }}
-                      labels={{ tloan: "T.Loan", collected: "Collected", pct: "Collection %" }}
+                      labels={{ tloan: "Owed", collected: "Collected", pct: "Collection %" }}
                       extra={(row) => [
                         { label: "Loans due", value: nf(Number(row.dueLoans)) },
                         { label: "Target", value: `${(Number(row.targetBp) / 100).toFixed(0)}%` },
@@ -156,7 +156,7 @@ export function SnapshotMonthly({ params, open, realAdmin, topOnly = false }: Da
                     />
                   }
                 />
-                <Bar yAxisId="amt" dataKey="tloan" name="T.Loan" fill={SERIES.tloan} {...BAR} cursor="pointer" />
+                <Bar yAxisId="amt" dataKey="tloan" name="Owed" fill={SERIES.tloan} {...BAR} cursor="pointer" />
                 <Bar yAxisId="amt" dataKey="collected" name="Collected" fill={SERIES.collected} {...BAR} cursor="pointer" />
                 <Line
                   yAxisId="pct"
@@ -457,7 +457,7 @@ export function SnapshotMonthly({ params, open, realAdmin, topOnly = false }: Da
 
 function Legend3() {
   const items: [string, string][] = [
-    ["T.Loan", SERIES.tloan],
+    ["Owed", SERIES.tloan],
     ["Collected", SERIES.collected],
     ["Collection %", SERIES.pctLine],
   ];

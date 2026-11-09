@@ -149,4 +149,82 @@ public class CollectionQueries {
                 });
         return out;
     }
+
+    // ---- collection head desk: one day's team figures ----------------------------------------
+
+    /** A per-officer count with the money behind it. */
+    public record CountAmount(long count, long paise) {
+    }
+
+    private MapSqlParameterSource dayParams(DashboardScope scope, LocalDate date) {
+        return new MapSqlParameterSource().addValue("date", date)
+                .addValue("allStaff", scope.allStaff()).addValue("ids", scope.sqlIds());
+    }
+
+    /** Interactions (any channel) logged on the IST day, per the staffer who logged them. */
+    public Map<Long, Long> callsLoggedByOfficer(DashboardScope scope, LocalDate date) {
+        Map<Long, Long> out = new LinkedHashMap<>();
+        metrics.jdbc().query("select i.logged_by_staff_id as staff, count(*) as n from interaction_log i"
+                        + " where i.logged_by_staff_id is not null and " + MetricSql.ist("i.logged_at") + " = :date"
+                        + " and (:allStaff or i.logged_by_staff_id in (:ids)) group by 1",
+                dayParams(scope, date), rs -> {
+                    out.put(rs.getLong("staff"), rs.getLong("n"));
+                });
+        return out;
+    }
+
+    /**
+     * Cases whose LATEST promise-to-pay falls on {@code date}, per assigned officer, with the cached
+     * {@code loan.outstanding} on them. An earlier promise that was superseded does not count, and a
+     * loan already CLOSED has nothing left to promise.
+     */
+    public Map<Long, CountAmount> promisesDueByOfficer(DashboardScope scope, LocalDate date) {
+        Map<Long, CountAmount> out = new LinkedHashMap<>();
+        metrics.jdbc().query("select cc.assigned_officer_id as staff, count(*) as n,"
+                        + " coalesce(sum(l.outstanding), 0) as amt"
+                        + " from (select distinct on (i.collection_case_id) i.collection_case_id, i.promise_to_pay_date"
+                        + " from interaction_log i where i.outcome = 'PROMISE_TO_PAY' and i.promise_to_pay_date is not null"
+                        + " order by i.collection_case_id, i.logged_at desc) ptp"
+                        + " join collection_case cc on cc.id = ptp.collection_case_id"
+                        + " join loan l on l.id = cc.loan_id"
+                        + " where ptp.promise_to_pay_date = :date and l.status <> 'CLOSED'"
+                        + " and cc.assigned_officer_id is not null and (:allStaff or cc.assigned_officer_id in (:ids))"
+                        + " group by 1",
+                dayParams(scope, date), rs -> {
+                    out.put(rs.getLong("staff"), new CountAmount(rs.getLong("n"), rs.getLong("amt")));
+                });
+        return out;
+    }
+
+    /**
+     * Verified PARTIAL payments paid on {@code date} on an officer's cases: count and rupees. Read from
+     * {@code payment} only -- never also {@code collection_payment}, which would count the same rupee
+     * twice through {@code ledger_payment_id}.
+     */
+    public Map<Long, CountAmount> partPaymentsByOfficer(DashboardScope scope, LocalDate date) {
+        Map<Long, CountAmount> out = new LinkedHashMap<>();
+        metrics.jdbc().query("select cc.assigned_officer_id as staff, count(*) as n, coalesce(sum(p.amount), 0) as amt"
+                        + " from payment p join collection_case cc on cc.loan_id = p.loan_id"
+                        + " where p.status = 'VERIFIED' and p.partial and p.paid_on = :date"
+                        + " and cc.assigned_officer_id is not null and (:allStaff or cc.assigned_officer_id in (:ids))"
+                        + " group by 1",
+                dayParams(scope, date), rs -> {
+                    out.put(rs.getLong("staff"), new CountAmount(rs.getLong("n"), rs.getLong("amt")));
+                });
+        return out;
+    }
+
+    /** Live loans on an officer's cases whose due date is {@code date}. */
+    public Map<Long, Long> dueOnByOfficer(DashboardScope scope, LocalDate date) {
+        Map<Long, Long> out = new LinkedHashMap<>();
+        metrics.jdbc().query("select cc.assigned_officer_id as staff, count(distinct l.id) as n"
+                        + " from collection_case cc join loan l on l.id = cc.loan_id"
+                        + " where l.due_date = :date and l.status in ('ACTIVE', 'OVERDUE', 'IN_COLLECTIONS')"
+                        + " and cc.assigned_officer_id is not null and (:allStaff or cc.assigned_officer_id in (:ids))"
+                        + " group by 1",
+                dayParams(scope, date), rs -> {
+                    out.put(rs.getLong("staff"), rs.getLong("n"));
+                });
+        return out;
+    }
 }

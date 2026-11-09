@@ -34,6 +34,10 @@ public interface CustomerProfileRepository extends JpaRepository<CustomerProfile
      */
     Optional<CustomerProfile> findFirstByEmailIgnoreCaseOrderByApplicationIdDesc(String email);
 
+    /** As above, restricted to a personal email the borrower proved with an emailed OTP (the reset gate). */
+    Optional<CustomerProfile> findFirstByEmailIgnoreCaseAndPersonalEmailVerifiedTrueOrderByApplicationIdDesc(
+            String email);
+
     // --- identity uniqueness (a mobile/PAN may belong to only one customer) ---
     // Scoped to OTHER customers: a profile is matched by joining its application to resolve the
     // owning customerId, then excluding the queried customer. This lets the SAME customer
@@ -58,6 +62,23 @@ public interface CustomerProfileRepository extends JpaRepository<CustomerProfile
             + "order by a.customerId")
     java.util.List<Long> findOtherCustomerIdsByAadhaar(@Param("aadhaar") String aadhaar,
                                                        @Param("customerId") Long customerId);
+
+    /**
+     * The OTHER customers' applications holding this Aadhaar number that were actually submitted (ever
+     * reached {@code KYC_PENDING}), newest first — what the submit-kyc duplicate rule rejects on. An
+     * abandoned draft does not count: anyone can type a number into one, and that must not get the
+     * number's real owner rejected later (those still raise the silent {@code AADHAAR_DUPLICATE} flag) —
+     * and neither does a file itself rejected as {@code FRAUD_REJECTED}, whose identity documents disagreed.
+     */
+    @Query("select a.id from CustomerProfile p, LoanApplication a "
+            + "where p.applicationId = a.id and p.aadhaar = :aadhaar and a.customerId <> :customerId "
+            + "and exists (select e.id from ApplicationEvent e where e.applicationId = a.id "
+            + "and e.toStatus = com.navix.loan.domain.ApplicationStatus.KYC_PENDING) "
+            + "and not exists (select r.id from ApplicationRejection r where r.applicationId = a.id "
+            + "and r.reasonCode = 'FRAUD_REJECTED') "
+            + "order by a.id desc")
+    java.util.List<Long> findSubmittedApplicationIdsByAadhaarForOtherCustomers(
+            @Param("aadhaar") String aadhaar, @Param("customerId") Long customerId);
 
     /**
      * Every mobile this customer has on file across their applications, newest application first.
@@ -164,4 +185,8 @@ public interface CustomerProfileRepository extends JpaRepository<CustomerProfile
             + "order by a.id desc")
     List<Object[]> findOtherBorrowersByMobileIn(@Param("mobiles") Collection<String> mobiles,
                                                 @Param("customerId") Long customerId);
+
+    /** Every profile carrying a stored bureau brief — the boot-time star re-score walks these. */
+    @Query("select p.id from CustomerProfile p where p.creditBriefFacts is not null order by p.id")
+    List<Long> findIdsWithCreditBriefFacts();
 }

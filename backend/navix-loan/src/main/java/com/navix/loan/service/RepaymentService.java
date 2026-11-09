@@ -247,8 +247,12 @@ public class RepaymentService {
     }
 
     private String presignedProof(Payment p) {
-        String key = p.getProofUrl();
-        return key == null || key.isBlank() ? null : storage.presignDownload(key);
+        return isProofKey(p.getProofUrl()) ? storage.presignDownload(p.getProofUrl()) : null;
+    }
+
+    /** Only a repayment-proof upload is ever presigned; free-text refs, {@code NACH:} refs and traversal keys are not. */
+    public static boolean isProofKey(String key) {
+        return key != null && key.startsWith("loan/repayment-proof/") && !key.contains("..");
     }
 
     /**
@@ -278,7 +282,7 @@ public class RepaymentService {
      *
      * <p>{@code interestDays} / {@code penaltyDays} are the <i>day counts</i> those two amounts were
      * charged over — interest days are capped at the tenure (interest stops accruing at the due date)
-     * and penalty days exclude the {@link LoanMath#SALARY_GRACE_DAYS} grace and are capped at
+     * and penalty days exclude the loan's own {@code graceDays} (1 on legacy loans) and are capped at
      * {@link LoanMath#LATE_PENALTY_CAP_DAYS}. Exposed so collections can show "1%/day × N days"
      * rather than an unexplained rupee figure, without re-deriving (and forking) the math.
      */
@@ -328,9 +332,9 @@ public class RepaymentService {
         }
         int tenureDays = (int) ChronoUnit.DAYS.between(loan.getDisbursedOn(), loan.getDueDate());
         int daysToAsOf = (int) Math.max(0L, ChronoUnit.DAYS.between(loan.getDisbursedOn(), at));
-        int interestDays = Math.min(daysToAsOf, tenureDays + LoanMath.SALARY_GRACE_DAYS);
+        int interestDays = Math.min(daysToAsOf, tenureDays + loan.getGraceDays());
         int rawDpd = loanMath.daysPastDue(loan.getDueDate(), at);
-        int penaltyDays = Math.max(0, rawDpd - LoanMath.SALARY_GRACE_DAYS);
+        int penaltyDays = Math.max(0, rawDpd - loan.getGraceDays());
         long interest = loanMath.interestPaise(loan.getPrincipal(), interestDays);
         long penalty = loanMath.latePenaltyPaise(loan.getPrincipal(), penaltyDays);
         long formulaOwed = loanMath.outstandingPaise(loan.getPrincipal(), interestDays, penaltyDays, verified);
@@ -448,7 +452,16 @@ public class RepaymentService {
         loan.setClosedOn(settledOn);
         loanRepository.save(loan);
         // Mirror full repayment onto the application aggregate (ACTIVE/OVERDUE → CLOSED).
-        applicationFlowService.closeForLoan(loanId);
+        // A settlement closure says so in the audit trail: the borrower did not pay the full formula balance.
+        var settlement = settlementDirectory.approvedSettlementAmount(loanId);
+        if (settlement.isPresent()) {
+            applicationFlowService.closeForLoan(loanId, "Closed by approved settlement of "
+                    + java.text.NumberFormat.getCurrencyInstance(java.util.Locale.of("en", "IN"))
+                            .format(settlement.get() / 100.0)
+                    + " (full & final)");
+        } else {
+            applicationFlowService.closeForLoan(loanId);
+        }
         // DSA commission maturity: flip ACCRUED -> PAYABLE (or VOID on an approved settlement /
         // default / write-off). A no-op when this loan has no DSA commission.
         dsaCommissionService.onLoanClosed(loanId);

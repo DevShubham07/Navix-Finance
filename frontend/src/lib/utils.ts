@@ -47,6 +47,22 @@ export function normalizeMobile(raw: string): string {
 }
 
 /**
+ * Every date this product shows is an **IST business day**, because that is the day the backend
+ * means.
+ *
+ * The lender operates in one time zone: a loan's due date, a DPD bucket and a report window are all
+ * computed server-side as `atStartOfDay(Asia/Kolkata)`. These formatters used to pass no `timeZone`,
+ * so they rendered the *browser's* day instead — identical in India, and off by one for anyone
+ * abroad or on a machine set to UTC, which is also what CI and every test runner are. A repayment
+ * recorded at 20:30 UTC then displayed as the 4th while the server, the register's date filter and
+ * the audit trail all called it the 5th.
+ *
+ * Pinning it here rather than at each call site is deliberate: there are ~64 files using these two
+ * functions, and a per-page fix leaves the next page wrong.
+ */
+const IST = "Asia/Kolkata";
+
+/**
  * Format a date (Date | ISO string) as a human-readable Indian date.
  *
  * Date-only — use this for true calendar dates (e.g. the salary-linked loan due
@@ -56,6 +72,7 @@ export function normalizeMobile(raw: string): string {
 export function formatDate(date: Date | string): string {
   const d = typeof date === "string" ? new Date(date) : date;
   return new Intl.DateTimeFormat("en-IN", {
+    timeZone: IST,
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -71,6 +88,7 @@ export function formatDate(date: Date | string): string {
 export function formatDateTime(date: Date | string): string {
   const d = typeof date === "string" ? new Date(date) : date;
   return new Intl.DateTimeFormat("en-IN", {
+    timeZone: IST,
     day: "2-digit",
     month: "short",
     year: "numeric",

@@ -24,6 +24,7 @@ import type { EventView } from "@/lib/api/applications";
 import { STAFF_ROLE_LABELS, type StaffRole } from "@/lib/auth/rbac";
 import { EmptyState } from "@/components/ui";
 import { cn, formatDateTime } from "@/lib/utils";
+import { formatEventNotes } from "@/lib/staff/event-notes";
 
 /**
  * Event trail entry — the shared shape rendered by {@link EventTimeline}.
@@ -154,7 +155,7 @@ export function EventTimeline({ events, className, dense }: EventTimelineProps) 
                 {e.actingRole ? ` (as ${STAFF_ROLE_LABELS[e.actingRole as StaffRole] ?? e.actingRole})` : ""} · {formatDateTime(e.at)}
               </div>
               {e.notes ? (
-                <p className={cn("mt-1 text-ink/90", dense ? "text-xs" : "text-sm")}>{e.notes}</p>
+                <p className={cn("mt-1 text-ink/90", dense ? "text-xs" : "text-sm")}>{formatEventNotes(e.notes)}</p>
               ) : null}
             </div>
           </li>

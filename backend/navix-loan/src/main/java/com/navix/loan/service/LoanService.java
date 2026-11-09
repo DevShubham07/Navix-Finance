@@ -27,6 +27,7 @@ public class LoanService {
 
     private final LoanRepository loanRepository;
     private final LoanMath loanMath;
+    private final RepaymentDiscountOffers discountOffers;
 
     @Transactional(readOnly = true)
     public Loan getLoan(Long id) {
@@ -53,20 +54,29 @@ public class LoanService {
         LocalDate dueDate = loanMath.dueDateFromSalary(disbursed, salaryDay);
         int tenureDays = (int) java.time.temporal.ChronoUnit.DAYS.between(disbursed, dueDate);
 
+        // The repayment discount pinned at reborrow: the SAME percent the summary and the Key Fact
+        // Statement used (both read the application), so the three can never disagree.
+        int discountPercent = application.feeDiscountPercentOrZero();
+
         Loan loan = new Loan();
         loan.setCustomerId(application.getCustomerId());
         loan.setPrincipal(principal);
-        loan.setProcessingFee(loanMath.processingFeePaise(principal));
-        loan.setGst(loanMath.gstPaise(principal));
-        loan.setNetDisbursed(loanMath.netDisbursedPaise(principal));
+        loan.setProcessingFee(loanMath.processingFeePaise(principal, discountPercent));
+        loan.setGst(loanMath.gstPaise(principal, discountPercent));
+        loan.setNetDisbursed(loanMath.netDisbursedPaise(principal, discountPercent));
+        loan.setFeeDiscountPaise(loanMath.feeDiscountPaise(principal, discountPercent));
         loan.setDailyInterestRate(LoanMath.DAILY_INTEREST_RATE.setScale(4, java.math.RoundingMode.UNNECESSARY));
         loan.setDisbursedOn(disbursed);
         loan.setDueDate(dueDate);
+        loan.setGraceDays(LoanMath.SALARY_GRACE_DAYS);
         long total = loanMath.totalRepayablePaise(principal, tenureDays);
         loan.setTotalRepayable(total);
         loan.setOutstanding(total);
         loan.setStatus(LoanStatus.ACTIVE);
         loan.setDisbursalTxnRef(disbursalTxnRef != null && !disbursalTxnRef.isBlank() ? disbursalTxnRef : null);
-        return loanRepository.save(loan);
+        Loan saved = loanRepository.save(loan);
+        // One-shot: a second consumption of the same offer refuses the disbursal (rolls this back).
+        discountOffers.consume(application, saved.getId());
+        return saved;
     }
 }

@@ -5,85 +5,62 @@
  * (`DecisionHistoryService.rosterFor`). These helpers only shape what the page renders.
  */
 
-import { ApplicationApiError, type StaffPerformanceRow } from "@/lib/api/applications";
+import { ApplicationApiError } from "@/lib/api/applications";
+import type { PerformanceEntity } from "./performance-entities";
 
 export type PerformanceSortDir = "asc" | "desc";
 
-/** Every column the register can sort by — one list so URL validation and the headers can't drift. */
-export const PERFORMANCE_SORT_KEYS = [
-  "staffName",
-  "role",
-  "accepted",
-  "rejected",
-  "pendingNow",
-  "totalActions",
-  "activeDays",
-  "avgTurnaroundMinutes",
-  "moneyPaise",
-  "callsMade",
-] as const;
-export type PerformanceSortKey = (typeof PERFORMANCE_SORT_KEYS)[number];
-
-/** The register's default order; omitted from the URL, the same way `/staff/loans` omits its own. */
-export const PERFORMANCE_DEFAULT_SORT: { key: PerformanceSortKey; dir: PerformanceSortDir } = {
-  key: "totalActions",
-  dir: "desc",
-};
-
-export function isPerformanceSortKey(v: string | null | undefined): v is PerformanceSortKey {
-  return !!v && (PERFORMANCE_SORT_KEYS as readonly string[]).includes(v);
+/** Every column an entity's register can sort by: the name, plus each of its metrics. */
+export function performanceSortKeys(entity: PerformanceEntity): string[] {
+  return ["staffName", ...entity.metrics.map((m) => m.key)];
 }
 
-/** `?sort=&dir=` → a valid sort; anything unrecognised falls back to the default. */
+export function isPerformanceSortKey(v: string | null | undefined, entity: PerformanceEntity): v is string {
+  return !!v && performanceSortKeys(entity).includes(v);
+}
+
+/** `?sort=&dir=` → a valid sort for this entity; anything unrecognised falls back to its default. */
 export function parsePerformanceSort(
   sort: string | null | undefined,
   dir: string | null | undefined,
-): { key: PerformanceSortKey; dir: PerformanceSortDir } {
+  entity: PerformanceEntity,
+): { key: string; dir: PerformanceSortDir } {
   return {
-    key: isPerformanceSortKey(sort) ? sort : PERFORMANCE_DEFAULT_SORT.key,
-    dir: dir === "asc" ? "asc" : dir === "desc" ? "desc" : PERFORMANCE_DEFAULT_SORT.dir,
+    key: isPerformanceSortKey(sort, entity) ? sort : entity.defaultSort,
+    dir: dir === "asc" ? "asc" : "desc",
   };
 }
 
 /**
- * The query string with the sort written into it, every other parameter kept as-is. Default values
- * are deleted rather than written, so an untouched page keeps a clean URL. Returned normalised by
- * `URLSearchParams`, so callers can compare it with `searchParams.toString()` to skip a no-op replace.
+ * The query string with the sort written into it, every other parameter kept as-is. The entity's
+ * default (its headline metric, descending) is deleted rather than written, so an untouched page
+ * keeps a clean URL. Returned normalised by `URLSearchParams`, so callers can compare it with
+ * `searchParams.toString()` to skip a no-op replace.
  */
-export function withPerformanceSort(current: string, key: string, dir: PerformanceSortDir): string {
+export function withPerformanceSort(
+  current: string,
+  key: string,
+  dir: PerformanceSortDir,
+  entity: PerformanceEntity,
+): string {
   const p = new URLSearchParams(current);
-  if (key === PERFORMANCE_DEFAULT_SORT.key) p.delete("sort");
+  if (key === entity.defaultSort) p.delete("sort");
   else p.set("sort", key);
-  if (dir === PERFORMANCE_DEFAULT_SORT.dir) p.delete("dir");
+  if (dir === "desc") p.delete("dir");
   else p.set("dir", dir);
   return p.toString();
 }
 
-export interface PerformanceTotals {
-  accepted: number;
-  rejected: number;
-  actions: number;
-  pending: number;
-  calls: number;
-}
-
 /**
- * Tile totals over the rows on screen, or `null` when there is no data to total yet. `undefined`
- * (nothing loaded) must not reduce to zeros: a 0 under "Approved" is a claim that nobody approved
- * anything, which is not what "still loading" means.
+ * The query string switched to another entity. The sort is dropped with it: each entity has its own
+ * columns, so a sort on one ("interactions") means nothing on the next.
  */
-export function performanceTotals(rows: readonly StaffPerformanceRow[] | undefined): PerformanceTotals | null {
-  if (!rows) return null;
-  return rows.reduce<PerformanceTotals>(
-    (acc, r) => ({
-      accepted: acc.accepted + r.accepted,
-      rejected: acc.rejected + r.rejected,
-      actions: acc.actions + r.totalActions,
-      pending: acc.pending + r.pendingNow,
-      calls: acc.calls + r.callsMade,
-    }),
-    { accepted: 0, rejected: 0, actions: 0, pending: 0, calls: 0 },
-  );
+export function withPerformanceEntity(current: string, entityKey: string): string {
+  const p = new URLSearchParams(current);
+  p.set("entity", entityKey);
+  p.delete("sort");
+  p.delete("dir");
+  return p.toString();
 }
 
 /**

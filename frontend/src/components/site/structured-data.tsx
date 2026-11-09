@@ -7,7 +7,7 @@ const BASE = "https://www.dhanboost.com";
  * it ships server-side on every marketing page.
  *
  * `@type` is `Organization`, deliberately NOT `FinancialService`: DhanBoost is a lending PLATFORM,
- * not the lender of record (the RBI-registered NBFC partners are). `FinancialService` would
+ * not the lender of record (the RBI-registered NBFC partner, MLB Securities Private Limited, is). `FinancialService` would
  * machine-assert that DhanBoost provides the loan. Lending is represented separately (via
  * `LoanOrCredit` with `provider` = the partner NBFC) as a later, content-gated step.
  *

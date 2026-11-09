@@ -96,4 +96,13 @@ class DocumentStorageServiceTest {
 
         assertThat(key).isEqualTo("key");
     }
+
+    @Test
+    void presignUploadRefusesContentTypesThatBrowsersRenderAsActiveContent() {
+        for (String type : new String[] {"text/html", "image/svg+xml", "application/xhtml+xml", "text/xml",
+                "application/javascript", "TEXT/HTML; charset=utf-8"}) {
+            assertThatThrownBy(() -> service.presignUpload("applications/1/bank_statement/1.pdf", type))
+                    .isInstanceOf(com.navix.common.exception.BusinessException.class);
+        }
+    }
 }

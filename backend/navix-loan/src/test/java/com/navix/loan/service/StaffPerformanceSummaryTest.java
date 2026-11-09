@@ -7,6 +7,7 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 import com.navix.common.collections.CollectionActivityDirectory;
+import com.navix.common.collections.CollectionStaffStats;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
@@ -170,6 +171,58 @@ class StaffPerformanceSummaryTest {
 
     private StaffPerformanceRow rowFor(StaffPerformanceSummary s, long staffId) {
         return s.rows().stream().filter(r -> r.staffId() == staffId).findFirst().orElseThrow();
+    }
+
+    @Test
+    void breaksActionsDownByTypeAndSplitsSanctionedFromReleasedValue() {
+        StaffSummary disb = new StaffSummary(50L, "Dev Shah", "DISBURSEMENT_HEAD", true);
+        rosterIsEveryone(NEHA, disb);
+        when(eventRepository.findForActorsInWindow(anyCollection(), any(), any())).thenReturn(List.of(
+                event("42", "ASSIGN", ist("2026-08-10", 10), 1L, "assigneeId=41"),
+                event("42", "ASSIGN", ist("2026-08-10", 11), 2L, "assigneeId=41"),
+                event("42", "REASSIGN", ist("2026-08-10", 12), 2L, "assigneeId=42"),
+                event("42", "SANCTION", ist("2026-08-10", 13), 2L, "amountPaise=300000"),
+                event("42", "AUTO_REJECT_BLOCKLISTED", ist("2026-08-10", 14), 3L, null),
+                event("50", "VALIDATE_SUCCESS", ist("2026-08-11", 10), 2L, "amountPaise=300000"),
+                event("50", "RETRY", ist("2026-08-11", 11), 4L, null)));
+
+        StaffPerformanceSummary summary = service.summary(null, null, null);
+        StaffPerformanceRow head = rowFor(summary, 42L);
+        StaffPerformanceRow disbHead = rowFor(summary, 50L);
+
+        assertThat(head.actionCounts()).containsExactlyInAnyOrderEntriesOf(
+                Map.of("ASSIGN", 2L, "REASSIGN", 1L, "SANCTION", 1L));
+        assertThat(head.sanctionedPaise()).isEqualTo(300_000L);
+        assertThat(head.releasedPaise()).isZero();
+        assertThat(disbHead.actionCounts()).containsEntry("VALIDATE_SUCCESS", 1L).containsEntry("RETRY", 1L);
+        assertThat(disbHead.releasedPaise()).isEqualTo(300_000L);
+        assertThat(disbHead.sanctionedPaise()).isZero();
+        // A staffer with no collections footprint gets zeros, never a null the UI must special-case.
+        assertThat(head.collections()).isEqualTo(CollectionStaffStats.NONE);
+    }
+
+    @Test
+    void foldsCollectionsWorkIntoTheCollectorsActiveDaysAndTrend() {
+        StaffSummary collector = new StaffSummary(60L, "Isha Paul", "COLLECTION_EXECUTIVE", true);
+        rosterIsEveryone(collector);
+        when(eventRepository.findForActorsInWindow(anyCollection(), any(), any())).thenReturn(List.of());
+        CollectionStaffStats stats = new CollectionStaffStats(
+                3, 1, 1, 0, 1, 0, 4, 1, 50_000, 1, 50_000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        when(collectionActivity.statsByStaff(anyCollection(), any(), any())).thenReturn(Map.of(60L,
+                new CollectionActivityDirectory.StaffActivity(stats, List.of(
+                        ist("2026-08-10", 9), ist("2026-08-10", 15), ist("2026-08-12", 11)))));
+
+        StaffPerformanceSummary summary = service.summary(
+                LocalDate.parse("2026-08-01"), LocalDate.parse("2026-08-31"), null);
+        StaffPerformanceRow row = rowFor(summary, 60L);
+
+        assertThat(row.collections()).isEqualTo(stats);
+        // No application events at all, yet they worked two days — the page must not say zero.
+        assertThat(row.activeDays()).isEqualTo(2);
+        assertThat(row.firstActionAt()).isEqualTo(ist("2026-08-10", 9));
+        assertThat(row.lastActionAt()).isEqualTo(ist("2026-08-12", 11));
+        assertThat(row.daily()).extracting(DecisionHistoryService.ActivityPoint::actions).containsExactly(2L, 1L);
+        assertThat(summary.daily()).isEqualTo(row.daily());
     }
 
     @Test

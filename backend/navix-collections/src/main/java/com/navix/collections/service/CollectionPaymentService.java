@@ -345,6 +345,7 @@ public class CollectionPaymentService {
         if (role == null || "BORROWER".equals(role) || "ANONYMOUS".equals(role) || "DSA".equals(role)) {
             throw new BusinessException("FORBIDDEN_ROLE", "Staff role required");
         }
+        CollectionsService.requireReaderRole(role);
     }
 
     /** Authorise the current actor against one of {@code roles} (ADMIN always passes). */

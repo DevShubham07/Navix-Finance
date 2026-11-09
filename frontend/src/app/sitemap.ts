@@ -26,6 +26,7 @@ const ROUTES: { path: string; priority: number }[] = [
   { path: "/careers", priority: 0.4 },
   { path: "/privacy", priority: 0.3 },
   { path: "/terms", priority: 0.3 },
+  { path: "/refund-policy", priority: 0.3 },
   // Blog posts (keep in sync with _content/blog-posts.ts POST_SLUGS and scripts/indexnow-submit.mjs).
   { path: "/blog/how-to-read-a-kfs", priority: 0.5 },
   { path: "/blog/signs-of-a-loan-scam", priority: 0.5 },

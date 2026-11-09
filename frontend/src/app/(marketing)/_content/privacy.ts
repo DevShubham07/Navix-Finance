@@ -5,14 +5,14 @@ import { BRAND } from "@/lib/brand";
 import { COMMUNICATION_PRIVACY_TEXT } from "@/lib/communication-consent";
 
 export const html = `<section class="page active" id="privacy">
-  <div class="page-hero"><div class="wrap"><div class="crumb"><a href="/" data-link="">Home</a> &nbsp;/&nbsp; Privacy Policy</div><h1>Privacy Policy</h1><p>How we collect, use and protect your information. Last updated: June 2026.</p></div></div>
+  <div class="page-hero"><div class="wrap"><div class="crumb"><a href="/" data-link="">Home</a> &nbsp;/&nbsp; Privacy Policy</div><h1>Privacy Policy</h1><p>How we collect, use and protect your information. Last updated: November 2026.</p></div></div>
   <div class="sec"><div class="wrap"><div class="prose">
-    <div class="callout"><b>In short:</b> We collect only what's needed to process your loan, protect it with strong security, never sell it, and share it only with the partner NBFC and as required by law.</div>
+    <div class="callout"><b>In short:</b> We collect only what's needed to process your loan, protect it with strong security, never sell it, and share it only with the partner NBFC, the service providers working for us, credit bureaus, and as required by law.</div>
     <h2>1. Who we are</h2>
-    <p>NAVIX Finance Private Limited ("DhanBoost", "we", "us") operates a digital lending platform that connects borrowers with RBI-registered NBFC lending partners. We are a platform, not a lender.</p>
+    <p>NAVIX Finance Private Limited ("DhanBoost", "we", "us") operates a digital lending platform that connects borrowers with its RBI-registered NBFC lending partner, MLB Securities Private Limited. We are a platform, not a lender.</p>
     <h2>2. Information we collect</h2>
     <ul>
-      <li>Identity &amp; KYC data: name, date of birth, PAN, Aadhaar (via authorised e-KYC).</li>
+      <li>Identity &amp; KYC data: name, date of birth, PAN, Aadhaar number, images of your PAN and Aadhaar cards, a selfie, and records you share through DigiLocker.</li>
       <li>Contact data: mobile number, email, address.</li>
       <li>Financial data: income details, bank account information for verification and disbursal.</li>
       <li>Device &amp; usage data: collected to keep the platform secure and improve the experience.</li>
@@ -27,7 +27,7 @@ export const html = `<section class="page active" id="privacy">
       <!-- /hand-added: compliance copy, keep on regeneration -->
     </ul>
     <h2>4. Sharing</h2>
-    <p>We share your information with the relevant RBI-registered NBFC lending partner to process your loan, and with service providers bound by confidentiality. We do not sell your personal data.</p>
+    <p>We share your information with our RBI-registered NBFC lending partner, MLB Securities Private Limited, to process your loan, and with service providers bound by confidentiality. Your credit report is obtained from credit information companies with your consent, and the lender may report your loan and repayment information to them, as permitted by law. When you pay online, your name, email, mobile number and payment amount are shared with PayU Payments Private Limited to process the payment. Card details you enter on PayU's page are not received or stored by us. We do not sell your personal data.</p>
     <h2>5. Security</h2>
     <p>We use 256-bit encryption in transit, access controls and ISO-27001-aligned practices. While no system is perfectly secure, we work hard to protect your data.</p>
     <h2>6. Your rights</h2>

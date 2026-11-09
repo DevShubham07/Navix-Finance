@@ -164,6 +164,22 @@ public class LoanApplication {
     @Column(name = "reapplied_from")
     private Long reappliedFrom;
 
+    /**
+     * Repayment-discount percent (1..7) pinned by {@code reborrow} (V95): taken off the processing
+     * fee by the summary, the Key Fact Statement and the disbursed loan alike. Null = none.
+     */
+    @Column(name = "fee_discount_percent")
+    private Short feeDiscountPercent;
+
+    /** The {@code repayment_discount_offer} behind {@link #feeDiscountPercent}; marked used at disbursal. */
+    @Column(name = "fee_discount_offer_id")
+    private Long feeDiscountOfferId;
+
+    /** The pinned discount as a whole percent; 0 when none. */
+    public int feeDiscountPercentOrZero() {
+        return feeDiscountPercent == null ? 0 : feeDiscountPercent;
+    }
+
     @PrePersist
     void defaultCreatedAt() {
         if (createdAt == null) {

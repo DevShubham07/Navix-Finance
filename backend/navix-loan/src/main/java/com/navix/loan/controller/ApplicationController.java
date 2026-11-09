@@ -64,6 +64,7 @@ import org.springframework.web.bind.annotation.RestController;
  * transitions. Staff identity (and thus the required role + SoD) comes from the demo actor headers
  * (X-Demo-Actor-Id / X-Demo-Actor-Role).
  */
+@lombok.extern.slf4j.Slf4j
 @RestController
 @RequestMapping("/api/applications")
 @RequiredArgsConstructor
@@ -77,6 +78,7 @@ public class ApplicationController {
     private final AdminApplicationService adminApplications;
     private final JourneyService journey;
     private final OfferService offer;
+    private final com.navix.loan.service.MandateService mandateService;
     private final StaffDirectory staffDirectory;
     private final ApplicationActorDirectory applicationActorDirectory;
     private final com.navix.common.collections.CollectionCaseDirectory collectionCaseDirectory;
@@ -84,10 +86,11 @@ public class ApplicationController {
     private final ApplicationEventRepository eventRepository;
     private final EligibilityService eligibilityService;
     private final com.navix.loan.service.CustomerTrustSignalsService trustSignals;
+    private final com.navix.loan.service.CustomerService customerService;
 
     @PostMapping
     public ApiResponse<ApplicationView> create(@Valid @RequestBody CreateApplicationRequest request) {
-        return ApiResponse.ok(ApplicationView.of(flow.createDraft(request.customerId())));
+        return ApiResponse.ok(ApplicationView.of(flow.createDraft(request.customerId())).forReader());
     }
 
     /**
@@ -96,7 +99,7 @@ public class ApplicationController {
      */
     @PostMapping("/reborrow")
     public ApiResponse<ApplicationView> reborrow() {
-        return ApiResponse.ok(ApplicationView.of(flow.reborrow()));
+        return ApiResponse.ok(ApplicationView.of(flow.reborrow()).forReader());
     }
 
     /** Stage queue, e.g. ?status=KYC_PENDING / DISBURSEMENT_PENDING / ACCOUNTANT_PENDING. Staff-only:
@@ -114,9 +117,52 @@ public class ApplicationController {
             @RequestParam(required = false)
             @org.springframework.format.annotation.DateTimeFormat(
                     iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate to,
-            @RequestParam(required = false) String q) {
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) Boolean mine) {
         requireStaff();
-        return ApiResponse.ok(enrich(flow.byStatus(status, from, to, q)));
+        if ("TELECALLER".equals(ActorContext.get().role())) {
+            throw new BusinessException("FORBIDDEN_ROLE", "Staff role required");
+        }
+        List<LoanApplication> scoped = scopeToActor(flow.byStatus(status, from, to, q), Boolean.TRUE.equals(mine));
+        // Same customer book as /api/customers: drop rows whose customer is outside the caller's book.
+        java.util.Set<Long> visible = customerService.visibleAmong(
+                scoped.stream().map(LoanApplication::getCustomerId).filter(java.util.Objects::nonNull).toList());
+        return ApiResponse.ok(enrich(scoped.stream().filter(a -> visible.contains(a.getCustomerId())).toList()));
+    }
+
+    /**
+     * Narrow a stage queue to the caller's own files, by working role. The flow service already
+     * scopes a Credit Executive to their assigned files; this adds the two roles whose "own" files are
+     * recorded outside {@code loan_application}:
+     * <ul>
+     *   <li>a <b>Collection Executive</b> always sees only the loans whose collections case is
+     *       assigned to them (their repayment book, open and closed) — never the whole book;</li>
+     *   <li>a <b>Disbursement Head</b> asking for {@code mine=true} (their past-disbursed history)
+     *       sees only the files they released, read off the event trail.</li>
+     * </ul>
+     * Other roles, and a Disbursement Head reading their live desk, get the queue unchanged.
+     */
+    private List<LoanApplication> scopeToActor(List<LoanApplication> apps, boolean mine) {
+        var actor = ActorContext.get();
+        String role = actor.effectiveRole();
+        if (apps.isEmpty() || !("COLLECTION_EXECUTIVE".equals(role) || (mine && "DISBURSEMENT_HEAD".equals(role)))) {
+            return apps;
+        }
+        Long me;
+        try {
+            me = Long.valueOf(actor.id());
+        } catch (RuntimeException e) {
+            return List.of();
+        }
+        if ("COLLECTION_EXECUTIVE".equals(role)) {
+            java.util.Set<Long> myLoans = collectionCaseDirectory.loanIdsAssignedTo(me);
+            return apps.stream().filter(a -> a.getLoanId() != null && myLoans.contains(a.getLoanId())).toList();
+        }
+        Map<Long, ApplicationActorDirectory.HandledBy> handled =
+                applicationActorDirectory.byApplicationId(apps.stream().map(LoanApplication::getId).toList());
+        return apps.stream()
+                .filter(a -> me.equals(handled.getOrDefault(a.getId(), ApplicationActorDirectory.HandledBy.NONE).disbursedById()))
+                .toList();
     }
 
     /** Credit Head queue: KYC-approved applications the borrower has applied on (credit-enriched).
@@ -171,7 +217,7 @@ public class ApplicationController {
         Long available = mine.isEmpty() ? null
                 : eligibilityService.overrideOf(mine.get(0).getCustomerId()).orElse(null);
         return ApiResponse.ok(mine.stream()
-                .map(a -> ApplicationView.of(a).withAvailableLimit(available))
+                .map(a -> ApplicationView.of(a).withAvailableLimit(available).forReader())
                 .toList());
     }
 
@@ -180,6 +226,26 @@ public class ApplicationController {
     @GetMapping("/all")
     public ApiResponse<List<AdminApplicationView>> all() {
         return ApiResponse.ok(adminApplications.listAll());
+    }
+
+    /** ADMIN — one page of {@link #all()}, searched, completeness-filtered and paged server-side. */
+    @GetMapping("/all/page")
+    public ApiResponse<com.navix.loan.dto.AdminApplicationDtos.AdminApplicationPage> allPage(
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) String completeness,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "25") int size,
+            // The whole query string: the column filters arrive as f.<column>; FilterSpec keeps only the
+            // columns the register declared and drops the rest.
+            @RequestParam java.util.Map<String, String> params) {
+        return ApiResponse.ok(adminApplications.page(q, completeness, params, page, size));
+    }
+
+    /** ADMIN — the distinct values of one column, narrowed by every other column's {@code f.*} filter. */
+    @GetMapping("/all/facets")
+    public ApiResponse<com.navix.common.query.SqlFacets.Facet> allFacet(
+            @RequestParam String column, @RequestParam java.util.Map<String, String> params) {
+        return ApiResponse.ok(adminApplications.facet(column, params));
     }
 
     /** ADMIN — the rejection register (self-employed, past delinquency, manual), newest first. */
@@ -210,13 +276,19 @@ public class ApplicationController {
             view = view.withAssignment(resolveExecutiveName(app.getAssignedExecutiveId()),
                     latestEventAt(id));
         }
-        return ApiResponse.ok(view);
+        return ApiResponse.ok(view.forReader());
     }
 
     @GetMapping("/{id}/events")
     public ApiResponse<List<EventView>> events(@PathVariable Long id) {
         requireBorrowerOwnsOrStaff(id);
-        return ApiResponse.ok(flow.eventViews(id));
+        var events = flow.eventViews(id);
+        if ("BORROWER".equals(ActorContext.get().role())) {
+            // The audit trail carries staff remarks (reject/pending reasons, fraud-rule detail) and
+            // staff identities; the borrower's timeline needs only the transitions.
+            events = events.stream().map(EventView::forBorrower).toList();
+        }
+        return ApiResponse.ok(events);
     }
 
     /**
@@ -259,30 +331,11 @@ public class ApplicationController {
         return ApiResponse.ok(verification.retryExternalCheck(id, checkType, input));
     }
 
-    /**
-     * Pending-API dashboard: cross-application verification overview + status tallies (Phase 3.3). Staff.
-     *
-     * <p>Rows are paged by application. By default only applications that still need a reviewer's
-     * attention are returned — the dashboard's own "failures" and "awaiting" buckets — because the
-     * undecided queue is dominated by abandoned DRAFT intakes whose rows nobody acts on.
-     * {@code needsAttention=false} returns every undecided application. The five tallies always cover
-     * the whole queue, whatever the paging or the filter.
-     */
-    @GetMapping("/verifications/overview")
-    public ApiResponse<ApplicationVerificationService.VerificationOverview> verificationOverview(
-            @RequestParam(required = false) String status,
-            @RequestParam(required = false) String checkType,
-            @RequestParam(required = false) String q,
-            @RequestParam(required = false) Boolean needsAttention,
-            @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "25") int size) {
-        requireStaff();
-        return ApiResponse.ok(verification.overview(status, checkType, q, needsAttention, page, size));
-    }
-
     /** Staff nudges the borrower with their pending verification steps (Phase 3.4). KYC approver / admin. */
     @PostMapping("/{id}/send-reminder")
     public ApiResponse<ApplicationVerificationService.ReminderResult> sendReminder(@PathVariable Long id) {
+        requireStaff();
+        customerService.assertVisible(flow.customerIdOf(id));
         return ApiResponse.ok(verification.sendKycReminder(id));
     }
 
@@ -310,6 +363,7 @@ public class ApplicationController {
     @GetMapping("/{id}/credit-brief")
     public ApiResponse<CreditBriefView> creditBrief(@PathVariable Long id) {
         requireStaff();
+        customerService.assertVisible(flow.customerIdOf(id));
         return ApiResponse.ok(creditBrief.view(id));
     }
 
@@ -330,7 +384,20 @@ public class ApplicationController {
             throw new BusinessException("KYC_INCOMPLETE",
                     "Upload both sides of your Aadhaar card and PAN card before submitting");
         }
-        return ApiResponse.ok(ApplicationView.of(flow.submitKyc(id)));
+        // Duplicate-Aadhaar rule: the number is already on another customer's submitted application.
+        // Rejected (permanently, with the earlier case referenced in the register) instead of submitted.
+        LoanApplication duplicateRejected = verification.rejectIfAadhaarDuplicate(id);
+        if (duplicateRejected != null) {
+            return ApiResponse.ok(ApplicationView.of(duplicateRejected).forReader());
+        }
+        // Credit-side check that rides along with submission; never blocks it (a miss is REVIEW, and an
+        // outage is recorded by the service), so a stray exception here must not strand the borrower.
+        try {
+            verification.verifyPanAadhaarLink(id);
+        } catch (RuntimeException e) {
+            log.warn("PAN-Aadhaar link check failed application={} exception={}", id, e.getClass().getSimpleName());
+        }
+        return ApiResponse.ok(ApplicationView.of(flow.submitKyc(id)).forReader());
     }
 
     /** Where this application is in the onboarding journey — the server answer that makes a second
@@ -369,7 +436,7 @@ public class ApplicationController {
         requireBorrowerOwnsOrStaff(id);
         return ApiResponse.ok(ApplicationView.of(flow.autoReject(id,
                 ApplicationRejection.SELF_EMPLOYED, "Declared self-employed at intake",
-                ApplicationFlowService.SELF_EMPLOYED_BLOCK_DAYS)));
+                ApplicationFlowService.SELF_EMPLOYED_BLOCK_DAYS)).forReader());
     }
 
     @PostMapping("/{id}/kyc-decision")
@@ -382,7 +449,7 @@ public class ApplicationController {
         requireBorrowerOwnsOrStaff(id);
         return ApiResponse.ok(ApplicationView.of(
                 flow.apply(id, req.amountPaise(), req.purpose(), req.eligibleLimitPaise(),
-                        req.salaryCreditDay())));
+                        req.salaryCreditDay())).forReader());
     }
 
     @PostMapping("/{id}/assign")
@@ -414,7 +481,7 @@ public class ApplicationController {
     public ApiResponse<ApplicationView> acceptOffer(@PathVariable Long id, @RequestBody(required = false) ApplyRequest req) {
         requireBorrowerOwnsOrStaff(id);
         return ApiResponse.ok(ApplicationView.of(
-                flow.acceptOffer(id, req == null || req.amountPaise() == 0 ? null : req.amountPaise())));
+                flow.acceptOffer(id, req == null || req.amountPaise() == 0 ? null : req.amountPaise())).forReader());
     }
 
     @PostMapping("/{id}/disbursement-decision")
@@ -427,6 +494,180 @@ public class ApplicationController {
     @PostMapping("/{id}/force-disbursement-pending")
     public ApiResponse<ApplicationView> forceDisbursementPending(@PathVariable Long id, @RequestBody DecisionRequest req) {
         return ApiResponse.ok(ApplicationView.of(flow.adminForceDisbursementPending(id, req.notes())));
+    }
+
+    /**
+     * The latest eMandate attempt: no authentication url, last four of the account only.
+     *
+     * <p>Readable by the owning borrower as well as staff — it is their own mandate, and the dashboard
+     * shows them their UMRN once a loan is live so auto-repayment is visible rather than invisible.
+     * Every field in {@code MandateView} is the borrower's own data; nothing staff-only is in it.
+     */
+    @GetMapping("/{id}/mandate")
+    public ApiResponse<com.navix.loan.service.MandateService.MandateView> mandate(@PathVariable Long id) {
+        requireBorrowerOwnsOrStaff(id);
+        return ApiResponse.ok(mandateService.staffView(id).orElse(null));
+    }
+
+    /**
+     * Invite this customer to set up auto-repayment, for someone who never saw the mandate step
+     * because their loan was already live. Returns the link so staff can copy it, and the
+     * notification engine also sends it on every channel the customer has.
+     *
+     * <p>Authorisation is an ALLOWLIST, like the manual debit: this sends a message to a real customer
+     * in our name, so a role we have not thought about must not inherit it by omission (CLAUDE.md
+     * section 7 — several controllers here gate with a deny-list and are open-by-default).
+     */
+    @PostMapping("/{id}/mandate/invite")
+    public ApiResponse<java.util.Map<String, String>> mandateInvite(@PathVariable Long id) {
+        String role = ActorContext.get() == null ? null : ActorContext.get().role();
+        if (role == null || !MANDATE_INVITE_ROLES.contains(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE",
+                    "This action requires role COLLECTION_HEAD, COLLECTION_EXECUTIVE, DISBURSEMENT_HEAD or ADMIN");
+        }
+        assertMandateVisible(id);
+        return ApiResponse.ok(java.util.Map.of("link", mandateService.invite(id)));
+    }
+
+    /**
+     * Every mandate attempt this customer has made, newest first. Staff-only read; no authorisation url.
+     */
+    @GetMapping("/{id}/mandate/history")
+    public ApiResponse<java.util.List<com.navix.loan.service.MandateService.MandateAttempt>> mandateHistory(
+            @PathVariable Long id) {
+        requireStaff();
+        assertMandateVisible(id);
+        return ApiResponse.ok(mandateService.history(id));
+    }
+
+    /**
+     * Re-read every unsettled attempt from the provider. Files nothing and cancels nothing — it exists
+     * because Digio's {@code auth_failed} is not terminal, so a row we wrote off may since have completed
+     * and only a re-read will show it.
+     */
+    @PostMapping("/{id}/mandate/refresh")
+    public ApiResponse<java.util.List<com.navix.loan.service.MandateService.MandateAttempt>> mandateRefresh(
+            @PathVariable Long id) {
+        String role = ActorContext.get() == null ? null : ActorContext.get().role();
+        if (role == null || !MANDATE_INVITE_ROLES.contains(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE",
+                    "This action requires role COLLECTION_HEAD, COLLECTION_EXECUTIVE, DISBURSEMENT_HEAD or ADMIN");
+        }
+        assertMandateVisible(id);
+        return ApiResponse.ok(mandateService.refresh(id));
+    }
+
+    /**
+     * Cancel one stale mandate attempt. Heads and ADMIN only — this withdraws a real registration at
+     * NPCI, which is a narrower act than inviting or re-checking.
+     */
+    @PostMapping("/{id}/mandate/{mandateId}/cancel")
+    public ApiResponse<com.navix.loan.service.MandateService.MandateAttempt> mandateCancel(
+            @PathVariable Long id, @PathVariable Long mandateId,
+            @RequestBody(required = false) CancelMandateRequest req) {
+        String role = ActorContext.get() == null ? null : ActorContext.get().role();
+        if (role == null || !MANDATE_CANCEL_ROLES.contains(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE",
+                    "This action requires role COLLECTION_HEAD, DISBURSEMENT_HEAD or ADMIN");
+        }
+        assertMandateVisible(id);
+        return ApiResponse.ok(mandateService.cancel(id, mandateId,
+                req != null && Boolean.TRUE.equals(req.withdrawLocally())));
+    }
+
+    /**
+     * Cancel the customer's ACTIVE mandate — the live debit authority — on their request or to replace it.
+     * Same roles as the stale-attempt cancel; the service demands a reason and a note and records who did it.
+     */
+    @PostMapping("/{id}/mandate/{mandateId}/cancel-active")
+    public ApiResponse<com.navix.loan.service.MandateService.MandateAttempt> mandateCancelActive(
+            @PathVariable Long id, @PathVariable Long mandateId, @RequestBody CancelActiveMandateRequest req) {
+        String role = ActorContext.get() == null ? null : ActorContext.get().role();
+        if (role == null || !MANDATE_CANCEL_ROLES.contains(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE",
+                    "This action requires role COLLECTION_HEAD, DISBURSEMENT_HEAD or ADMIN");
+        }
+        assertMandateVisible(id);
+        com.navix.loan.service.MandateService.CancelReason reason;
+        try {
+            reason = req == null || req.reason() == null ? null
+                    : com.navix.loan.service.MandateService.CancelReason.valueOf(req.reason());
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException("CANCEL_REASON_INVALID", "Unknown cancellation reason");
+        }
+        return ApiResponse.ok(mandateService.cancelActive(id, mandateId, reason, req == null ? null : req.notes()));
+    }
+
+    /**
+     * Change the account this customer's mandate registers against: refuse anything invalid, penny-drop the
+     * new account, then switch it, withdraw every old mandate and send the invite. Same roles as cancel; before
+     * payout the service narrows it to DISBURSEMENT_HEAD/ADMIN, since the account is then also the payee.
+     */
+    @PostMapping("/{id}/mandate/change-account")
+    public ApiResponse<com.navix.loan.service.MandateService.AccountChange> mandateChangeAccount(
+            @PathVariable Long id, @RequestBody ChangeMandateAccountRequest req) {
+        String role = ActorContext.get() == null ? null : ActorContext.get().role();
+        if (role == null || !MANDATE_CANCEL_ROLES.contains(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE",
+                    "This action requires role COLLECTION_HEAD, DISBURSEMENT_HEAD or ADMIN");
+        }
+        assertMandateVisible(id);
+        return ApiResponse.ok(mandateService.changeAccount(id, req == null ? null : req.accountNumber(),
+                req == null ? null : req.ifsc(), req == null ? null : req.notes()));
+    }
+
+    /** 404 when the application's customer is outside the caller's customer book. */
+    private void assertMandateVisible(Long id) {
+        customerService.assertVisible(flow.customerIdOf(id));
+    }
+
+    public record ChangeMandateAccountRequest(String accountNumber, String ifsc, String notes) {
+    }
+
+    /** The mandate ceiling: the formula, any ADMIN override, and what a new registration would use. Staff. */
+    @GetMapping("/{id}/mandate/ceiling")
+    public ApiResponse<com.navix.loan.service.MandateService.MandateCeilingView> mandateCeiling(@PathVariable Long id) {
+        requireStaff();
+        assertMandateVisible(id);
+        return ApiResponse.ok(mandateService.ceilingView(id));
+    }
+
+    /**
+     * ADMIN: set ({@code ceilingPaise}) or clear (null) the customer's mandate-ceiling override. Raises only
+     * what a NEW mandate is registered for — never what the customer may borrow.
+     */
+    @PostMapping("/{id}/mandate/ceiling")
+    public ApiResponse<com.navix.loan.service.MandateService.MandateCeilingView> setMandateCeiling(
+            @PathVariable Long id, @RequestBody MandateCeilingRequest req) {
+        String role = ActorContext.get() == null ? null : ActorContext.get().role();
+        if (!"ADMIN".equals(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE", "This action requires role ADMIN");
+        }
+        return ApiResponse.ok(mandateService.setCeilingOverride(id,
+                req == null ? null : req.ceilingPaise(), req == null ? null : req.note()));
+    }
+
+    public record MandateCeilingRequest(Long ceilingPaise, String note) {
+    }
+
+    /** {@code reason} is a {@link com.navix.loan.service.MandateService.CancelReason} name. */
+    public record CancelActiveMandateRequest(String reason, String notes) {
+    }
+
+    /** {@code withdrawLocally}: mark a never-authorised attempt cancelled on our side when the bank refuses. */
+    public record CancelMandateRequest(Boolean withdrawLocally) {
+    }
+
+    private static final java.util.Set<String> MANDATE_CANCEL_ROLES = java.util.Set.of(
+            "COLLECTION_HEAD", "DISBURSEMENT_HEAD", "ADMIN");
+
+    private static final java.util.Set<String> MANDATE_INVITE_ROLES = java.util.Set.of(
+            "COLLECTION_HEAD", "COLLECTION_EXECUTIVE", "DISBURSEMENT_HEAD", "ADMIN");
+
+    /** DISBURSEMENT_HEAD/ADMIN: let a BANK_UNSUPPORTED file through the mandate gate (reason required). */
+    @PostMapping("/{id}/mandate/override")
+    public ApiResponse<ApplicationView> mandateOverride(@PathVariable Long id, @RequestBody DecisionRequest req) {
+        return ApiResponse.ok(ApplicationView.of(flow.mandateOverride(id, req.notes())));
     }
 
     // No accountant-validate endpoint: the Disbursement Head's transaction id IS the validation
@@ -449,7 +690,7 @@ public class ApplicationController {
     @PutMapping("/{id}/profile")
     public ApiResponse<ProfileView> saveProfile(@PathVariable Long id, @RequestBody ProfileRequest req) {
         requireBorrowerOwnsOrStaff(id);
-        return ApiResponse.ok(ProfileView.of(review.saveProfile(id, req)));
+        return ApiResponse.ok(forReader(ProfileView.of(review.saveProfile(id, req))));
     }
 
     /** Borrower self-edits their own profile (non-identity fields). Verification-linked edits reset the
@@ -457,7 +698,7 @@ public class ApplicationController {
     @PutMapping("/{id}/profile/self")
     public ApiResponse<ProfileView> editOwnProfile(@PathVariable Long id, @RequestBody EditProfileRequest req) {
         requireBorrowerOwnsOrStaff(id);
-        return ApiResponse.ok(ProfileView.of(review.editOwnProfile(id, req)));
+        return ApiResponse.ok(forReader(ProfileView.of(review.editOwnProfile(id, req))));
     }
 
     /** Any reviewing role reads the customer's KYC details (PAN masked). The staff-only credit
@@ -465,11 +706,7 @@ public class ApplicationController {
     @GetMapping("/{id}/profile")
     public ApiResponse<ProfileView> getProfile(@PathVariable Long id) {
         requireBorrowerOwnsOrStaff(id);
-        ProfileView v = ProfileView.of(review.getProfile(id));
-        if ("BORROWER".equals(ActorContext.get().role())) {
-            v = v.withoutCredit();
-        }
-        return ApiResponse.ok(v);
+        return ApiResponse.ok(forReader(ProfileView.of(review.getProfile(id))));
     }
 
     /** Borrower uploads a supporting document (base64 body so it rides the JSON BFF proxy). */
@@ -622,7 +859,7 @@ public class ApplicationController {
 
     /**
      * Ownership guard for the by-id reads: a BORROWER may only read their OWN application (its
-     * {@code customer_id} must equal the JWT subject); any staff role may read any application.
+     * {@code customer_id} must equal the JWT subject); staff read only applications inside their customer book.
      * Closes an IDOR — without this a borrower could fetch another customer's application, audit
      * trail, KYC profile or documents by guessing the id. (Anonymous/unauthenticated callers never
      * reach a controller method: {@code SecurityConfig} requires auth on {@code /api/**}.)
@@ -635,6 +872,15 @@ public class ApplicationController {
             if (owner == null || !owner.toString().equals(actor.id())) {
                 throw new BusinessException("FORBIDDEN", "Not your application");
             }
+        } else {
+            // Staff are held to the same customer book as /api/customers: a scoped role (Credit
+            // Executive, Accountant, Collection Executive, Telecaller) gets a 404 outside it.
+            customerService.assertVisible(flow.customerIdOf(id));
         }
+    }
+
+    /** The staff-only credit headline (score + rating) never reaches a borrower reading their own profile. */
+    private static ProfileView forReader(ProfileView v) {
+        return "BORROWER".equals(ActorContext.get().role()) ? v.withoutCredit() : v;
     }
 }

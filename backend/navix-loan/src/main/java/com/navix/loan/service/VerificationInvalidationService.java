@@ -50,7 +50,10 @@ public class VerificationInvalidationService {
             "monthlySalaryPaise", List.of("SALARY"),
             "employer", List.of("EMAIL", "EMPLOYMENT"),
             "employmentStatus", List.of("EMAIL", "EMPLOYMENT"),
-            "email", List.of("EMAIL"));
+            "email", List.of("EMAIL"),
+            "officialEmail", List.of("EMAIL", "OFFICIAL_EMAIL_OTP"),
+            "salaryAccountNumber", List.of("PENNY_DROP"),
+            "salaryIfsc", List.of("PENNY_DROP"));
 
     private final ApplicationVerificationRepository verificationRepo;
     private final CustomerProfileRepository profileRepo;

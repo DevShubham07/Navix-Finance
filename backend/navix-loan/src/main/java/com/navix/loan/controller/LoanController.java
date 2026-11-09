@@ -35,11 +35,12 @@ public class LoanController {
 
     private final RepaymentService repaymentService;
     private final TransactionService transactionService;
+    private final com.navix.loan.service.CustomerService customerService;
 
     @GetMapping("/{loanId}")
     public ApiResponse<LoanView> getLoan(@PathVariable Long loanId) {
         // Owner-or-staff: a borrower may only read their own loan (see requireReadableLoan).
-        var loan = repaymentService.requireReadableLoan(loanId);
+        var loan = readableLoan(loanId);
         // Single source of truth for "amount owed": the penalty/prepayment-aware balance, and an
         // effective status so a past-due ACTIVE loan reads as OVERDUE (matches the repay page).
         long owed = repaymentService.outstandingBreakdownAsOf(loan, null).outstandingPaise();
@@ -91,6 +92,44 @@ public class LoanController {
         return ApiResponse.ok(transactionService.listTransactions(q, direction, from, to, page, size));
     }
 
+    /**
+     * The ledger as a register page: the same rows and period/direction/search as {@code /transactions},
+     * plus {@code sort}/{@code dir} and the {@code f.<column>} filters (see
+     * {@code TransactionLedgerQuery.FILTER_COLUMNS}). {@code totalInPaise}/{@code totalOutPaise}/
+     * {@code pendingInPaise} follow the whole filter, not the page.
+     */
+    @GetMapping("/transactions/page")
+    public ApiResponse<TransactionService.TransactionPage> transactionsPage(
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) String direction,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "25") int size,
+            @RequestParam(required = false) String sort,
+            @RequestParam(required = false) String dir,
+            @RequestParam java.util.Map<String, String> all) {
+        // Same PII as /transactions (names + full PAN): Accountant + Admin only.
+        requireRole("ACCOUNTANT", "ADMIN");
+        return ApiResponse.ok(transactionService.page(q, direction, from, to, page, size, sort, dir, all));
+    }
+
+    /**
+     * The distinct values of one faceted ledger column ({@code column}), for its checklist, under the
+     * other columns' {@code f.*} filters and the same period/direction/search as the list.
+     */
+    @GetMapping("/transactions/facets")
+    public ApiResponse<com.navix.common.query.SqlFacets.Facet> transactionsFacets(
+            @RequestParam("column") String column,
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) String direction,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam java.util.Map<String, String> all) {
+        requireRole("ACCOUNTANT", "ADMIN");
+        return ApiResponse.ok(transactionService.facets(q, direction, from, to, column, all));
+    }
+
     /** Reject any actor whose role isn't in {@code allowed} (ADMIN included explicitly where needed). */
     private void requireRole(String... allowed) {
         String role = ActorContext.get().role();
@@ -102,19 +141,28 @@ public class LoanController {
         throw new BusinessException("FORBIDDEN_ROLE", "This action requires role " + String.join(" or ", allowed));
     }
 
+    /** The loan, if the caller owns it (borrower) or its customer is inside their staff book (else 404). */
+    private Loan readableLoan(Long loanId) {
+        Loan loan = repaymentService.requireReadableLoan(loanId);
+        if (!"BORROWER".equals(ActorContext.get().role())) {
+            customerService.assertVisible(loan.getCustomerId());
+        }
+        return loan;
+    }
+
     /** Authoritative compute-on-read balance (prepayment + penalty aware). Owner-or-staff. */
     @GetMapping("/{loanId}/outstanding")
     public ApiResponse<OutstandingView> outstanding(
             @PathVariable Long loanId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf) {
-        Loan loan = repaymentService.requireReadableLoan(loanId);
+        Loan loan = readableLoan(loanId);
         return ApiResponse.ok(view(loanId, asOf != null ? asOf : LocalDate.now(),
                 repaymentService.outstandingBreakdownAsOf(loan, asOf)));
     }
 
     /**
      * The three balances the repay screen quotes at once: as of today, on the salary day the loan is
-     * due, and on the one grace day after it.
+     * due, and on the loan's grace day after it (null when the loan carries none).
      *
      * <p>The borrower's repay page showed these as three separate {@code /outstanding?asOf=} calls,
      * so opening it cost three round trips (and three recomputes) for one screen. This answers all
@@ -128,11 +176,11 @@ public class LoanController {
     public ApiResponse<OutstandingScheduleView> outstandingSchedule(
             @PathVariable Long loanId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf) {
-        Loan loan = repaymentService.requireReadableLoan(loanId);
+        Loan loan = readableLoan(loanId);
         LocalDate due = loan.getDueDate();
-        // One calendar day after the salary day — the same arithmetic the repay page applied to the
-        // due date before it asked for this figure.
-        LocalDate grace = due != null ? due.plusDays(1) : null;
+        // The loan's last penalty-free day after the salary day; null when the loan carries no grace
+        // (loans disbursed after the grace was withdrawn) — the repay page then shows no such column.
+        LocalDate grace = due != null && loan.getGraceDays() > 0 ? due.plusDays(loan.getGraceDays()) : null;
         // `asOf` is handed to the service AS GIVEN, null included: a null means "the ledger's today",
         // which the service resolves in IST. Resolving it here with LocalDate.now() instead would
         // read the JVM's zone (UTC in ECS) and quote the borrower yesterday's balance for the 5.5

@@ -66,6 +66,11 @@ navix:
     # Signzy PRODUCTION account — serves PAN 206AB (unmasked name) + reverse-geocode (address).
     prod-base-url: ${SIGNZY_PROD_BASE_URL:https://api.signzy.app}
     prod-token: ${SIGNZY_PROD_TOKEN:}
+    # Bank Statement Analysis is the one Signzy product that also wants a token in the request BODY:
+    # a short-lived JWT from their Authenticate API, separate from the header token above. Blank means
+    # the Banking tab reports "not configured" instead of calling; an expired one gets a 401. Rotate
+    # via SSM /navix/<env>/navix/signzy/bsa-auth-token.
+    bsa-auth-token: ${SIGNZY_BSA_AUTH_TOKEN:}
     # Consent-block device IP (Signzy doesn't enforce an allow-list on this today, but keep it a real
     # IP rather than 0.0.0.0 for consistency with the Digitap check below). aws.md §5.1's static NAT
     # egress IP — never changes.
@@ -95,6 +100,40 @@ navix:
     header-colour: ${NAVIX_ESIGN_HEADER_COLOUR:#0C2540}
     button-colour: ${NAVIX_ESIGN_BUTTON_COLOUR:#E9B53A}
     executer-name: ${NAVIX_ESIGN_EXECUTER_NAME:NAVIX Finance Private Limited}
+  digio:
+    # Digio NACH eMandate (MandatePort). `mock` answers inline without calling anyone and is the default
+    # until the real credentials are in SSM; `digio` files REAL, legally binding NPCI mandate requests.
+    # With provider=digio the app REFUSES TO START unless base-url, client-id, client-secret,
+    # webhook-secret and corporate-config-id are all set (SSM /navix/<env>/navix/digio/...), by design.
+    provider: ${NAVIX_DIGIO_PROVIDER:mock}
+    # NACH debit sweep (MandateDebitScheduler), 10:00 IST: early enough to beat the T-1 cutoff with the
+    # working day left to react. Off unless the `digio-debit` feature_flag row is enabled.
+    debit-cron: ${NAVIX_DIGIO_DEBIT_CRON:0 0 10 * * *}
+    base-url: ${NAVIX_DIGIO_BASE_URL:https://api.digio.in}
+    client-id: ${NAVIX_DIGIO_CLIENT_ID:}
+    client-secret: ${NAVIX_DIGIO_CLIENT_SECRET:}
+    webhook-secret: ${NAVIX_DIGIO_WEBHOOK_SECRET:}
+    corporate-config-id: ${NAVIX_DIGIO_CORPORATE_CONFIG_ID:}
+    narration: ${NAVIX_DIGIO_NARRATION:}
+    # The lender's own settlement account a NACH debit pays into. Blank = DebitService refuses to present.
+    corporate-account-number: ${NAVIX_DIGIO_CORPORATE_ACCOUNT_NUMBER:}
+    expire-in-days: ${NAVIX_DIGIO_EXPIRE_IN_DAYS:7}
+  payu:
+    # PayU Hosted Checkout for loan repayments. Off unless the `payu-repayment` feature_flag row is enabled.
+    # Credentials come from SSM /navix/<env>/navix/payu/... (never committed). Defaults are the TEST hosts;
+    # ProductionConfigGuard refuses a blank key/salt or a test.payu.in URL once the flag is ON.
+    key: ${NAVIX_PAYU_KEY:}
+    salt: ${NAVIX_PAYU_SALT:}
+    checkout-url: ${NAVIX_PAYU_CHECKOUT_URL:https://test.payu.in/_payment}
+    command-url: ${NAVIX_PAYU_COMMAND_URL:https://test.payu.in/merchant/postservice.php?form=2}
+    # Where PayU posts the browser back (surl/furl/curl); the BFF route there redirects to /repay.
+    return-url: ${NAVIX_PAYU_RETURN_URL:${navix.app.frontend-base-url}/api/payu/return}
+    # test.payu.in may only be used where this is true: a sandbox payment verifies as captured with no money.
+    allow-sandbox: ${NAVIX_PAYU_ALLOW_SANDBOX:${NAVIX_ALLOW_DEV_DEFAULTS:false}}
+    # Card fee added on top of the repayment, mode:bps of the repayment (236 = 2.36%). Blank = no fee.
+    card-fee-bps: ${NAVIX_PAYU_CARD_FEE_BPS:CC:236,AMEX:236,RUPAYCC:236,DINR:236}
+    # Reconcile sweep for orders whose webhook never arrived (PayuReconcileScheduler), every 5 minutes.
+    reconcile-cron: ${NAVIX_PAYU_RECONCILE_CRON:0 */5 * * * *}
   digitap:
     # Two hosts: svc (KYC/Employment/Email), api (Credit/Location/Face-Match/OCR). Auth = Basic base64(id:secret).
     svc-base-url: ${DIGITAP_SVC_BASE_URL:https://svcdemo.digitap.work}
@@ -216,6 +255,7 @@ navix:
     # NOTE: REBORROW_PREAPPROVED + REFERRAL_REWARD_CREDITED are registered PROMOTIONAL — they need a
     # promotional route, so they fail on the transactional route above until that is split out.
     dlt-template-ids:
+      REFERENCE_OTP: ${NAVIX_SMS_DLT_REFERENCE_OTP:1777179420452725798}
       KYC_APPROVED: ${NAVIX_SMS_DLT_KYC_APPROVED:1777178556860826081}
       KYC_REJECTED: ${NAVIX_SMS_DLT_KYC_REJECTED:1777178556856596751}
       KYC_REMINDER: ${NAVIX_SMS_DLT_KYC_REMINDER:1777178556869196458}
@@ -229,6 +269,7 @@ navix:
       REBORROW_REVIEW_REJECTED: ${NAVIX_SMS_DLT_APPLICATION_DECLINED:1777178556864993650}
       SETTLEMENT_APPROVED: ${NAVIX_SMS_DLT_SETTLEMENT_APPROVED:1777178556848308137}
       REBORROW_REVIEW_APPROVED: ${NAVIX_SMS_DLT_REBORROW_APPROVED:1777178556873259005}
+      LOAN_SANCTIONED: ${NAVIX_SMS_DLT_REBORROW_APPROVED:1777178556873259005}
       REBORROW_PREAPPROVED: ${NAVIX_SMS_DLT_REBORROW_PREAPPROVED:1777178551273887503}
       REFERRAL_REWARD_CREDITED: ${NAVIX_SMS_DLT_REFERRAL_REWARD_CREDITED:1777178551284965972}
     # DLT-registered OTP message ({otp} = code, {ttl} = minutes). MUST match a template

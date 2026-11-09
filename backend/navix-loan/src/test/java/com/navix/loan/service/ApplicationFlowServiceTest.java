@@ -83,6 +83,12 @@ class ApplicationFlowServiceTest {
     private com.navix.loan.repository.CustomerLimitOverrideRepository limitOverrideRepository;
     @Mock
     private com.navix.common.featureflag.FeatureFlagService featureFlags;
+    @Mock
+    private MandateService mandateService;
+    @Mock
+    private com.navix.loan.repository.ReapplyAllowanceRepository allowanceRepository;
+    @Mock
+    private com.navix.loan.repository.RepaymentDiscountOfferRepository offerRepository;
 
     private ApplicationFlowService flow;
     private final List<ApplicationEvent> events = new ArrayList<>();
@@ -94,7 +100,11 @@ class ApplicationFlowServiceTest {
                 loanService, staffDirectory,
                 loanRepository, paymentRepository, profileRepository, rejectionRepository,
                 documentRepository, verificationRepository, referenceRepository, new LoanMath(),
-                event -> {}, referralService, dsaCommissionService, featureFlags);
+                event -> {}, referralService, dsaCommissionService, featureFlags, mandateService,
+                new RepaymentDiscountOffers(offerRepository, loanRepository, paymentRepository),
+                allowanceRepository);
+        // Applications are open unless a test closes them (strict stubs reject a bare other-flag stub).
+        lenient().when(featureFlags.isEnabled(IntakeSwitchService.FLAG, false)).thenReturn(false);
         // Default: assignee passes activation gating; negative case overrides below.
         lenient().when(staffDirectory.isActiveWithRole(any(), any())).thenReturn(true);
         lenient().when(applicationRepository.save(any())).thenAnswer(i -> i.getArgument(0));
@@ -167,6 +177,63 @@ class ApplicationFlowServiceTest {
                 .hasMessageContaining("not eligible");
     }
 
+    /** A staff block (CustomerService.block, year 9999) has no date to promise the borrower. */
+    @Test
+    void staffBlockedMobile_isToldToContactSupportNotADate() {
+        actor("7", "BORROWER");
+        CustomerProfile prior = new CustomerProfile();
+        prior.setApplicationId(1L);
+        prior.setMobile("9876543210");
+        LoanApplication closed = new LoanApplication();
+        closed.setId(1L);
+        closed.setCustomerId(7L);
+        closed.setStatus(ApplicationStatus.CLOSED);
+        when(applicationRepository.findByCustomerId(7L)).thenReturn(List.of(closed));
+        when(profileRepository.findByApplicationId(1L)).thenReturn(Optional.of(prior));
+        ApplicationRejection block = new ApplicationRejection();
+        block.setReasonCode(ApplicationRejection.BLOCKED_BY_STAFF);
+        block.setBlockedUntil(ApplicationRejection.INDEFINITE);
+        when(rejectionRepository.findFirstByMobileAndBlockedUntilAfterOrderByBlockedUntilDesc(
+                eq("9876543210"), any())).thenReturn(Optional.of(block));
+
+        assertThatThrownBy(() -> flow.createDraft(7L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "NOT_ELIGIBLE")
+                .hasMessage("Your account is not eligible for new loans. Please contact support.");
+    }
+
+    /** A staff block is held on the customer id too, so a corrected mobile does not lift it. */
+    @Test
+    void staffBlockOnTheCustomerIdHoldsEvenWhenTheMobileOnFileHasNoBlock() {
+        actor("7", "BORROWER");
+        ApplicationRejection block = new ApplicationRejection();
+        block.setReasonCode(ApplicationRejection.BLOCKED_BY_STAFF);
+        block.setBlockedUntil(ApplicationRejection.INDEFINITE);
+        when(rejectionRepository.findFirstByCustomerIdAndReasonCodeAndBlockedUntilAfter(
+                eq(7L), eq(ApplicationRejection.BLOCKED_BY_STAFF), any())).thenReturn(Optional.of(block));
+
+        assertThatThrownBy(() -> flow.createDraft(7L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "NOT_ELIGIBLE")
+                .hasMessage("Your account is not eligible for new loans. Please contact support.");
+    }
+
+    /** A rejection is recorded against the customer id too: a borrower who edits their profile mobile
+     *  after a manual reject must still be turned away. */
+    @Test
+    void rejectionBlockHoldsOnTheCustomerIdAfterTheBorrowerChangesTheirMobile() {
+        actor("7", "BORROWER");
+        ApplicationRejection block = new ApplicationRejection();
+        block.setReasonCode(ApplicationRejection.MANUAL);
+        block.setBlockedUntil(java.time.Instant.now().plusSeconds(86_400));
+        when(rejectionRepository.findFirstByCustomerIdAndBlockedUntilAfterOrderByBlockedUntilDesc(
+                eq(7L), any())).thenReturn(Optional.of(block));
+
+        assertThatThrownBy(() -> flow.createDraft(7L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "NOT_ELIGIBLE");
+    }
+
     @Test
     void creditToActiveHappyPath() {
         LoanApplication app = appAt(ApplicationStatus.KYC_PENDING);
@@ -190,6 +257,7 @@ class ApplicationFlowServiceTest {
         // sit in front of this call; all it needs from them is a signed sanction letter.
         actor("7", "BORROWER");
         esigned(1L);
+        app.setAmountRequested(1_500_000L); // chosen on the offer screen, before signing
         flow.acceptOffer(1L, 1_500_000L);
         assertThat(app.getStatus()).isEqualTo(ApplicationStatus.DISBURSEMENT_PENDING);
         assertThat(app.getAmountRequested()).isEqualTo(1_500_000L);
@@ -208,10 +276,100 @@ class ApplicationFlowServiceTest {
         app.setSanctionedAmountPaise(2_000_000L);
         actor("7", "BORROWER");
         esigned(1L);
+        app.setAmountRequested(2_500_000L);
 
-        assertThatThrownBy(() -> flow.acceptOffer(1L, 2_500_000L))
+        assertThatThrownBy(() -> flow.acceptOffer(1L, null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("exceeds the sanctioned amount");
+    }
+
+    @Test
+    void acceptOfferIgnoresACallerSuppliedAmountAndUsesTheSignedOne() {
+        LoanApplication app = appAt(ApplicationStatus.SANCTIONED);
+        app.setSanctionedAmountPaise(2_000_000L);
+        app.setAmountRequested(1_500_000L);
+        actor("7", "BORROWER");
+        esigned(1L);
+
+        flow.acceptOffer(1L, 1_000_000L);
+
+        assertThat(app.getAmountRequested()).isEqualTo(1_500_000L);
+    }
+
+    @Test
+    void overrideRequiresMandateOverridePermission() {
+        LoanApplication app = appAt(ApplicationStatus.SANCTIONED);
+        app.setSanctionedAmountPaise(2_000_000L);
+        esigned(1L);
+        lenient().when(mandateService.isBankUnsupported(1L)).thenReturn(true);
+
+        for (String role : new String[] {"CREDIT_HEAD", "CREDIT_EXECUTIVE", "ACCOUNTANT", "TELECALLER", "DSA", "BORROWER"}) {
+            actor("9", role);
+            assertThatThrownBy(() -> flow.mandateOverride(1L, "bank cannot do api mandate"))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("code", "FORBIDDEN_ROLE");
+        }
+        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.SANCTIONED);
+    }
+
+    @Test
+    void overrideRoutesBankUnsupportedFileToDisbursement() {
+        LoanApplication app = appAt(ApplicationStatus.SANCTIONED);
+        app.setSanctionedAmountPaise(2_000_000L);
+        esigned(1L);
+        when(mandateService.isBankUnsupported(1L)).thenReturn(true);
+        actor("disb1", "DISBURSEMENT_HEAD");
+
+        flow.mandateOverride(1L, "co-operative bank, no API mandate");
+
+        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.DISBURSEMENT_PENDING);
+        ArgumentCaptor<ApplicationEvent> ev = ArgumentCaptor.forClass(ApplicationEvent.class);
+        verify(eventRepository).save(ev.capture());
+        assertThat(ev.getValue().getAction()).isEqualTo("MANDATE_OVERRIDE");
+        assertThat(ev.getValue().getActorId()).isEqualTo("disb1");
+        assertThat(ev.getValue().getNotes()).contains("co-operative bank, no API mandate");
+    }
+
+    @Test
+    void overrideIsRefusedWhenTheMandateIsAnythingButBankUnsupported() {
+        LoanApplication app = appAt(ApplicationStatus.SANCTIONED);
+        app.setSanctionedAmountPaise(2_000_000L);
+        esigned(1L);
+        when(mandateService.isBankUnsupported(1L)).thenReturn(false); // failed / pending / none: borrower retries
+        actor("admin1", "ADMIN");
+
+        assertThatThrownBy(() -> flow.mandateOverride(1L, "please"))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "MANDATE_OVERRIDE_NOT_ALLOWED");
+        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.SANCTIONED);
+    }
+
+    @Test
+    void overrideNeedsAReasonAndASignedAgreement() {
+        LoanApplication app = appAt(ApplicationStatus.SANCTIONED);
+        app.setSanctionedAmountPaise(2_000_000L);
+        when(mandateService.isBankUnsupported(1L)).thenReturn(true);
+        actor("admin1", "ADMIN");
+
+        assertThatThrownBy(() -> flow.mandateOverride(1L, "reason"))
+                .hasFieldOrPropertyWithValue("code", "AGREEMENT_NOT_SIGNED");
+        esigned(1L);
+        assertThatThrownBy(() -> flow.mandateOverride(1L, "  "))
+                .hasFieldOrPropertyWithValue("code", "NOTE_REQUIRED");
+    }
+
+    @Test
+    void acceptOfferRefusesWithoutAMandateWhenTheFlagIsOn() {
+        actor("7", "BORROWER");
+        LoanApplication app = appAt(ApplicationStatus.SANCTIONED);
+        app.setSanctionedAmountPaise(2_000_000L);
+        esigned(1L);
+        when(mandateService.mandateRequired(app)).thenReturn(true);
+
+        assertThatThrownBy(() -> flow.acceptOffer(1L, 2_000_000L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "MANDATE_REQUIRED");
+        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.SANCTIONED);
     }
 
     @Test
@@ -622,6 +780,40 @@ class ApplicationFlowServiceTest {
         assertThat(flow.reborrow().getStatus()).isEqualTo(ApplicationStatus.PRE_APPROVED);
     }
 
+    /** Close switch: no new DRAFT and no reborrow while applications are closed. */
+    @Test
+    void createDraftAndReborrow_refuseWhileApplicationsAreClosed() {
+        when(featureFlags.isEnabled(IntakeSwitchService.FLAG, false)).thenReturn(true);
+        actor("7", "BORROWER");
+
+        assertThatThrownBy(() -> flow.createDraft(7L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "APPLICATIONS_CLOSED");
+        assertThatThrownBy(() -> flow.reborrow())
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "APPLICATIONS_CLOSED");
+        verify(applicationRepository, never()).save(any());
+    }
+
+    /** Close switch is the last check: a borrower with a file in flight is still routed to it. */
+    @Test
+    void closedSwitch_doesNotMaskActiveApplication() {
+        lenient().when(featureFlags.isEnabled(IntakeSwitchService.FLAG, false)).thenReturn(true);
+        actor("7", "BORROWER");
+        LoanApplication pending = new LoanApplication();
+        pending.setId(10L);
+        pending.setCustomerId(7L);
+        pending.setStatus(ApplicationStatus.KYC_PENDING);
+        when(applicationRepository.findByCustomerId(7L)).thenReturn(List.of(pending));
+
+        assertThatThrownBy(() -> flow.createDraft(7L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "ACTIVE_APPLICATION");
+        assertThatThrownBy(() -> flow.reborrow())
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "ACTIVE_APPLICATION");
+    }
+
     @Test
     void createDraft_stampsCreatedAt() {
         actor("7", "BORROWER");
@@ -846,6 +1038,100 @@ class ApplicationFlowServiceTest {
         assertThat(flow.reborrow().getStatus()).isEqualTo(ApplicationStatus.REJECTED);
     }
 
+    /** Late beyond tolerance, with NO allowance: still auto-rejected and never pinned a discount. */
+    @Test
+    void reborrowDisqualifiedWithoutAllowanceIsRejectedAndNotPinned() {
+        actor("7", "BORROWER");
+        Loan closed = lateClosedLoanSetup();
+        com.navix.loan.entity.RepaymentDiscountOffer offer = unlockedOffer(closed);
+        lenient().when(offerRepository.findByCustomerIdAndUsedApplicationIdIsNull(7L)).thenReturn(List.of(offer));
+
+        LoanApplication out = flow.reborrow();
+
+        assertThat(out.getStatus()).isEqualTo(ApplicationStatus.REJECTED);
+        assertThat(out.getFeeDiscountOfferId()).isNull();
+        assertThat(out.getFeeDiscountPercent()).isNull();
+    }
+
+    /** With an allowance the file goes to the credit queue: KYC_PENDING, allowance consumed, never PRE_APPROVED. */
+    @Test
+    void reborrowDisqualifiedWithAllowanceGoesToCreditReviewAndConsumesIt() {
+        actor("7", "BORROWER");
+        lateClosedLoanSetup();
+        com.navix.loan.entity.ReapplyAllowance allowance = new com.navix.loan.entity.ReapplyAllowance();
+        allowance.setId(3L);
+        when(allowanceRepository.findFirstByCustomerIdAndUsedApplicationIdIsNullOrderByIdAsc(7L))
+                .thenReturn(Optional.of(allowance));
+        when(allowanceRepository.consume(eq(3L), any(), any())).thenReturn(1);
+
+        LoanApplication out = flow.reborrow();
+
+        assertThat(out.getStatus()).isEqualTo(ApplicationStatus.KYC_PENDING);
+        assertThat(out.getSanctionedAmountPaise()).isNull();
+        assertThat(events).anyMatch(e -> "REBORROW_ALLOWED".equals(e.getAction()));
+        verify(allowanceRepository).consume(eq(3L), any(), any());
+    }
+
+    /** A lost race on the allowance (consume matches no row) falls back to the auto-reject. */
+    @Test
+    void reborrowAllowanceAlreadyConsumedIsRejected() {
+        actor("7", "BORROWER");
+        lateClosedLoanSetup();
+        com.navix.loan.entity.ReapplyAllowance allowance = new com.navix.loan.entity.ReapplyAllowance();
+        allowance.setId(3L);
+        when(allowanceRepository.findFirstByCustomerIdAndUsedApplicationIdIsNullOrderByIdAsc(7L))
+                .thenReturn(Optional.of(allowance));
+        when(allowanceRepository.consume(eq(3L), any(), any())).thenReturn(0);
+
+        assertThat(flow.reborrow().getStatus()).isEqualTo(ApplicationStatus.REJECTED);
+    }
+
+    /** Clean history: the best unlocked offer is pinned (highest percent wins). */
+    @Test
+    void reborrowCleanHistoryPinsTheBestUnlockedOffer() {
+        actor("7", "BORROWER");
+        LoanApplication prior = priorApp();
+        when(applicationRepository.findByCustomerId(7L)).thenReturn(List.of(prior));
+        when(profileRepository.findByApplicationId(10L)).thenReturn(Optional.of(priorProfile()));
+        Loan closed = loanAt(50L, LoanStatus.CLOSED, LocalDate.now().minusDays(5));
+        when(loanRepository.findByCustomerId(7L)).thenReturn(List.of(closed));
+        when(loanRepository.findById(50L)).thenReturn(Optional.of(closed));
+        when(paymentRepository.findByLoanId(50L)).thenReturn(List.of(paidOn(50L, closed.getDueDate())));
+        com.navix.loan.entity.RepaymentDiscountOffer low = unlockedOffer(closed);
+        low.setId(1L);
+        low.setPercent((short) 3);
+        com.navix.loan.entity.RepaymentDiscountOffer high = unlockedOffer(closed);
+        high.setId(2L);
+        high.setPercent((short) 6);
+        when(offerRepository.findByCustomerIdAndUsedApplicationIdIsNull(7L)).thenReturn(List.of(low, high));
+
+        LoanApplication out = flow.reborrow();
+
+        assertThat(out.getFeeDiscountPercent()).isEqualTo((short) 6);
+        assertThat(out.getFeeDiscountOfferId()).isEqualTo(2L);
+    }
+
+    private Loan lateClosedLoanSetup() {
+        when(applicationRepository.findByCustomerId(7L)).thenReturn(List.of(priorApp()));
+        when(profileRepository.findByApplicationId(10L)).thenReturn(Optional.of(priorProfile()));
+        Loan closed = loanAt(50L, LoanStatus.CLOSED, LocalDate.now().minusDays(20));
+        when(loanRepository.findByCustomerId(7L)).thenReturn(List.of(closed));
+        lenient().when(loanRepository.findById(50L)).thenReturn(Optional.of(closed));
+        when(paymentRepository.findByLoanId(50L)).thenReturn(List.of(
+                paidOn(50L, closed.getDueDate().plusDays(ApplicationFlowService.LATE_REPAYMENT_TOLERANCE_DAYS + 1))));
+        return closed;
+    }
+
+    private static com.navix.loan.entity.RepaymentDiscountOffer unlockedOffer(Loan loan) {
+        com.navix.loan.entity.RepaymentDiscountOffer o = new com.navix.loan.entity.RepaymentDiscountOffer();
+        o.setId(1L);
+        o.setCustomerId(7L);
+        o.setLoanId(loan.getId());
+        o.setPercent((short) 5);
+        o.setRepayBy(loan.getDueDate().plusDays(30));
+        return o;
+    }
+
     private static Payment paidOn(Long loanId, LocalDate on) {
         Payment p = new Payment();
         p.setLoanId(loanId);
@@ -937,6 +1223,20 @@ class ApplicationFlowServiceTest {
         flow.apply(1L, 1_000_000L, "medical", 1_500_000L, 30);
         assertThat(app.getStatus()).isEqualTo(ApplicationStatus.DISBURSEMENT_PENDING);
         assertThat(app.getAssignedExecutiveId()).isNull(); // the fast-track discriminator
+    }
+
+    /** F11: the fast-track never passes acceptOffer, so it carries the same mandate gate. */
+    @Test
+    void applyFromPreApprovedIsBlockedWithoutAMandateWhenTheFlagIsOn() {
+        LoanApplication app = appAt(ApplicationStatus.PRE_APPROVED);
+        when(loanRepository.findByCustomerId(7L)).thenReturn(List.of(loanAt(50L, LoanStatus.CLOSED, LocalDate.now().minusDays(5))));
+        when(mandateService.mandateRequired(app)).thenReturn(true);
+        actor("7", "BORROWER");
+
+        assertThatThrownBy(() -> flow.apply(1L, 1_000_000L, "medical", 1_500_000L, 30))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "MANDATE_REQUIRED");
+        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.PRE_APPROVED);
     }
 
     /** Reborrow reuse: applying without a salary day keeps the one carried onto the application. */
@@ -1201,5 +1501,23 @@ class ApplicationFlowServiceTest {
         loan.setStatus(status);
         loan.setDueDate(dueDate);
         return loan;
+    }
+
+    @Test
+    void cancel_onlyAdminAndTheOwningBorrowerMay() {
+        for (String role : new String[] {"CREDIT_EXECUTIVE", "ACCOUNTANT", "CREDIT_HEAD", "DISBURSEMENT_HEAD"}) {
+            appAt(ApplicationStatus.DRAFT);
+            actor("99", role);
+            assertThatThrownBy(() -> flow.cancel(1L, "x"))
+                    .isInstanceOf(BusinessException.class).hasFieldOrPropertyWithValue("code", "FORBIDDEN_ROLE");
+        }
+        LoanApplication byAdmin = appAt(ApplicationStatus.DRAFT);
+        actor("1", "ADMIN");
+        assertThat(flow.cancel(1L, "x").getStatus()).isEqualTo(ApplicationStatus.CANCELLED);
+        assertThat(byAdmin.getStatus()).isEqualTo(ApplicationStatus.CANCELLED);
+
+        appAt(ApplicationStatus.DRAFT);
+        actor("7", "BORROWER");
+        assertThat(flow.cancel(1L, "x").getStatus()).isEqualTo(ApplicationStatus.CANCELLED);
     }
 }

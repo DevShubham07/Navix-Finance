@@ -11,6 +11,8 @@ import com.navix.verification.config.VerificationClientConfig;
 import com.navix.verification.exception.TerminalVerificationException;
 import com.navix.verification.exception.VerificationException;
 import java.util.Locale;
+import com.navix.verification.dto.SignzyDtos.PanKycLinkRequest;
+import com.navix.verification.dto.SignzyDtos.PanKycLinkResponse;
 import com.navix.verification.dto.SignzyDtos.PanRequest;
 import com.navix.verification.dto.SignzyDtos.PanResponse;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -27,6 +29,8 @@ import org.springframework.web.client.RestClient;
 public class SignzyPanClient {
 
     private static final String ENDPOINT = "/api/v3/pan/compliance-206-individual-search";
+
+    private static final String LINK_ENDPOINT = "/api/v3/pan/kycIdLinkStatus";
 
     private final RestClient signzy;
 
@@ -53,6 +57,17 @@ public class SignzyPanClient {
                 bool(root.path("compliant")),
                 text(root.path("isSpecified")),
                 text(root.path("panStatus")));
+    }
+
+    /**
+     * PAN-KYC ID link status — {@code POST /api/v3/pan/kycIdLinkStatus}. Answers whether this PAN is
+     * linked to this Aadhaar number; {@code result.code} is EF40124 (linked) / EF40125 (not linked).
+     */
+    public PanKycLinkResponse kycIdLinkStatus(String pan, String aadhaar) {
+        JsonNode result = post(signzy, LINK_ENDPOINT, new PanKycLinkRequest(pan, aadhaar)).path("result");
+        return new PanKycLinkResponse(
+                result.path("linked").isBoolean() ? result.path("linked").asBoolean() : null,
+                text(result.path("kycId")), text(result.path("message")), text(result.path("code")));
     }
 
     /**

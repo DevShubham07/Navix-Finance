@@ -63,6 +63,13 @@ export default function LoanSummaryPage() {
             hint="excluding GST"
             value={`− ${rupees(s.processingFeePaise)}`}
           />
+          {(s.feeDiscountPaise ?? 0) > 0 && (
+            <Row
+              label="Repayment discount"
+              hint={s.feeDiscountPercent ? `${s.feeDiscountPercent}% of your loan, already taken off the fee above` : "already taken off the fee above"}
+              value={`− ${rupees(s.feeDiscountPaise ?? 0)}`}
+            />
+          )}
           <Row
             label="Repayment"
             hint={s.repaymentDate ? `on ${formatDate(s.repaymentDate)}` : undefined}

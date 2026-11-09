@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import Script from "next/script";
 
 /**
@@ -16,13 +17,24 @@ import Script from "next/script";
  * CSP because `script-src` allows `'unsafe-inline'` (the gtag bootstrap) and the
  * googletagmanager.com origin (the gtag/js loader) — see `next.config.mjs`.
  *
- * ⚠ PII: this is mounted in the ROOT layout, so gtag also fires on authenticated
- * borrower/staff surfaces whose URLs/titles can carry PII (customer/loan ids). If
- * that becomes a compliance concern, move `<GoogleAnalytics />` out of the root
- * layout and into `app/(marketing)/layout.tsx` to scope it to public pages only.
+ * ⚠ PII: this is mounted only in `app/(marketing)/layout.tsx`, never the root layout, because
+ * invite and reset links carry tokens in the query string and authenticated borrower/staff URLs
+ * can carry PII (customer/loan ids); gtag must not see those pages.
  */
 export function GoogleAnalytics() {
   const gaId = process.env.NEXT_PUBLIC_GA_ID;
+
+  // next/script stays loaded across client-side navigation, so switch collection off when the
+  // visitor leaves the marketing layout for login, signup or the app.
+  useEffect(() => {
+    if (!gaId) return;
+    const w = window as unknown as Record<string, boolean>;
+    w[`ga-disable-${gaId}`] = false;
+    return () => {
+      w[`ga-disable-${gaId}`] = true;
+    };
+  }, [gaId]);
+
   if (!gaId) return null;
 
   return (

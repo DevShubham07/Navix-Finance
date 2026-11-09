@@ -119,8 +119,14 @@ public class MetricQueries {
 
     /** Every (group, loan) the metric matches. */
     public List<GroupLoan> groupLoans(Metric m, DashboardScope s, LocalDate from, LocalDate to, String key) {
+        return groupLoans(m, s, from, to, key, null);
+    }
+
+    /** As above, for a metric whose grouping is chosen by {@code groupBy} (COLLECTION_GROUP). */
+    public List<GroupLoan> groupLoans(Metric m, DashboardScope s, LocalDate from, LocalDate to, String key,
+                                      String groupBy) {
         String sql = MetricSql.query(m, s, "select f.grp, f.loan_id from {F} where f.loan_id is not null");
-        return jdbc.query(sql, params(m, s, from, to, key, null),
+        return jdbc.query(sql, params(m, s, from, to, key, groupBy),
                 (rs, i) -> new GroupLoan(rs.getString("grp"), rs.getLong("loan_id")));
     }
 
@@ -138,7 +144,7 @@ public class MetricQueries {
         String needle = q == null ? "" : q.trim();
         p.addValue("segment", seg);
         p.addValue("q", needle.isEmpty() ? null : needle);
-        p.addValue("qLike", needle.isEmpty() ? null : "%" + escapeLike(needle.toLowerCase(Locale.ROOT)) + "%");
+        p.addValue("qLike", needle.isEmpty() ? null : "%" + com.navix.common.util.LikeEscape.escapeLike(needle.toLowerCase(Locale.ROOT), '!') + "%");
         String filter = " left join customer_profile qp on qp.application_id = f.application_id"
                 + " where (cast(:qLike as text) is null or lower(coalesce(qp.full_name, '')) like :qLike escape '!'"
                 + " or cast(f.application_id as text) = :q)";
@@ -161,7 +167,7 @@ public class MetricQueries {
                 rs.getString("extra")));
 
         List<Long> loanIds = List.of();
-        if (m.owedSum()) {
+        if (m.owedSum() || m.dueAmount()) {
             String idsSql = MetricSql.query(m, s, "select f.loan_id from {F}" + filter
                     + " and (:segment = 'ALL' or f.segment = :segment) and f.loan_id is not null");
             loanIds = jdbc.queryForList(idsSql, p, Long.class);
@@ -192,10 +198,6 @@ public class MetricQueries {
     private static Agg agg(java.sql.ResultSet rs) throws java.sql.SQLException {
         return new Agg(rs.getLong("n"), rs.getLong("fresh"), rs.getLong("reloan"), rs.getLong("amt"),
                 rs.getLong("fresh_amt"), rs.getLong("reloan_amt"));
-    }
-
-    static String escapeLike(String s) {
-        return s.replace("!", "!!").replace("%", "!%").replace("_", "!_");
     }
 
     /** The previous window of equal length, immediately before {@code from}. */

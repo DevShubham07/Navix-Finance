@@ -45,6 +45,18 @@ public class UltronSmsClient implements SmsGateway {
      */
     @Override
     public String send(String number, String text, String dltTemplateKey) {
+        return dispatch(number, text, resolveDltTemplateId(dltTemplateKey));
+    }
+
+    @Override
+    public String sendRegistered(String number, String text, String dltTemplateId) {
+        if (dltTemplateId == null || dltTemplateId.isBlank()) {
+            throw new SmsException("no DLT template id");
+        }
+        return dispatch(number, text, dltTemplateId);
+    }
+
+    private String dispatch(String number, String text, String dltTemplateId) {
         if (props.mock()) {
             // SMS mock mode (demo/testing): no real send, no DLT. Return a mock reference so all
             // callers — OTP and notifications alike — are short-circuited consistently.
@@ -68,7 +80,7 @@ public class UltronSmsClient implements SmsGateway {
                         uri.queryParam("text", text);
                         addIfSet(uri, "route", props.route());
                         addIfSet(uri, "peid", props.peid());
-                        addIfSet(uri, "DLTTemplateId", resolveDltTemplateId(dltTemplateKey));
+                        addIfSet(uri, "DLTTemplateId", dltTemplateId);
                         return uri.build();
                     })
                     .retrieve()

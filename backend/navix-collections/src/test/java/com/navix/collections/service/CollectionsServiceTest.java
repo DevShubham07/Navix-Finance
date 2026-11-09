@@ -59,6 +59,9 @@ class CollectionsServiceTest {
     @Mock
     private com.navix.common.loan.CustomerTrustDirectory customerTrustDirectory;
 
+    @Mock
+    private CollectionsWorklistQuery worklistQuery;
+
     private CollectionsService service;
 
     private final UUID caseId = UUID.randomUUID();
@@ -67,7 +70,7 @@ class CollectionsServiceTest {
     void setUp() {
         service = new CollectionsService(caseRepository, interactionRepository,
                 loanDirectory, staffDirectory, new DpdCalculator(), applicationActorDirectory,
-                customerTrustDirectory, event -> {});
+                customerTrustDirectory, event -> {}, worklistQuery);
         // Default actor is a Collection Head (allowed to assign); tests override where needed.
         ActorContext.set(new CurrentActor("100", "Head", "COLLECTION_HEAD"));
     }
@@ -503,6 +506,54 @@ class CollectionsServiceTest {
             ActorContext.set(new CurrentActor("77", "Someone", role));
             assertThatThrownBy(() -> service.collectibleLoans(LocalDate.now()))
                     .isInstanceOf(BusinessException.class);
+        }
+        verify(loanDirectory, never()).listCollectible(any());
+    }
+
+    @Test
+    void collectibleLoansIsTheHeadsReadNotAnExecutives() {
+        // Unscoped name/PAN/mobile/salary for the whole live book: an executive's book is their own cases.
+        ActorContext.set(new CurrentActor("9", "Sana", "COLLECTION_EXECUTIVE"));
+
+        assertThatThrownBy(() -> service.collectibleLoans(LocalDate.now()))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("COLLECTION_HEAD");
+        verify(loanDirectory, never()).listCollectible(any());
+    }
+
+    @Test
+    void anExecutiveCannotStartACaseOnALoanNobodyHolds() {
+        when(loanDirectory.findLoan(2L)).thenReturn(Optional.of(loanSummary(2L, LocalDate.now())));
+        when(caseRepository.findByLoanId(2L)).thenReturn(Optional.empty());
+        ActorContext.set(new CurrentActor("9", "Sana", "COLLECTION_EXECUTIVE"));
+
+        assertThatThrownBy(() -> service.openCase(2L)).isInstanceOf(BusinessException.class);
+        verify(caseRepository, never()).save(any());
+        verify(loanDirectory, never()).markInCollections(any());
+    }
+
+    @Test
+    void logInteractionIsTheCollectionsDesksCall() {
+        for (String role : new String[] {"TELECALLER", "CREDIT_EXECUTIVE", "ACCOUNTANT", "DISBURSEMENT_HEAD"}) {
+            ActorContext.set(new CurrentActor("77", "Someone", role));
+            assertThatThrownBy(() -> service.logInteraction(caseId, "CALL", "NO_ANSWER", null, null))
+                    .isInstanceOf(BusinessException.class);
+        }
+        verify(interactionRepository, never()).save(any());
+    }
+
+    @Test
+    void customerScopedRolesCannotReadTheCollectionsBook() {
+        // A Credit Executive / Telecaller sees only their own customers elsewhere; the worklist, the
+        // case reads and the interaction log are not a way around that.
+        for (String role : new String[] {"CREDIT_EXECUTIVE", "TELECALLER"}) {
+            ActorContext.set(new CurrentActor("77", "Someone", role));
+            assertThatThrownBy(() -> service.worklist(LocalDate.now())).isInstanceOf(BusinessException.class);
+            assertThatThrownBy(() -> service.listCaseViews()).isInstanceOf(BusinessException.class);
+            assertThatThrownBy(() -> service.getCaseDetail(caseId)).isInstanceOf(BusinessException.class);
+            assertThatThrownBy(() -> service.getCaseDetailByLoanId(2L)).isInstanceOf(BusinessException.class);
+            assertThatThrownBy(() -> service.listInteractions(caseId)).isInstanceOf(BusinessException.class);
+            assertThatThrownBy(() -> service.upcomingWatchlist(LocalDate.now())).isInstanceOf(BusinessException.class);
         }
         verify(loanDirectory, never()).listCollectible(any());
     }

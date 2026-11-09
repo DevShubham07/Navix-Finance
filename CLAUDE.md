@@ -132,7 +132,7 @@ navix_final/
 │   ├── navix-storage/            # S3 abstraction (presign)
 │   ├── navix-notification/       # ★ notification engine: events→dispatcher→in-app/SMS/email
 │   ├── navix-app/                # ★ the only bootable module; JwtAuthFilter, SecurityConfig, Flyway
-│   │   └── src/main/resources/db/migration/   # V1..V78 (the REAL schema lives here — see §10)
+│   │   └── src/main/resources/db/migration/   # V1..V91 (the REAL schema lives here — see §10)
 │   └── pom.xml                   # parent BOM
 ├── frontend/
 │   └── src/
@@ -200,10 +200,11 @@ The BFF route handlers reach the backend via **`BACKEND_BASE_URL`** (server-only
   code **`123456`** always works (also shown as "Dev code"). Issues a real **borrower JWT** in the
   `navix_borrower` httpOnly cookie. Every "Apply now" CTA → `/signup/otp` starts the Phase-1 intake
   (§6).
-- **Staff/Admin:** `/staff/login` → **pick a role** → the BFF authenticates for real against
-  `POST /api/auth/staff/login` (role → seeded `*.navix.example` email + default password
-  **`Admin@12345`**, BCrypt) and stores a **staff JWT**. The role decides which live queues have data.
-  (Rotate the default password + set a strong `AUTH_SECRET` before any real exposure.)
+- **Staff/Admin:** `/staff/login` → email + password → the BFF authenticates for real against
+  `POST /api/auth/staff/login` and stores a **staff JWT**. V92 blanks the seeded `*.navix.example`
+  passwords everywhere; on the offline demo stack run `scripts/restore-demo-logins.sql`. The backend
+  refuses to boot with demo settings (built-in `AUTH_SECRET`, mock OTP/eSign, log email) unless
+  `NAVIX_ALLOW_DEV_DEFAULTS=true`, which is for local stacks only.
 
 ### 4.5 Tests
 ```bash
@@ -280,12 +281,28 @@ Head (`retry-disbursement`). ADMIN may force `SANCTIONED → DISBURSEMENT_PENDIN
 **Offer journey (`SANCTIONED`):** a sanction is an amount + repayment date, and the borrower then
 walks `JourneyService.OfferStep` (amount → repayment-date → DigiLocker → references → summary →
 selfie → address → sanction letter → eSign → 🎉 → disbursal account) under `/api/applications/{id}/
-offer/*`. Confirming the disbursal account is what routes the file to `DISBURSEMENT_PENDING`. A
+offer/*`. Confirming the disbursal account routes the file to `DISBURSEMENT_PENDING` — unless the
+`digio-mandate` flag is on and the customer holds no usable UMRN, in which case the borrower registers a
+Digio eMandate first (`OFFER_MANDATE`, §6) and the mandate hands the file off. A
 sanction never expires.
 
 **Repay → close:** repayments are recorded by the borrower (PENDING_VERIFICATION) and confirmed by
-the Accountant (`…/repayments/{pid}/verify`); when Σ verified payments ≥ total the loan closes and
+the Accountant (`…/repayments/{pid}/verify`) — except a **NACH debit** (below), which auto-verifies; when Σ verified payments ≥ total the loan closes and
 `ApplicationFlowService.closeForLoan` transitions the application `ACTIVE/OVERDUE → CLOSED`.
+
+**NACH debit presentation (`digio-debit`, ships OFF — nothing here is live):** against a registered mandate,
+`MandateDebitScheduler` presents at **DPD 1, 3, 5, 9** (counted from the due date) and collections staff can
+present manually (`POST /api/collections/loans/{loanId}/debit`, `mandate:debit`). `DebitService` owns the
+double-debit guards (`uq_mandate_debit_in_flight`, V84, plus an advisory lock). **Outcomes are read by a
+polling reconcile pass, capped at 50 rows per run — there is no Digio webhook receiver; that is a deliberate
+stopgap.** A successful debit is credited through `LoanDirectory.creditCollectionPayment` and is recorded
+**VERIFIED in one step — no Accountant step for NACH money**: a bank-confirmed debit carrying a UTR is
+stronger evidence than the screenshot the manual flow accepts, and `outstandingAsOf` counts only `VERIFIED`
+payments. Note `mandate_debit.updated_at` on an open row means **"last attempted"**, not "last status
+change" — the reconcile sweep touches it to rotate the queue; do not read it as an audit timestamp. Not
+built: UPI AutoPay debit, mandate amendment, consolidated settlement reconciliation. Staff (Heads/ADMIN) **can cancel an
+ACTIVE mandate** from the Mandate tab with a reason + note (V88, `cancel-active`; refused while a debit is in flight;
+borrower notified) — the way to raise a limit is cancel ("Replacing it") then Send invite. **Change mandate account** (same roles — Disbursement Head/ADMIN only before payout, when it is also the payee; `POST …/mandate/change-account`) switches the application's disbursal account for a bank with no eMandate or a customer moving banks: refuses an unsupported bank or a debit in flight, penny-drops the new account straight through `VerificationPort` (never the file's PENNY_DROP row, which a manual PASS would adopt; fail = nothing changes, and the holder's name is never echoed), then withdraws **every** old mandate of the customer (per-row outcome, never throws after a provider cancel) and sends the invite; logged to `profile_change_log`. Before payout it also changes where the advance is paid.
 
 **Reborrow (returning borrower):** `ApplicationFlowService.reborrow` mints a **new** application for an
 existing borrower, reusing their saved profile (no re-collection — **salary day carried over from the
@@ -309,8 +326,14 @@ via reject-lead, admin-only).
 **Invariants:**
 - Every credit assignment/reassignment and decision is appended to `application_event`; reassignment
   records the previous and new assignee and keeps the application in `CREDIT_EXEC_PENDING`.
-- Interest accrues through the contractual salary day and for one additional grace day. The grace
-  day has no late penalty; 2% daily penalty starts the following day and is capped at 30 days.
+- **The salary grace is per loan** (`loan.grace_days`, V90), stamped at disbursal from
+  `LoanMath.SALARY_GRACE_DAYS` and read from the row by the one pricing formula
+  (`RepaymentService.breakdown`) — so changing the constant never touches an existing loan. The
+  constant is **0** since V91 (2026-10-24): every loan disbursed from then on, and every loan that had
+  not reached its due date on that day, has grace 0 — interest through the salary day, 2%/day penalty
+  from the very next day. Loans that were already due or closed on that day keep grace 1 — interest
+  through the salary day and one more day with no penalty, penalty from the day after that — so no
+  accrued figure ever moved. Penalty is capped at 30 days.
 - The DPD bucket is computed-on-read, never stored.
 
 ---
@@ -331,7 +354,13 @@ How a real applicant moves through the product — this is now the **designed, b
    the typed 12-digit number (Verhoeff-checked, stored **in full**, `INVALID_AADHAAR`; a number another customer
    already holds is **accepted and flagged**, not refused — an `AADHAAR_DUPLICATE` REVIEW row, staff-only (dropped
    from the borrower's `verify/summary`), that **blocks `sanction`** (`AADHAAR_DUPLICATE_UNRESOLVED`) until the
-   credit team clears it with the ordinary override, so the write is never a "do you hold this number" oracle;
+   credit team clears it with the ordinary override, so the write is never a "do you hold this number" oracle.
+   At **`submit-kyc`**, though, a number already on another customer's **submitted** application (one that ever
+   reached `KYC_PENDING` and was not itself `FRAUD_REJECTED`; abandoned drafts don't count) **auto-rejects** a
+   `DRAFT` file as **`AADHAAR_DUPLICATE`** with a **permanent** block (`INDEFINITE`); the register detail names
+   the earlier customer + application, while the borrower-readable event is the generic `AUTO_REJECT_IDENTITY`
+   and the borrower sees only `/application-rejected`. Full 12-digit number only — a masked Aadhaar (4 digits)
+   is never matched against past cases;
    **locked** — `AADHAAR_LOCKED` — once the PAN check or DigiLocker has read it or the file leaves `DRAFT`, so
    a number cannot be swapped behind a recorded verdict)
    plus both sides of the card as `AADHAAR_CARD_FRONT`/`AADHAAR_CARD_BACK` (deliberately **not** the
@@ -342,7 +371,9 @@ How a real applicant moves through the product — this is now the **designed, b
    **Fraud rule:** the typed number is cross-checked (positionally, against whatever digits the mask
    reveals — `Aadhaar.matchesMasked`) with the masked Aadhaar the PAN record and DigiLocker return; a
    mismatch auto-rejects the file into the rejection register as **`FRAUD_REJECTED`** (365-day block,
-   `flow.autoRejectSystem`), the borrower sees only "Your application has been rejected"
+   `flow.autoRejectSystem`). The same rule compares the **DOB the borrower entered** at intake with the
+   DigiLocker Aadhaar DOB (`dobMismatch`, at DigiLocker completion — the PAN provider returns no DOB); an
+   Aadhaar DOB of 1 January is compared on the year only (year-of-birth-only records); the borrower sees only "Your application has been rejected"
    (`/application-rejected`), and staff/ADMIN read the full number unmasked on the customer Personal tab
    and the applicant review panel. The `email` screen is a real gate: both the personal and the official address must be
    OTP-confirmed (`emailsSettled`, V52/V65) — distinct from the provider deliverability/employer-match
@@ -355,7 +386,12 @@ How a real applicant moves through the product — this is now the **designed, b
 4. **Phase-3 offer journey (`/loan/*`, application `SANCTIONED`)** — `OfferStep` in order: `amount`
    (within the sanctioned ceiling) → `repayment-date` → `digilocker` → `references` → `summary` →
    `selfie` → `address` → `sanction-letter` (Key Fact Statement PDF) → `esign` (Aadhaar eSign, §14) →
-   🎉 → `disbursal-account`. Confirming the account routes the file to `DISBURSEMENT_PENDING`.
+   🎉 → `disbursal-account` → `mandate`. The `mandate` step (`OFFER_MANDATE`, Digio NACH eMandate) is
+   offered **only when the `digio-mandate` flag is on and the customer holds no usable UMRN**; then
+   confirming the account no longer routes to `DISBURSEMENT_PENDING` — the registered mandate (UMRN) does.
+   Flag off (the shipped default) or a UMRN already held: the step is skipped and confirming the account
+   routes to `DISBURSEMENT_PENDING` as before. Registration only — no debit presentation, webhook receiver,
+   or mandate amendment/cancellation exists. Staff see it on the customer's Mandate tab.
 5. **Track live** — `/loan/status` polls `GET …/{id}` and renders the live state-machine status +
    audit trail.
 6. **Active loan** — after the Disbursement Head releases the money (`ACTIVE`), `/dashboard` shows the
@@ -390,7 +426,7 @@ endpoints, different httpOnly cookies, never shared.** This was an explicit requ
 
 | | Borrower | Staff / Admin |
 |---|---|---|
-| Login route | mobile + OTP (`/borrower/otp/request` → `/borrower/login`) **or** password (`/borrower/password-login`); forgot/reset via link (§11) | `POST /api/auth/staff/login` (role → seeded email + `Admin@12345`, or email+password); forgot/reset via link (§11) |
+| Login route | mobile + OTP (`/borrower/otp/request` → `/borrower/login`) **or** password (`/borrower/password-login`); forgot/reset via link (§11) | `POST /api/auth/staff/login` (email+password); forgot/reset via link (§11) |
 | Token | **borrower JWT** (HS256, audience `borrower`, subject = customerId, **7-day TTL**) | **staff JWT** (audience `staff`, subject = staffId, role claim, 1-day TTL) |
 | Cookie | `navix_borrower` `{token, id, customerId, name, mobile}` (7-day; a KYC-verified returning borrower skips `/login`) | `navix_staff` `{token, id, name, role}` |
 | Logout / me | `/api/auth/borrower/{logout,me}` (me strips the token) | `/api/auth/staff/{logout,me}` |
@@ -452,7 +488,7 @@ endpoints, different httpOnly cookies, never shared.** This was an explicit requ
 `collections:manage`, `collections:interact`, `staff:manage`, `customer:view` (every staff role
 except **DSA** — see the note above), `customer:view:all`, `customer:assign` (Heads + TELECALLER +
 ADMIN), `customer:manage` (ADMIN — correct KYC, cancel, blocklist), `document:upload`,
-`verification:retry`, `referral:payout` (DISBURSEMENT_HEAD + ADMIN), `leads:manage` (TELECALLER +
+`verification:retry`, `mandate:override` (DISBURSEMENT_HEAD + ADMIN — override **this application's own** newest `BANK_UNSUPPORTED` mandate attempt; an earlier advance's unsupported attempt says nothing about this account and is never overridable), `mandate:debit` (COLLECTION_EXECUTIVE + COLLECTION_HEAD + ADMIN — manually present a NACH debit via `POST /api/collections/loans/{loanId}/debit`; an executive may debit only their own assigned cases), `referral:payout` (DISBURSEMENT_HEAD + ADMIN), `leads:manage` (TELECALLER +
 ADMIN), `dsa:portal` (**DSA only** — the *only* token a DSA holds, and deliberately **not** granted to
 ADMIN, whose oversight goes through `dsa:manage`), `dsa:manage` (ADMIN).
 
@@ -464,7 +500,15 @@ every stage queue (credit, disbursement, accounting) — there is no separate `c
 `customers` (+ `[customerId]`), `loans`, `verifications`, `performance`, `my-decisions`,
 `telecalling`, `leads`, `accounting/transactions`, `disbursement/referrals`, `collections`
 (`settlements`, `[loanId]`), `dsa/{leads,earnings}`, and `admin/*` (`staff`, `invites`, `blocklist`,
-`expenses`, `all-applications`, `rejections`, `leads`, `dsa`, `api-dashboard`, `payment-settings`).
+`expenses`, `all-applications`, `rejections`, `leads`, `dsa`, `api-dashboard`, `payment-settings`, `reports`).
+**Reports** (`/staff/admin/reports`, ADMIN; sidebar entry under Mandates & debits, expanding into its ten
+groups via `?seg=`) is the downloads centre: 43 reports — business summary, customers (incl. overpaid / not
+overpaid / dues), disbursement register + TAT + pending payouts, dues falling due, collection efficiency, RBI
+SMA/NPA asset classification, vintage / first-payment default, credit-score bands, officer productivity, fee/GST
+and income registers, audit trail, lead conversion, and a "How DhanBoost works" explainer — for any period
+preset, each as CSV or branded PDF built from one server table (`ReportService`, `GET /api/reports/{key}`), so
+both files carry the same information. The group labels live in both `ReportService` and
+`lib/reports/categories.ts`; change them together.
 Settlement approval enforces **SoD** (proposer ≠ approver) server-side. Staff screens carry small **ⓘ info-tooltips**
 (`components/ui/tooltip.tsx`) on dashboard cards / queue / DPD-bucket headers so a newly-added staffer
 knows what each section does.
@@ -481,7 +525,7 @@ A staffer picks a **working role** from a pill in the header (initials avatar on
 | others | their own role only (static pill) |
 
 - **Each working role shows only its own tabs and buttons.** Admin pages and admin-only buttons (edit customer, force to disbursement, export, log payment, document delete, reference edit, verification retry, the Admin overview dashboard) live in the **Admin** working role.
-- **Head roles assign/approve; executive roles do the work:** Credit Head = assign/reassign/Assign to me/Reject (no Sanction/Mark pending); Credit Executive = only files assigned to me, Sanction/Reject/Mark pending, Verification Dashboard. Collection Head = assign cases, approve settlements/payments, Loans register, skip trace; Collection Executive = only my cases, log interactions, record payments, propose settlements.
+- **Head roles assign/approve; executive roles do the work:** Credit Head = assign/reassign/Assign to me/Reject (no Sanction/Mark pending); Credit Executive = only files assigned to me, Sanction/Reject/Mark pending (the standalone Verification Dashboard was removed; per-file checks live in the customer pop-up). Collection Head = assign cases, approve settlements/payments, Loans register, skip trace; Collection Executive = only my cases, log interactions, record payments, propose settlements.
 - **Transport:** frontend keeps the choice in localStorage `navix-staff-working-role:<staffId>` (cleared on sign-out) and sends `X-Acting-Role` on staff API calls when it differs from the real role; the BFF forwards it; `ActingRole.normalize` validates it against the hierarchy (illegal values ignored, never 400) into `CurrentActor.actingRole`.
 - **Authorization stays on the real JWT role.** `CurrentActor.effectiveRole()` is used only for **list scoping** (credit queues, customer book, decision history, collections cases/settlements/payments).
 - Reading another officer's collection case as an executive returns `CASE_NOT_ASSIGNED`; `assignOfficer` allows self-assign for a real COLLECTION_HEAD/ADMIN.
@@ -558,7 +602,7 @@ A staffer picks a **working role** from a pill in the header (initials avatar on
 Canonical **integer-paise** engine (`long` paise, `BigDecimal` rates, `HALF_UP`). Constants:
 `PROCESSING_FEE_RATE=0.10`, `GST_RATE=0.18`, `DAILY_INTEREST_RATE=0.01`, `LATE_PENALTY_RATE=0.02`,
 `LATE_PENALTY_CAP_DAYS=30`, `LIMIT_PCT_OF_SALARY=0.25`, `LIMIT_ROUNDING_PAISE=10_000` (₹100),
-`MIN_LOAN_PAISE=100_000` (₹1,000), `MAX_TERM_DAYS=40`, `SALARY_GRACE_DAYS=1`.
+`MIN_LOAN_PAISE=100_000` (₹1,000), `MAX_TERM_DAYS=40`, `SALARY_GRACE_DAYS=0`.
 
 - `processingFeePaise` = round(principal × 0.10); `gstPaise` = round(fee × 0.18).
 - `netDisbursedPaise` = principal − fee − GST  *(what the borrower receives)*.
@@ -570,7 +614,7 @@ Canonical **integer-paise** engine (`long` paise, `BigDecimal` rates, `HALF_UP`)
 - `dueDateFromSalary(disbursedOn, salaryCreditDay)` = the **latest** salary-credit date strictly
   after disbursal **and ≤ disbursal + 40 days** (salary day clamped to month length).
 - **Outstanding is compute-on-read** (`RepaymentService.outstandingAsOf`): `principal +
-  interest(daysHeld, capped at tenure) + latePenalty(daysLate past the 1-day grace) − Σ verified
+  interest(daysHeld, capped at tenure + grace) + latePenalty(daysLate past the loan's grace) − Σ verified
   payments`. This is the single "amount owed" surfaced **everywhere** — the `LoanView` from
   `GET /api/loan/{id}`, the collections `LoanSummary`, and `GET …/outstanding` all use it (so they
   agree). The stored `loan.outstanding` column is just a recompute cache; a loan **closes only when
@@ -592,7 +636,7 @@ Flyway migrations live in **`backend/navix-app/src/main/resources/db/migration/`
 navix-common). Applied on every boot:
 
 Flyway migrations live in **`backend/navix-app/src/main/resources/db/migration/`** (not
-navix-common) and are applied on every boot — **V1..V78** today. Each file carries a header comment
+navix-common) and are applied on every boot — **V1..V91** today. Each file carries a header comment
 explaining *why* it exists; that is the source of truth. The index is
 [`docs/MIGRATIONS.md`](docs/MIGRATIONS.md).
 
@@ -664,8 +708,9 @@ What holds across all of it, and does not belong in that file:
 - **Maker-checker steps always have a reject path.** Wherever an actor can approve (credit, disbursement,
   settlement, repayment verification), the counter-action **reject** exists too, SoD-checked
   (proposer ≠ rejecter) and audited; don't add an approve-only flow.
-- **Feature flags are dev-only & read-only.** The `feature_flag` table is changed **only by SQL** — there
-  is no write API and no admin UI (not even ADMIN). Code reads `FeatureFlagService.isEnabled(key)`
+- **Feature flags are dev-only & read-only, with one exception.** The `feature_flag` table is changed **only by SQL** —
+  there is no general write API or admin UI. The one flag ADMIN may flip is `onboarding-paused`, from Staff → Settings
+  (`PUT /api/staff/onboarding-waitlist/paused`). Code reads `FeatureFlagService.isEnabled(key)`
   (navix-common, no cache → instant, no redeploy); gate a feature by adding a row + the check. Live
   flags: `referral` (kill switch), `fintrix-bureau` (bureau primary; off falls back to Digitap),
   `bureau-auto-reject` (**suspended in V64**, read with `defaultWhenMissing = FALSE` so deleting the
@@ -674,7 +719,24 @@ What holds across all of it, and does not belong in that file:
   the endpoint still 401s, so the implemented leg stays inert until Digitap enables it and a row is
   inserted; see [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md)), `digitap-pan` + `digitap-email`
   (**both off, V72** — neither product is provisioned, `412` on every call, so the adapter skips the leg
-  entirely; flip a row when Digitap provisions it), `employment-auto-retry` (on — the hourly re-run of
+  entirely; flip a row when Digitap provisions it), `digio-mandate` (**off, V83** — the Digio eMandate step after the disbursal account; read with
+  `defaultWhenMissing = FALSE` for the same reason as `bureau-auto-reject`: with `NAVIX_DIGIO_PROVIDER=digio` it
+  files a real, legally binding NPCI mandate and there is no sandbox, so a missing row must leave it off;
+  the `ProductionConfigGuard` refusal of `navix.digio.provider=mock` in prod is gated on **this flag**, so a
+  prod deploy is never blocked for a disabled feature. `MandateService.init` holds the money guards itself —
+  the flag as a kill switch, the account having been confirmed or penny-dropped, and a 10-attempt ceiling per
+  application — because `POST .../offer/mandate/init` is borrower-reachable without the journey),
+  `digio-debit` (**off, V85** — NACH debit presentation: the scheduled sweep at DPD 1/3/5/9 plus the manual
+  collections debit; `defaultWhenMissing = FALSE` because it **moves real money** out of a borrower's account
+  with no sandbox and no idempotency key. Re-presentation is decided by a **terminal denylist**
+  (`DebitService.TERMINAL_MARKERS`, matched against the failure code *and* the reason, so a numeric NPCI
+  code still resolves through its text): account/mandate dead, payer deceased, or a duplicate reference
+  stops further attempts; **anything else, including a code we have never seen, is re-presented**. That
+  replaced a three-string allowlist that failed closed — which against numeric codes matched nothing, so
+  the DPD 3/5/9 retries silently never fired at all. `MAX_ATTEMPTS` (4), `MAX_PRESENTATIONS_PER_ROW` (3)
+  and the usable-mandate check bound the downside. **Still unproven: no debit has ever been presented**,
+  so review the denylist against the first real `failure_code`),
+  `employment-auto-retry` (on — the hourly re-run of
   EPFO checks a vendor outage parked), `global-search` (**on, V73** — the staff Cmd/Ctrl+K palette;
   the one flag read with `defaultWhenMissing = TRUE`, since search takes no money-affecting action
   and exposes nothing a role could not already open, so a fresh environment still gets a console).
@@ -692,7 +754,14 @@ What holds across all of it, and does not belong in that file:
   (default `true` — a bureau no-hit tries the next provider rather than ending the chain),
   `NAVIX_ESIGN_*` (`PROVIDER` signzy|mock · `CALLBACK_URL` + `CALLBACK_SECRET` — **both mandatory when
   the provider is `signzy`**; the app refuses to start otherwise, SSM `/navix/<env>/navix/esign/…`),
-  `NAVIX_S3_*`, `NAVIX_SMS_*` (incl. `NAVIX_SMS_MOCK`),
+  `NAVIX_DIGIO_*` (`PROVIDER` mock|digio · `BASE_URL` · `CLIENT_ID` · `CLIENT_SECRET` · `WEBHOOK_SECRET` ·
+  `CORPORATE_CONFIG_ID` · `CORPORATE_ACCOUNT_NUMBER` · `NARRATION` · `EXPIRE_IN_DAYS` · `DEBIT_CRON` — the
+  Digio eMandate; `NAVIX_DIGIO_DEBIT_CRON` is the debit sweep schedule, default 10:00 `Asia/Kolkata`, and
+  **`NAVIX_DIGIO_CORPORATE_ACCOUNT_NUMBER` is the lender's settlement account every NACH debit credits —
+  unset, every presentation refuses `DEBIT_NOT_CONFIGURED` and the sweep stops with one ERROR, so set it
+  before enabling the `digio-debit` flag**; the app **refuses to start**
+  with provider `digio` unless the five credentials are set, SSM `/navix/<env>/navix/digio/…`; `.env.example`
+  ships `mock`), `NAVIX_S3_*`, `NAVIX_SMS_*` (incl. `NAVIX_SMS_MOCK`),
   `NAVIX_WHATSAPP_*` (`TOKEN` — SSM `/navix/<env>/navix/whatsapp/token` · `ENABLED` · `MOCK` · `OTP_TEMPLATE`),
   `NAVIX_EMAIL_*` (`PROVIDER` log|smtp|ses|resend · `ENABLED` · `FROM` · `CONFIGURATION_SET` for SES · `RESEND_API_KEY`),
   `NAVIX_SES_EVENTS_*` (`ENABLED` · `QUEUE` — the SES bounce/complaint SQS listener), `NAVIX_NOTIF_*` (async pool sizing),
@@ -759,7 +828,7 @@ The rules that survive outside that file:
 - **[`docs/API_SURFACE.md`](docs/API_SURFACE.md)** — the full endpoint map (controllers still win).
 - **[`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md)** — Signzy / Digitap / Fintrix / SES / UltronSMS:
   capability routing, auth, hosts, live-test status, per-API gotchas.
-- **[`docs/MIGRATIONS.md`](docs/MIGRATIONS.md)** — the V1..V78 Flyway catalog.
+- **[`docs/MIGRATIONS.md`](docs/MIGRATIONS.md)** — the V1..V91 Flyway catalog.
 - **[`docs/whatsapp/WHATSAPP_GUIDE.md`](docs/whatsapp/WHATSAPP_GUIDE.md)** — borrower messaging: WhatsApp
   (SmartChat — API quirks, template catalogue, backlog), SMS (UltronSMS) and DLT in one place.
 

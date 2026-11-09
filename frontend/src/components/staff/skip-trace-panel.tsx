@@ -68,7 +68,9 @@ export function SkipTracePanel({ customerId }: { customerId: number }) {
   const shown = runs.find((r) => r.id === selectedId) ?? latest;
 
   const runButton = (
-    <PermissionGate permission="collections:manage">
+    // collections:manage = Collection Head; verification:retry = the Admin working role, which runs
+    // it from the pop-up's third-party logs (Admin holds no collections:* token).
+    <PermissionGate permission={["collections:manage", "verification:retry"]}>
       <button onClick={() => setConfirm(true)} disabled={m.isPending} className="btn btn-sm btn-navy disabled:opacity-50">
         {m.isPending ? <Loader2 size={13} className="animate-spin" /> : <Radar size={13} />}
         {latest ? "Run again" : "Find contacts"}

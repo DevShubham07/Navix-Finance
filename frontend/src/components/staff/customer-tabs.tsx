@@ -11,7 +11,7 @@ import { Loader2, XCircle } from "lucide-react";
 import { EmptyState, Skeleton, StatusBadge, toast } from "@/components/ui";
 import {
   Banknote, Building2, CalendarClock, Copy, FileSignature, Files, Gauge, HandCoins, History, IndianRupee,
-  Landmark, ListChecks, MapPin, MessageSquare, Plug, Repeat, Route, ShieldCheck, User, Users,
+  Landmark, ListChecks, MapPin, MessageSquare, Plug, Repeat, Route, ShieldCheck, Sparkles, User, Users,
 } from "lucide-react";
 import { type PillTabDef } from "@/components/ui/pill-tabs";
 import type { TabCtx } from "@/components/staff/customer-360/types";
@@ -32,6 +32,7 @@ import { DedupeTab } from "@/components/staff/customer-360/dedupe-tab";
 import { FollowupsTab } from "@/components/staff/customer-360/followups-tab";
 import { ThirdPartyTab } from "@/components/staff/customer-360/third-party-tab";
 import { BreTab } from "@/components/staff/customer-360/bre-tab";
+import { AnalyzerTab } from "@/components/staff/customer-360/analyzer-tab";
 import { BureauMobilesStrip } from "@/components/staff/mobile-matches";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import { CreditProfileCard } from "@/components/staff/credit-profile-card";
@@ -64,32 +65,31 @@ import {
   type ApplicationStatus,
 } from "@/lib/api/applications";
 
-/** The 20 lifecycle-ordered tabs shared by the pop-up and the full customer page. */
+/** The 21 lifecycle-ordered tabs shared by the pop-up and the full customer page. */
 export const CUSTOMER_TABS: PillTabDef[] = [
   { key: "customer", label: "Customer", icon: User },
   { key: "loan", label: "Loan", icon: Landmark },
-  { key: "sanction", label: "Sanction", icon: FileSignature },
   { key: "disbursal", label: "Disbursal", icon: Banknote },
   { key: "repayment", label: "Repayment", icon: IndianRupee },
   { key: "collections", label: "Collections", icon: HandCoins },
-  { key: "third-party", label: "Third-party logs", icon: Plug },
+  { key: "third-party", label: "Third-party logs", icon: Plug, groupStart: true },
   { key: "banking", label: "Banking", icon: Building2 },
   { key: "credit", label: "Credit report", icon: Gauge },
   { key: "bre", label: "BRE", icon: ListChecks },
-  { key: "journey", label: "Journey", icon: Route },
+  { key: "analyzer", label: "AI Analyzer", icon: Sparkles },
+  { key: "journey", label: "Journey", icon: Route, groupStart: true },
   { key: "references", label: "References", icon: Users },
   { key: "documents", label: "Documents", icon: Files },
   { key: "addresses", label: "Addresses", icon: MapPin },
   { key: "dedupe", label: "Dedupe", icon: Copy },
   { key: "communication", label: "Communication", icon: MessageSquare },
   { key: "activity", label: "Activity", icon: History },
+  { key: "sanction", label: "Sanction", icon: FileSignature, groupStart: true },
   { key: "followups", label: "Follow-ups", icon: CalendarClock },
   {
     key: "mandate",
     label: "Mandate",
     icon: Repeat,
-    disabled: true,
-    badge: "Coming soon",
   },
   { key: "verifications", label: "Verifications", icon: ShieldCheck },
 ];
@@ -170,7 +170,7 @@ export function CustomerTabBody({
       case "activity":
         return <AuditLogsTab customerId={customerId} apps={detail.applications} />;
       case "mandate":
-        return <MandateTab />;
+        return <MandateTab applicationId={applicationId} loanId={app?.loanId ?? null} status={app?.status ?? null} onChanged={onChanged} />;
       case "verifications":
         // Every check on the file, penny drop included, with the same per-check detail and manual
         // override the application dialog offers.
@@ -179,6 +179,8 @@ export function CustomerTabBody({
         return <ThirdPartyTab {...ctx} />;
       case "bre":
         return <BreTab {...ctx} />;
+      case "analyzer":
+        return <AnalyzerTab customerId={customerId} />;
       case "addresses":
         return <AddressesTab {...ctx} />;
       case "dedupe":
@@ -197,7 +199,7 @@ export function CustomerTabBody({
   return (
     <>
       <NeedsManualReviewBadge customerId={customerId} className="mb-3" />
-      {(tab === "loan" || tab === "repayment" || tab === "disbursal") && <BureauMobilesStrip customerId={customerId} />}
+      {(tab === "repayment" || tab === "disbursal") && <BureauMobilesStrip customerId={customerId} />}
       {content}
     </>
   );

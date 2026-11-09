@@ -104,4 +104,9 @@ public interface LoanApplicationRepository
             + "and a.status not in :statuses")
     Set<Long> findCustomerIdsWithStatusNotIn(@Param("customerIds") Collection<Long> customerIds,
                                              @Param("statuses") Collection<ApplicationStatus> statuses);
+
+    /** Which of these applications' borrowers accepted the signup terms (the register's "agreement"). */
+    @Query(value = "select p.application_id from customer_profile p "
+            + "where p.application_id in (:ids) and p.terms_accepted_at is not null", nativeQuery = true)
+    Set<Long> findIdsWithTermsAccepted(@Param("ids") Collection<Long> ids);
 }

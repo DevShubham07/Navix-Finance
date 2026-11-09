@@ -61,7 +61,7 @@ describe("BusinessSnapshot position section", () => {
       ["Net receivable", position.receivablePaise, "POSITION_RECEIVABLE"],
       ["Total penalty", position.penaltyPaise, "POSITION_PENALTY"],
       ["Net received", position.receivedPaise, "POSITION_RECEIVED"],
-      ["Pending", position.pendingPaise, "POSITION_PENDING"],
+      ["Outstanding", position.pendingPaise, "POSITION_PENDING"],
     ] as const;
     for (const [title, paise, metric] of cards) {
       await userEvent.click(screen.getByRole("button", { name: new RegExp(`^${title}: ${esc(paiseToINR(paise))} `) }));
@@ -69,10 +69,18 @@ describe("BusinessSnapshot position section", () => {
     }
   });
 
-  it("explains settlement waivers in the Pending popover", async () => {
+  it("puts Business position first, above the KPI counts", () => {
+    data = full;
+    const { container } = wrap(<BusinessSnapshot {...props()} />);
+    const text = container.textContent ?? "";
+    expect(text.indexOf("Business position")).toBeGreaterThanOrEqual(0);
+    expect(text.indexOf("Business position")).toBeLessThan(text.indexOf("Key Performance Indicators"));
+  });
+
+  it("explains settlement waivers in the Outstanding popover", async () => {
     data = full;
     wrap(<BusinessSnapshot {...props()} />);
-    await userEvent.hover(screen.getByRole("button", { name: /^Pending: / }));
+    await userEvent.hover(screen.getByRole("button", { name: /^Outstanding: / }));
     const tip = screen.getByRole("tooltip");
     expect(tip).toHaveTextContent(`Waived via settlements: ${paiseToINR(position.waivedPaise)}`);
     expect(tip).toHaveTextContent(`Overpaid by borrowers: ${paiseToINR(position.overpaidPaise)}`);

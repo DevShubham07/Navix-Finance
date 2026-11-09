@@ -755,7 +755,7 @@ function PaymentLi({ p }: { p: PaymentView }) {
       <span>
         <span className="font-semibold text-ink">{paiseToINR(p.amountPaise)}</span>{" "}
         <span className="text-xs text-muted">
-          {p.method === "BANK_TRANSFER" ? "Bank" : p.method}
+          {p.method === "BANK_TRANSFER" ? "Bank" : p.method === "PAYU" ? "PayU" : p.method}
           {p.txnRef ? ` · ${p.txnRef}` : ""}
           {p.paidOn ? ` · ${formatDate(p.paidOn)}` : ""}
           {p.partial ? " · partial" : ""}

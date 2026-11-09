@@ -74,6 +74,38 @@ class LoanDirectoryAdapterTest {
     }
 
     @Test
+    void findDuesItemisesTheBreakdownAndPrefersTheDisbursalAccount() {
+        Loan loan = loan(2L, LoanStatus.ACTIVE);
+        LoanApplication app = new LoanApplication();
+        app.setId(1L);
+        app.setLoanId(2L);
+        app.setDisbursalAccountNumber("999000111");
+        app.setDisbursalIfsc("ICIC0000001");
+        CustomerProfile profile = new CustomerProfile();
+        profile.setApplicationId(1L);
+        profile.setEmail("asha@example.com");
+        profile.setSalaryAccountNumber("123");
+        profile.setBureauScore(742L);
+        when(loanRepository.findAllById(any())).thenReturn(List.of(loan));
+        when(applicationRepository.findByLoanIdIn(any())).thenReturn(List.of(app));
+        when(profileRepository.findByApplicationIdIn(any())).thenReturn(List.of(profile));
+        when(repaymentService.outstandingBreakdownsForAll(any(), any())).thenReturn(java.util.Map.of(2L,
+                new RepaymentService.OutstandingBreakdown(900_000L, 240_000L, 160_000L, 300_000L, null, 30, 10)));
+
+        com.navix.common.loan.LoanDues d = adapter.findDues(List.of(2L)).get(2L);
+
+        assertThat(d.interestPaise()).isEqualTo(240_000L);
+        assertThat(d.penaltyPaise()).isEqualTo(160_000L);
+        assertThat(d.paidPaise()).isEqualTo(300_000L);
+        // principal 800,000 + interest 240,000 + penalty 160,000, before the 300,000 paid.
+        assertThat(d.grossDuePaise()).isEqualTo(1_200_000L);
+        assertThat(d.accountNumber()).isEqualTo("999000111");
+        assertThat(d.ifsc()).isEqualTo("ICIC0000001");
+        assertThat(d.email()).isEqualTo("asha@example.com");
+        assertThat(d.bureauScore()).isEqualTo(742L);
+    }
+
+    @Test
     void findLoanResolvesBorrowerAndShowsFullPan() {
         LoanApplication app = new LoanApplication();
         app.setId(1L);

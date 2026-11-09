@@ -1,8 +1,12 @@
 package com.navix.loan.service;
 
+import com.navix.common.blocklist.BlocklistMirror;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.exception.ResourceNotFoundException;
 import com.navix.common.notification.event.LoanLimitRevisedEvent;
+import com.navix.common.query.FilterSpec;
+import com.navix.common.query.ColumnFilter;
+import com.navix.common.query.SqlFacets;
 import com.navix.common.notification.event.SanctionedAmountRevisedEvent;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.BorrowerIdentityPort;
@@ -25,6 +29,7 @@ import com.navix.loan.dto.CustomerDtos.HandoverCheck;
 import com.navix.loan.dto.CustomerDtos.HandoverReference;
 import com.navix.loan.dto.CustomerDtos.DpdBuckets;
 import com.navix.loan.dto.CreditBriefDtos.CreditBriefView;
+import com.navix.loan.dto.CustomerDtos.CustomerBlockView;
 import com.navix.loan.dto.CustomerDtos.CustomerDetail;
 import com.navix.loan.dto.CustomerDtos.CustomerPage;
 import com.navix.loan.dto.CustomerDtos.CustomerSummary;
@@ -38,6 +43,7 @@ import com.navix.loan.dto.LoanDtos.PaymentView;
 import com.navix.loan.dto.ReviewDtos.DocumentView;
 import com.navix.loan.dto.ReviewDtos.ProfileView;
 import com.navix.loan.entity.ApplicationDocument;
+import com.navix.loan.entity.ApplicationRejection;
 import com.navix.loan.entity.ApplicationEvent;
 import com.navix.loan.entity.ApplicationReference;
 import com.navix.loan.entity.ApplicationVerification;
@@ -53,6 +59,7 @@ import com.navix.loan.entity.ProfileChangeLog;
 import com.navix.loan.repository.ApplicationDocumentRepository;
 import com.navix.loan.repository.ApplicationEventRepository;
 import com.navix.loan.repository.ApplicationReferenceRepository;
+import com.navix.loan.repository.ApplicationRejectionRepository;
 import com.navix.loan.repository.ApplicationVerificationRepository;
 import com.navix.loan.repository.CustomerCallLogRepository;
 import com.navix.loan.repository.CustomerLimitOverrideRepository;
@@ -129,6 +136,8 @@ public class CustomerService {
     private final LoanMath loanMath;
     private final CustomerBookQuery bookQuery;
     private final CustomerTrustSignalsService trustSignals;
+    private final ApplicationRejectionRepository rejectionRepository;
+    private final BlocklistMirror blocklistMirror;
 
     /**
      * Roles that see the ENTIRE customer book. Everyone else who holds {@code customer:view} is
@@ -162,8 +171,8 @@ public class CustomerService {
     /**
      * The caller's customer scope, or {@code null} when they may see the entire book.
      *
-     * <p>A scoped staffer sees a customer when they have an application <b>assigned</b> to them or
-     * have <b>recorded a decision</b> on one. Roles that allocate the book (TELECALLER, via
+     * <p>A scoped staffer sees a customer when they have an application <b>assigned</b> to them,
+     * <b>own</b> the customer ({@code customer_owner}), or have <b>recorded a decision</b> on one. Roles that allocate the book (TELECALLER, via
      * {@code customer:assign}) additionally see <b>unallocated</b> customers — without that carve-out
      * a telecaller sees zero rows on {@code ?seg=unallocated} and can never claim anyone, which is
      * their entire job.
@@ -195,6 +204,10 @@ public class CustomerService {
         Set<Long> owned = new HashSet<>(
                 nullSafe(applicationRepository.findCustomerIdsByAssignedExecutiveId(staffId)));
         owned.addAll(decidedCustomerIds(staffId));
+        // A customer allocated to this staffer through the owner picker (customer_owner) is theirs
+        // too. The picker offers Credit Executives, so without this an executive could be handed a
+        // customer and then get a 404 on the roll-up, leaving every tab of the pop-up empty.
+        owned.addAll(nullSafe(ownerRepository.findCustomerIdsByOwnerStaffId(staffId)));
 
         // A collections officer acquires neither of the two above: the credit assignment is a
         // different field (assigned_executive_id) and DECISION_ACTIONS are all credit/disbursement
@@ -205,6 +218,13 @@ public class CustomerService {
                 nullSafe(collectionCaseDirectory.loanIdsAssignedTo(staffId));
         if (!collectionLoanIds.isEmpty()) {
             owned.addAll(nullSafe(loanRepository.findCustomerIdsByIdIn(collectionLoanIds)));
+        }
+
+        // The Accountant verifies every borrower's repayments and reads the company-wide ledger, so
+        // their book is every customer who has a loan: the ledger and the verification queue open
+        // the customer behind a payment. Applicants who never got a loan stay out of it.
+        if ("ACCOUNTANT".equals(role)) {
+            owned.addAll(nullSafe(loanRepository.findAllCustomerIds()));
         }
 
         Set<Long> allocated = null;
@@ -291,7 +311,7 @@ public class CustomerService {
     }
 
     /** Throws 404 (never 403 — that would confirm the customer exists) when out of the caller's scope. */
-    private void requireVisible(Long customerId) {
+    void requireVisible(Long customerId) {
         CustomerScope scope = scope();
         if (scope != null && !scope.permits(customerId) && !onTelecallerQueue(customerId)) {
             throw new ResourceNotFoundException("Customer", String.valueOf(customerId));
@@ -349,21 +369,96 @@ public class CustomerService {
     @Transactional(readOnly = true)
     public CustomerPage page(String q, LocalDate from, LocalDate to, String seg, boolean mine,
             int page, int size) {
+        return page(q, from, to, seg, mine, page, size, null, null);
+    }
+
+    /** As above, sorted by a {@link CustomerBookQuery#SORTS} key and {@code asc}/{@code desc}. */
+    @Transactional(readOnly = true)
+    public CustomerPage page(String q, LocalDate from, LocalDate to, String seg, boolean mine,
+            int page, int size, String sort, String dir) {
+        return page(q, from, to, seg, mine, page, size, sort, dir, Map.of());
+    }
+
+    /**
+     * As above, narrowed by the {@code f.<column>} filters in {@code columnFilters} (raw request
+     * params; {@link FilterSpec} drops anything that is not a registered column). The filters are
+     * ANDed after scope in {@link CustomerBookQuery}, so they only narrow what the caller may see.
+     */
+    @Transactional(readOnly = true)
+    public CustomerPage page(String q, LocalDate from, LocalDate to, String seg, boolean mine,
+            int page, int size, String sort, String dir, Map<String, String> columnFilters) {
         rejectDsa();
         CustomerBookQuery.BookFilter filter = bookFilter(q, from, to, seg, mine);
+        FilterSpec spec = columnSpec(columnFilters);
         int safeSize = Math.max(1, Math.min(size, MAX_PAGE_SIZE));
         int safePage = Math.max(1, page);
-        long total = bookQuery.count(filter);
-        List<Long> ids = bookQuery.pageIds(filter, (safePage - 1) * safeSize, safeSize);
+        int offset = (safePage - 1) * safeSize;
+        // The unfiltered path keeps the original query signatures: an empty spec adds no SQL, and this
+        // is the path nearly every request takes.
+        long total = spec.isEmpty() ? bookQuery.count(filter) : bookQuery.count(filter, spec);
+        List<Long> ids = spec.isEmpty()
+                ? bookQuery.pageIds(filter, offset, safeSize, sort, dir)
+                : bookQuery.pageIds(filter, offset, safeSize, sort, dir, spec);
         return new CustomerPage(hydrate(ids), safePage, safeSize, total);
     }
 
     /** Every matching row under the same filter as {@link #page} — the ADMIN "download all" export. */
     @Transactional(readOnly = true)
     public List<CustomerSummary> export(String q, LocalDate from, LocalDate to, String seg, boolean mine) {
+        return export(q, from, to, seg, mine, Map.of());
+    }
+
+    /** As above, under the column filters too — an export must carry exactly what the register shows. */
+    @Transactional(readOnly = true)
+    public List<CustomerSummary> export(String q, LocalDate from, LocalDate to, String seg, boolean mine,
+            Map<String, String> columnFilters) {
         requireAdmin();
         CustomerBookQuery.BookFilter filter = bookFilter(q, from, to, seg, mine);
-        return hydrate(bookQuery.pageIds(filter, 0, EXPORT_CAP));
+        FilterSpec spec = columnSpec(columnFilters);
+        return hydrate(spec.isEmpty()
+                ? bookQuery.pageIds(filter, 0, EXPORT_CAP)
+                : bookQuery.pageIds(filter, 0, EXPORT_CAP, null, null, spec));
+    }
+
+    /**
+     * The distinct values of one column, for its filter checklist. Goes through {@link #bookFilter},
+     * so it carries the caller's {@link #scope()} exactly like the list: a facet must not be an
+     * enumeration oracle for names or stages outside the staffer's own book. {@code columnFilters}
+     * is the OTHER columns' filters; the column's own is dropped so its dropdown does not collapse.
+     */
+    @Transactional(readOnly = true)
+    public SqlFacets.Facet facets(String q, LocalDate from, LocalDate to, boolean mine, String column,
+            Map<String, String> columnFilters) {
+        return facets(q, from, to, mine, column, columnFilters, null);
+    }
+
+    /** As above, narrowed to values containing {@code search} so a long list can be looked up server-side. */
+    @Transactional(readOnly = true)
+    public SqlFacets.Facet facets(String q, LocalDate from, LocalDate to, boolean mine, String column,
+            Map<String, String> columnFilters, String search) {
+        rejectDsa();
+        CustomerBookQuery.BookFilter filter = bookFilter(q, from, to, null, mine);
+        SqlFacets.Facet facet = bookQuery.facet(filter, columnSpec(columnFilters).without(column), column, search);
+        if (!"owner".equals(column)) {
+            return facet;
+        }
+        // Owner values are staff ids; the checklist shows their names.
+        Map<String, String> labels = new java.util.HashMap<>();
+        for (String v : facet.values()) {
+            if (!ColumnFilter.BLANK.equals(v)) {
+                try {
+                    staffDirectory.findStaff(Long.parseLong(v)).map(StaffSummary::name)
+                            .ifPresent(n -> labels.put(v, n));
+                } catch (NumberFormatException ignored) {
+                    // not an id: leave it unlabelled
+                }
+            }
+        }
+        return facet.withLabels(labels);
+    }
+
+    private static FilterSpec columnSpec(Map<String, String> columnFilters) {
+        return FilterSpec.parse(columnFilters, CustomerBookQuery.FILTER_COLUMNS);
     }
 
     /**
@@ -674,15 +769,28 @@ public class CustomerService {
     /** The segment-chip counts under the same search / window / scope / "mine" as {@link #page}. */
     @Transactional(readOnly = true)
     public CustomerSummaryCounts summary(String q, LocalDate from, LocalDate to, boolean mine) {
+        return summary(q, from, to, mine, Map.of());
+    }
+
+    /** As above; the chips also follow the column filters (all but {@code stage} — see the query). */
+    @Transactional(readOnly = true)
+    public CustomerSummaryCounts summary(String q, LocalDate from, LocalDate to, boolean mine,
+            Map<String, String> columnFilters) {
         rejectDsa();
         CustomerBookQuery.BookFilter filter = bookFilter(q, from, to, null, mine);
+        FilterSpec spec = columnSpec(columnFilters);
         Map<String, Long> bySegment = new HashMap<>();
         long all = 0;
         long unallocated = 0;
-        for (CustomerBookQuery.SegmentCount c : bookQuery.segmentCounts(filter)) {
+        long reloan = 0;
+        long blocked = 0;
+        for (CustomerBookQuery.SegmentCount c : spec.isEmpty()
+                ? bookQuery.segmentCounts(filter) : bookQuery.segmentCounts(filter, spec)) {
             bySegment.merge(c.segment(), c.count(), Long::sum);
             all += c.count();
             unallocated += c.unallocated();
+            reloan += c.reloan();
+            blocked += c.blocked();
         }
         return new CustomerSummaryCounts(
                 all,
@@ -696,7 +804,9 @@ public class CustomerService {
                 bySegment.getOrDefault("hold", 0L),
                 bySegment.getOrDefault("rejected", 0L),
                 bySegment.getOrDefault("closed", 0L),
-                unallocated);
+                unallocated,
+                reloan,
+                blocked);
     }
 
     private CustomerBookQuery.BookFilter bookFilter(String q, LocalDate from, LocalDate to, String seg,
@@ -783,6 +893,9 @@ public class CustomerService {
             }
         }
         Map<Long, BureauState> bureauStates = bureauStateService.states(bureauAppIdByCustomer.values());
+        // Live rejection-register blocks, one query for every mobile on the page.
+        Map<String, ApplicationRejection> blockByMobile = activeBlocks(profileByCustomer.values().stream()
+                .filter(Objects::nonNull).map(CustomerProfile::getMobile).toList());
         // Same application ids the bureau state is read from, so the Failure column always
         // describes the SAME file the Bureau column does.
         Map<Long, VerificationFailureService.CaseFailure> failures =
@@ -853,6 +966,7 @@ public class CustomerService {
                             com.navix.common.loan.ApplicationActorDirectory.HandledBy.NONE);
             String collectionOfficerName = latestLoan == null ? null
                     : collectionOfficerNameByLoanId.get(latestLoan.getId());
+            ApplicationRejection block = profile != null ? blockByMobile.get(profile.getMobile()) : null;
             CustomerSummary cs = new CustomerSummary(
                     customerId,
                     profile != null ? profile.getFullName() : null,
@@ -888,10 +1002,54 @@ public class CustomerService {
                     failure.reason().name(),
                     failure.reason().severity().name(),
                     failure.reason().retryable(),
-                    trustByCustomer.get(customerId));
+                    trustByCustomer.get(customerId),
+                    latestApp != null ? latestApp.getJourneyStep() : null,
+                    isReloan(latestApp, loans),
+                    block != null,
+                    blockReason(block));
             out.add(cs);
         }
         return out;
+    }
+
+    /** Same rule as the dashboard's RELOAN segment (MetricSql.SEG): a loan CLOSED on/before the latest file was created. */
+    private static boolean isReloan(LoanApplication latestApp, List<Loan> loans) {
+        if (latestApp == null || latestApp.getCreatedAt() == null
+                || latestApp.getStatus() == com.navix.loan.domain.ApplicationStatus.DRAFT) {
+            return false;
+        }
+        LocalDate createdOn = latestApp.getCreatedAt().atZone(IST).toLocalDate();
+        return loans.stream().anyMatch(l -> l.getStatus() == com.navix.loan.domain.LoanStatus.CLOSED
+                && l.getClosedOn() != null && !l.getClosedOn().isAfter(createdOn));
+    }
+
+    /**
+     * mobile → its live block (the one ending last when several overlap), for every mobile given,
+     * in one query. Null/blank mobiles are skipped; an empty input never reaches the database
+     * ({@code in ()} is invalid SQL).
+     */
+    private Map<String, ApplicationRejection> activeBlocks(Collection<String> mobiles) {
+        // A mutable map so a caller may `.get(null)` for a profile with no mobile — `Map.of()` throws.
+        Map<String, ApplicationRejection> out = new HashMap<>();
+        List<String> keys = mobiles.stream().filter(m -> m != null && !m.isBlank()).distinct().toList();
+        if (keys.isEmpty()) {
+            return out;
+        }
+        for (ApplicationRejection r : nullSafe(rejectionRepository.findByMobileInAndBlockedUntilAfter(keys, Instant.now()))) {
+            out.merge(r.getMobile(), r, (a, b) -> a.getBlockedUntil().isAfter(b.getBlockedUntil()) ? a : b);
+        }
+        return out;
+    }
+
+    /** The staff-entered reason for a staff block; the reason code for an automatic one; null for none. */
+    private static String blockReason(ApplicationRejection block) {
+        if (block == null) {
+            return null;
+        }
+        if (ApplicationRejection.BLOCKED_BY_STAFF.equals(block.getReasonCode())) {
+            return block.getReasonDetail();
+        }
+        return block.getReasonCode();
     }
 
     /**
@@ -995,10 +1153,107 @@ public class CustomerService {
         // Report tab always agree.
         Long latestAppId = appViews.isEmpty() ? null : appViews.get(0).id();
         CreditBriefView creditBrief = latestAppId != null ? creditBriefService.view(latestAppId) : null;
+        ApplicationRejection block = profile != null && profile.getMobile() != null
+                ? activeBlocks(List.of(profile.getMobile())).get(profile.getMobile()) : null;
         return new CustomerDetail(customerId, profileView, appViews, loanViews, payments,
                 ownerStaffId, ownerName, creditBrief,
                 eligibilityService.overrideOf(customerId).orElse(null),
-                outstandingByLoanId);
+                outstandingByLoanId,
+                block != null,
+                blockReason(block));
+    }
+
+    /**
+     * Block a customer for future loans — the "should they be able to borrow again?" decision taken
+     * when a repayment is verified, so ACCOUNTANT (the verifier) and ADMIN. Writes one
+     * {@link ApplicationRejection#BLOCKED_BY_STAFF} row keyed on the customer's current mobile with an
+     * {@link ApplicationRejection#INDEFINITE} {@code blocked_until}, which {@code
+     * ApplicationFlowService.assertNotBlocked} already honours on every new application and reborrow;
+     * and mirrors the mobile + PAN onto the fraud blocklist so dedupe flags them on a later signup.
+     * Audited to {@code profile_change_log} like {@link #assignOwner}.
+     */
+    @Transactional
+    public CustomerBlockView block(Long customerId, String reason) {
+        requireRole("ACCOUNTANT");
+        rejectDsa();
+        requireVisible(customerId);
+        String detail = trimToNull(reason);
+        if (detail == null) {
+            throw new BusinessException("REASON_REQUIRED", "A reason is required to block a customer");
+        }
+        CustomerProfile profile = requireProfileWithMobile(customerId);
+        String mobile = profile.getMobile();
+        if (!rejectionRepository.findByMobileAndReasonCodeAndBlockedUntilAfter(
+                mobile, ApplicationRejection.BLOCKED_BY_STAFF, Instant.now()).isEmpty()) {
+            throw new BusinessException("ALREADY_BLOCKED", "This customer is already blocked");
+        }
+        ApplicationRejection row = new ApplicationRejection();
+        row.setApplicationId(null);
+        row.setCustomerId(customerId);
+        row.setMobile(mobile);
+        row.setReasonCode(ApplicationRejection.BLOCKED_BY_STAFF);
+        row.setReasonDetail(detail);
+        row.setAuto(Boolean.FALSE);
+        row.setBlockedUntil(ApplicationRejection.INDEFINITE);
+        rejectionRepository.save(row);
+
+        String mirrorReason = mirrorReason(detail);
+        blocklistMirror.block("PHONE", mobile, mirrorReason);
+        if (trimToNull(profile.getPan()) != null) {
+            blocklistMirror.block("PAN", profile.getPan(), mirrorReason);
+        }
+        logIfChanged(customerId, null, "blocked", null, detail);
+        return new CustomerBlockView(customerId, true, detail);
+    }
+
+    /**
+     * Lift a staff block (ADMIN only). Ends every live {@code BLOCKED_BY_STAFF} row on the customer's
+     * mobile now — the row stays in the register as history — and deactivates the mirrored blocklist
+     * entries that carry this block's reason, leaving any independently added entry alone. A
+     * cooling-off from a credit reject is not a staff block and is not touched.
+     */
+    @Transactional
+    public CustomerBlockView unblock(Long customerId) {
+        requireAdmin();
+        rejectDsa();
+        requireVisible(customerId);
+        CustomerProfile profile = requireProfileWithMobile(customerId);
+        String mobile = profile.getMobile();
+        List<ApplicationRejection> live = rejectionRepository.findByMobileAndReasonCodeAndBlockedUntilAfter(
+                mobile, ApplicationRejection.BLOCKED_BY_STAFF, Instant.now());
+        if (live.isEmpty()) {
+            throw new BusinessException("NOT_BLOCKED", "This customer is not blocked by staff");
+        }
+        Instant now = Instant.now();
+        for (ApplicationRejection r : live) {
+            r.setBlockedUntil(now);
+            rejectionRepository.save(r);
+            String mirrorReason = mirrorReason(r.getReasonDetail());
+            blocklistMirror.unblock("PHONE", mobile, mirrorReason);
+            if (trimToNull(profile.getPan()) != null) {
+                blocklistMirror.unblock("PAN", profile.getPan(), mirrorReason);
+            }
+        }
+        logIfChanged(customerId, null, "blocked", live.get(0).getReasonDetail(), null);
+        return new CustomerBlockView(customerId, false, null);
+    }
+
+    /** The reason the mirrored blocklist entries carry — exact-matched again on unblock. */
+    private static String mirrorReason(String detail) {
+        return "Blocked by staff: " + detail;
+    }
+
+    /** The customer's latest profile, which must carry the mobile every block is keyed on. */
+    private CustomerProfile requireProfileWithMobile(Long customerId) {
+        CustomerProfile profile = latestProfile(applicationRepository.findByCustomerId(customerId));
+        if (profile == null) {
+            throw new ResourceNotFoundException("Customer", String.valueOf(customerId));
+        }
+        if (trimToNull(profile.getMobile()) == null) {
+            throw new BusinessException("NO_MOBILE_ON_FILE",
+                    "This customer has no mobile on file to key the block on");
+        }
+        return profile;
     }
 
     /**
@@ -1424,6 +1679,7 @@ public class CustomerService {
         total += jdbc.update("DELETE FROM customer_call_log WHERE customer_id = ?", customerId);
         total += jdbc.update("DELETE FROM customer_owner WHERE customer_id = ?", customerId);
         total += jdbc.update("DELETE FROM customer_limit_override WHERE customer_id = ?", customerId);
+        total += jdbc.update("DELETE FROM customer_mandate_ceiling_override WHERE customer_id = ?", customerId);
         total += jdbc.update("DELETE FROM borrower_mobile WHERE customer_id = ?", customerId);
         total += jdbc.update("DELETE FROM borrower_preferences WHERE customer_id = ?", customerId);
         total += jdbc.update("DELETE FROM borrower_credential WHERE customer_id = ?", customerId);
@@ -1563,12 +1819,12 @@ public class CustomerService {
         //    initial entry (the borrower first typing the field in onboarding), not an edit.
         for (ProfileChangeLog c : changeLogRepository.findByCustomerIdOrderByIdDesc(customerId)) {
             boolean initial = c.getOldValue() == null;
-            String newVal = c.getNewValue() != null ? c.getNewValue() : "—";
+            String newVal = c.getNewValue() != null ? profileValue(c.getField(), c.getNewValue()) : "—";
             out.add(new ActivityEntry(
                     "PROFILE",
                     c.getApplicationId(),
-                    (initial ? "Entered " : "Updated ") + humanize(c.getField()),
-                    initial ? newVal : c.getOldValue() + " → " + newVal,
+                    (initial ? "Entered " : "Updated ") + profileFieldLabel(c.getField()),
+                    initial ? newVal : profileValue(c.getField(), c.getOldValue()) + " → " + newVal,
                     c.getCreatedBy(),
                     c.getCreatedAt()));
         }
@@ -1658,6 +1914,46 @@ public class CustomerService {
         } catch (RuntimeException e) {
             return null;
         }
+    }
+
+    /** A change-log field as staff read it: "monthlySalaryPaise" → "Monthly salary" (the unit is in the value). */
+    static String profileFieldLabel(String field) {
+        if (field != null && field.endsWith("Paise") && field.length() > "Paise".length()) {
+            return humanize(field.substring(0, field.length() - "Paise".length()));
+        }
+        return humanize(field);
+    }
+
+    /** A change-log value as staff read it: a {@code *Paise} field's "40000000" → "₹4,00,000"; else unchanged. */
+    static String profileValue(String field, String value) {
+        if (field == null || !field.endsWith("Paise") || value == null) {
+            return value;
+        }
+        long paise;
+        try {
+            paise = Long.parseLong(value.trim());
+        } catch (NumberFormatException e) {
+            return value;
+        }
+        String sign = paise < 0 ? "-" : "";
+        long abs = Math.abs(paise);
+        // Lakh grouping by hand: DecimalFormat (even for en-IN) only groups in threes.
+        String digits = Long.toString(abs / 100);
+        StringBuilder grouped = new StringBuilder();
+        int head = digits.length() - 3;
+        if (head > 0) {
+            for (int i = 0; i < head; i++) {
+                if (i > 0 && (head - i) % 2 == 0) {
+                    grouped.append(',');
+                }
+                grouped.append(digits.charAt(i));
+            }
+            grouped.append(',').append(digits, head, digits.length());
+        } else {
+            grouped.append(digits);
+        }
+        long fraction = abs % 100;
+        return sign + "₹" + grouped + (fraction == 0 ? "" : String.format(".%02d", fraction));
     }
 
     /** "monthlySalaryPaise"/"KYC_CREDIT_APPROVE" → "Monthly salary paise"/"Kyc credit approve". */

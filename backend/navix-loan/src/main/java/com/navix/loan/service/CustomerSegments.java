@@ -126,6 +126,8 @@ public final class CustomerSegments {
         long rejected = 0;
         long closed = 0;
         long unallocated = 0;
+        long reloan = 0;
+        long blocked = 0;
         for (CustomerSummary c : rows) {
             all++;
             switch (segmentOf(c.loanStatus(), c.latestStatus())) {
@@ -143,8 +145,14 @@ public final class CustomerSegments {
             if (c.ownerStaffId() == null) {
                 unallocated++;
             }
+            if (c.reloan()) {
+                reloan++;
+            }
+            if (c.blocked()) {
+                blocked++;
+            }
         }
         return new CustomerSummaryCounts(all, incomplete, pending, review, approved,
-                disbursementPending, active, overdue, hold, rejected, closed, unallocated);
+                disbursementPending, active, overdue, hold, rejected, closed, unallocated, reloan, blocked);
     }
 }

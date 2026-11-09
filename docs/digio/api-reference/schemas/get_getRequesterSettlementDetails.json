@@ -1,0 +1,248 @@
+{
+ "components": {
+  "schemas": {
+   "ExternalConsolidatedSettlementSchema_Client": {
+    "properties": {
+     "account_number": {
+      "description": "Account number associated with the settlement",
+      "type": "string"
+     },
+     "bank_txn_ref": {
+      "description": "Bank transaction reference number",
+      "type": "string"
+     },
+     "debit_txn_details": {
+      "description": "Detailed list of debit transactions",
+      "items": {
+       "$ref": "#/components/schemas/TransactionDetails_Client"
+      },
+      "type": "array"
+     },
+     "debit_txn_ids": {
+      "description": "List of debit transaction IDs",
+      "items": {
+       "description": "List of debit transaction IDs",
+       "type": "string"
+      },
+      "type": "array"
+     },
+     "fee1": {
+      "description": "First fee amount",
+      "type": "number"
+     },
+     "fee2": {
+      "description": "Second fee amount",
+      "type": "number"
+     },
+     "final_amount": {
+      "description": "Final amount after all deductions",
+      "type": "number"
+     },
+     "id": {
+      "description": "Unique identifier for the consolidated settlement",
+      "type": "string"
+     },
+     "settlement_bank_ifsc": {
+      "description": "IFSC code of the settlement bank",
+      "type": "string"
+     },
+     "status": {
+      "description": "Status of the settlement",
+      "enum": [
+       "scheduled",
+       "settle_success"
+      ],
+      "type": "string"
+     },
+     "tax1": {
+      "description": "First tax amount",
+      "type": "number"
+     },
+     "tax2": {
+      "description": "Second tax amount",
+      "type": "number"
+     },
+     "tax3": {
+      "description": "Third tax amount",
+      "type": "number"
+     },
+     "total_amount": {
+      "description": "Total amount before deductions",
+      "type": "number"
+     },
+     "txn_time": {
+      "description": "Timestamp of the transaction",
+      "format": "date-time",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "GenericBadRequestResponse_Client": {
+    "properties": {
+     "code": {
+      "description": "Error code",
+      "type": "string"
+     },
+     "details": {
+      "description": "Details about the exception. Usually contains the exception id for reference.",
+      "type": "string"
+     },
+     "errors": {
+      "description": "Custom errors",
+      "type": "string"
+     },
+     "message": {
+      "description": "Description of the error",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "TransactionDetails_Client": {
+    "properties": {
+     "account_number": {
+      "description": "Account number associated with the transaction",
+      "type": "string"
+     },
+     "amount_in_paise": {
+      "description": "Amount in paise of the debit transaction",
+      "format": "int64",
+      "type": "integer"
+     },
+     "settlement_date": {
+      "description": "Date and time when the settlement was processed",
+      "format": "date-time",
+      "type": "string"
+     },
+     "settlement_utr_number": {
+      "description": "Unique Reference Number for the settlement",
+      "type": "string"
+     },
+     "txn_id": {
+      "description": "Transaction ID of the debit transaction",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   }
+  },
+  "securitySchemes": {
+   "api_auth": {
+    "in": "header",
+    "scheme": "basic",
+    "type": "http"
+   }
+  }
+ },
+ "info": {
+  "contact": {
+   "email": "support@digio.in"
+  },
+  "description": "Getting started with Digio Rest Apis",
+  "title": "Digio Apis",
+  "x-provenance": "Fetched 2026-10-16 from https://documentation.digio.in/swagger/get_getRequesterSettlementDetails.json (servers[] replaced with the hosts documented at https://documentation.digio.in/digienvironments/; the published spec ships a localhost placeholder)"
+ },
+ "openapi": "3.0.1",
+ "paths": {
+  "/v3/client/nach_debit/requester_settlement/{id}": {
+   "get": {
+    "description": "This API is only applicable for Digio PA users. The API is used to get details of all transactions against a consolidated settlement id i.e. CID which is received over email.",
+    "operationId": "getRequesterSettlementDetails",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "examples": {
+         "Success Response": {
+          "description": "Success Response",
+          "value": {
+           "account_number": "xxxxxxxx6178",
+           "bank_txn_ref": "2414920240205000400669533",
+           "debit_txn_details": [
+            {
+             "amount_in_paise": 100,
+             "txn_id": "NPT240202192837489U8SRPIRBKU3B"
+            },
+            {
+             "amount_in_paise": 100,
+             "txn_id": "NPT2402021935104447JA9G5ALY9NB"
+            }
+           ],
+           "debit_txn_ids": [
+            "NPT240202192837489U8SRPIRBKU3B",
+            "NPT2402021935104447JA9G5ALY9NB"
+           ],
+           "fee1": 0,
+           "fee2": 0,
+           "final_amount": 200,
+           "id": "C240205080000OL2ND",
+           "settlement_bank_ifsc": "YESB0000001",
+           "status": "settle_success",
+           "tax1": 0,
+           "tax2": 0,
+           "tax3": 0,
+           "total_amount": 200,
+           "txn_time": "2024-02-05 10:00:09"
+          }
+         }
+        },
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/ExternalConsolidatedSettlementSchema_Client"
+         },
+         "type": "array"
+        }
+       }
+      }
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "examples": {
+         "Bad Request": {
+          "description": "Bad Request",
+          "value": {
+           "code": "ENTITY_NOT_FOUND",
+           "details": "EX23297402937402",
+           "message": "Entity not found for this id"
+          }
+         }
+        },
+        "schema": {
+         "$ref": "#/components/schemas/GenericBadRequestResponse_Client"
+        }
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "api_auth": []
+     }
+    ],
+    "summary": "Get Consolidated Settlement Details"
+   }
+  }
+ },
+ "servers": [
+  {
+   "description": "Production",
+   "url": "https://api.digio.in"
+  },
+  {
+   "description": "Sandbox",
+   "url": "https://ext.digio.in:444"
+  }
+ ]
+}

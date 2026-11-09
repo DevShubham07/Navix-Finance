@@ -36,8 +36,9 @@ function inr(value: number): number {
 }
 
 /** Up-front 10% processing fee on the principal. */
-export function processingFee(amount: number): number {
-  return inr(amount * PROCESSING_FEE_RATE);
+export function processingFee(amount: number, feeDiscountPercent = 0): number {
+  // Mirrors backend LoanMath: discount = round(principal x pct / 100), taken off the fee, never below 0.
+  return Math.max(0, inr(amount * PROCESSING_FEE_RATE) - inr((amount * feeDiscountPercent) / 100));
 }
 
 /** 18% GST charged on the processing fee. */
@@ -164,8 +165,8 @@ export function dueDateFromSalary(params: {
 /**
  * Build a full itemized {@link LoanCostBreakdown} for a principal and tenure.
  */
-export function buildCostBreakdown(amount: number, tenureDays: number): LoanCostBreakdown {
-  const fee = processingFee(amount);
+export function buildCostBreakdown(amount: number, tenureDays: number, feeDiscountPercent = 0): LoanCostBreakdown {
+  const fee = processingFee(amount, feeDiscountPercent);
   const gst = gstOnFee(fee);
   const interest = dailyInterest(amount, tenureDays);
   return {

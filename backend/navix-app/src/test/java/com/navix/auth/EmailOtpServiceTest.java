@@ -42,7 +42,8 @@ class EmailOtpServiceTest {
     }
 
     private EmailOtpService service() {
-        return new EmailOtpService(emailClient, enabledLogProperties(), suppression, new AttemptLimiter());
+        return new EmailOtpService(emailClient, enabledLogProperties(), suppression, new AttemptLimiter(),
+                new com.navix.notification.email.EmailHtmlRenderer());
     }
 
     /** Every code sent so far, in order — for the tests that mint more than one. */

@@ -16,6 +16,7 @@ import com.navix.app.dashboard.DashboardDtos.Snapshot;
 import com.navix.app.dashboard.DashboardDtos.TargetRow;
 import com.navix.app.dashboard.DashboardDtos.TargetUpdate;
 import com.navix.app.dashboard.DashboardDtos.Team;
+import com.navix.app.dashboard.DashboardDtos.TeamDay;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.web.ApiResponse;
 import java.time.LocalDate;
@@ -95,6 +96,14 @@ public class DashboardController {
                                   @RequestParam(required = false) String staffIds) {
         LocalDate[] p = DashboardService.period(from, to);
         return ApiResponse.ok(service.team(scope(view, staffIds), p[0], p[1]));
+    }
+
+    /** The Collection Head's team tracker: one day's figures per officer. {@code date} defaults to today (IST). */
+    @GetMapping("/collections/team")
+    public ApiResponse<TeamDay> collectionsTeam(@RequestParam String view, @RequestParam(required = false) String date,
+                                                @RequestParam(required = false) String staffIds) {
+        return ApiResponse.ok(service.collectionsTeamDay(scope(view, staffIds),
+                DashboardService.parseDate(date, DashboardService.today())));
     }
 
     @GetMapping("/calendar")

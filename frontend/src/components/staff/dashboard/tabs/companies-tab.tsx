@@ -93,7 +93,7 @@ export function CompaniesTab({ params, open }: DashTabProps) {
             <Building2 size={16} aria-hidden /> Performance by Company
           </span>
         }
-        info="Loans disbursed in the period by the borrower's employer. Collection % = verified payments ÷ total repayable of those loans."
+        info="Loans disbursed in the period by the borrower's employer. Collection % = verified payments ÷ what those loans actually owed (interest to the day repaid, plus penalty if late)."
         accent={TONE_SOLID.emerald}
         empty={perf.length === 0}
         {...shared}
@@ -106,7 +106,7 @@ export function CompaniesTab({ params, open }: DashTabProps) {
                 <th className={th}>Company</th>
                 <th className={`${th} text-right`}>Disbursed</th>
                 <th className={th}>Principal</th>
-                <th className={`${th} text-right`}>Repayable</th>
+                <th className={`${th} text-right`}>Owed</th>
                 <th className={`${th} text-right`}>Collected</th>
                 <th className={th}>Collection %</th>
                 <th className={th} aria-label="Open" />
@@ -121,7 +121,7 @@ export function CompaniesTab({ params, open }: DashTabProps) {
                     tabIndex={0}
                     onClick={() => openCompany(p.company)}
                     onKeyDown={(e) => e.key === "Enter" && openCompany(p.company)}
-                    title={`${p.company}: ${nf(p.disbursed)} loans · principal ${paiseToINR(p.disbursedPaise)} · repayable ${paiseToINR(p.repayablePaise)} · collected ${paiseToINR(p.collectedPaise)} (${fmtPct(p.collectionPct, 1)})`}
+                    title={`${p.company}: ${nf(p.disbursed)} loans · principal ${paiseToINR(p.disbursedPaise)} · owed ${paiseToINR(p.repayablePaise)} · collected ${paiseToINR(p.collectedPaise)} (${fmtPct(p.collectionPct, 1)})`}
                     className="cursor-pointer border-b border-line hover:bg-grey-50"
                   >
                     <td className="px-3 py-1.5">

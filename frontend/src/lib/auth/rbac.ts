@@ -81,6 +81,12 @@ export type Permission =
   // Referral payouts: the Disbursement Head settles the ₹-rewards (logs a txn id) and sees the
   // referral-expense dashboard; ADMIN has oversight.
   | "referral:payout"
+  // Let a BANK_UNSUPPORTED file past the blocking eMandate step (the bank has no API mandate, so the
+  // borrower cannot fix it by retrying). Mirrors ApplicationFlowService.mandateOverride; nothing else.
+  | "mandate:override"
+  // Fire a NACH debit against a borrower's mandate NOW (real money). Collections desk + ADMIN; mirrored
+  // by ManualDebitService, which also enforces case assignment (CASE_NOT_ASSIGNED) and refuses DSA.
+  | "mandate:debit"
   // Re-fire a provider verification (PAN / email / address / bureau / employment / penny-drop) from
   // the staff console. ADMIN only — the backend's `retryExternalCheck` is `requireAdmin()`, so a
   // credit role could open the Retry dialog and still be refused server-side. A credit reviewer who
@@ -101,7 +107,13 @@ export type Permission =
   // for oversight; COLLECTION_HEAD because DPD/overdue triage is their job and the register is
   // where they'd start a case. This token is display-only wording — the backend enforces the real
   // gate (mirrors this file's own convention: see customer:view / document:upload above).
-  | "loan:register";
+  | "loan:register"
+  // Read-only all-DPD-buckets overview. COLLECTION_HEAD + ADMIN (also as working-role Admin, which
+  // otherwise holds no collections:* token).
+  | "collections:overview"
+  // Send approved SMS / WhatsApp templates to customers and read the send log. ADMIN only (backend
+  // CustomerMessageController is requireRole("ADMIN")); shown only in the Admin working role.
+  | "message:send";
 
 /** Static role -> permission mapping. TODO: confirm against backend authz. */
 const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
@@ -131,20 +143,23 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
     "customer:view",
     "customer:view:all",
     "referral:payout",
+    "mandate:override",
     "loan:pipeline",
     "leads:import",
   ],
   ACCOUNTANT: ["loan:activate", "customer:view", "loan:pipeline", "leads:import"],
   COLLECTION_HEAD: [
     "collections:manage",
+    "mandate:debit",
     "customer:view",
     "customer:view:all",
     "customer:assign",
     "loan:pipeline",
     "loan:register",
+    "collections:overview",
     "leads:import",
   ],
-  COLLECTION_EXECUTIVE: ["collections:interact", "customer:view", "loan:pipeline", "leads:import"],
+  COLLECTION_EXECUTIVE: ["collections:interact", "mandate:debit", "customer:view", "loan:pipeline", "leads:import"],
   // Telecaller: view customers, enter DSA-style leads, disposition calls, self-assign chase-up
   // work off the telecalling queue. No lifecycle permission.
   TELECALLER: ["customer:view", "leads:manage", "customer:assign", "leads:import"],
@@ -170,7 +185,10 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
     "leads:manage",
     "referral:payout",
     "verification:retry",
+    "mandate:override",
+    "mandate:debit",
     "loan:register",
+    "collections:overview",
     // NOT dsa:portal — that is the DSA's own self-service portal, gated backend-side by
     // DsaService.requireDsaId() with a strict role equality and no ADMIN bypass (the portal is
     // scoped by JWT identity, and an ADMIN owns no lead/commission rows). Granting it here put
@@ -178,6 +196,7 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
     // "DSA required". ADMIN oversight goes through dsa:manage → /staff/admin/dsa.
     "dsa:manage",
     "leads:import",
+    "message:send",
   ],
 };
 
@@ -228,8 +247,15 @@ const ADMIN_ROLE_PERMISSIONS: Permission[] = [
   "dsa:manage",
   "waitlist:view",
   "loan:register",
+  "collections:overview",
   "document:upload",
   "leads:import",
+  "message:send",
+  // The Mandate tab's actions (cancel a mandate or debit, invite, re-check, the BANK_UNSUPPORTED override,
+  // debit now). Used nowhere else, and the backend already allows ADMIN all of them; without these the
+  // Admin view showed the tab with every button missing, including on the Mandates & debits console.
+  "mandate:override",
+  "mandate:debit",
 ];
 
 /** Each working role carries only its own permissions; `real` is kept for call-site symmetry. */

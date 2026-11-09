@@ -23,7 +23,15 @@ public final class OfferDtos {
     public record ReferencesRequest(List<ReferenceInput> references) {
     }
 
-    public record ReferenceView(int slot, String fullName, String mobile, String relation) {
+    public record ReferenceView(int slot, String fullName, String mobile, String relation,
+                                boolean otpRequired, boolean verified) {
+        public static ReferenceView of(com.navix.loan.entity.ApplicationReference r) {
+            return new ReferenceView(r.getSlot().intValue(), r.getFullName(), r.getMobile(), r.getRelation(),
+                    r.isOtpRequired(), r.getVerifiedAt() != null);
+        }
+    }
+
+    public record ReferenceOtpRequest(@NotBlank String otp) {
     }
 
     /**
@@ -41,7 +49,9 @@ public final class OfferDtos {
             long totalRepayablePaise,
             int tenureDays,
             LocalDate repaymentDate,
-            LocalDate expectedDisbursalDate) {
+            LocalDate expectedDisbursalDate,
+            long feeDiscountPaise,
+            int feeDiscountPercent) {
     }
 
     /** Screen 8: the stored Key Fact Statement and a short-lived URL to read it. */
@@ -53,8 +63,8 @@ public final class OfferDtos {
      * convention DigiLocker uses) and carry a per-attempt nonce, so the provider cannot re-serve a stale
      * signing session.
      */
-    public record EsignInitRequest(@NotBlank String successRedirectUrl,
-                                   @NotBlank String failureRedirectUrl) {
+    public record EsignInitRequest(@NotBlank @jakarta.validation.constraints.Size(max = 2048) String successRedirectUrl,
+                                   @NotBlank @jakarta.validation.constraints.Size(max = 2048) String failureRedirectUrl) {
     }
 
     /** Screen 9, fallback: a signature the borrower drew in the app. */

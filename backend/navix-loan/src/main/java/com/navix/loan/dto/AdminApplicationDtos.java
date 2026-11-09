@@ -5,6 +5,7 @@ import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.LoanApplication;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 
 /**
  * ADMIN-only flat view over every application — complete AND incomplete (DRAFT / partially filled) —
@@ -54,6 +55,11 @@ public final class AdminApplicationDtos {
         }
     }
 
+    /** One page of the ADMIN register; {@code total} matches the filter, {@code allCount} is every row. */
+    public record AdminApplicationPage(List<AdminApplicationView> rows, int page, int size, long total,
+                                       long allCount) {
+    }
+
     public record AdminApplicationView(
             // --- application ---
             Long id,
@@ -94,7 +100,9 @@ public final class AdminApplicationDtos {
             // via withAssignment(...), mirroring ApplicationDtos.ApplicationView.
             String assignedExecutiveName,
             Instant currentStageEnteredAt,
-            com.navix.common.loan.TrustSignals trust) {
+            com.navix.common.loan.TrustSignals trust,
+            /** Stored {@code journey_step} pointer; null if never set. */
+            String journeyStep) {
 
         public static AdminApplicationView of(LoanApplication a, CustomerProfile p, BureauState bureauState,
                 int stepsCompleted, int stepsRequired, boolean agreementAccepted, boolean complete) {
@@ -120,7 +128,7 @@ public final class AdminApplicationDtos {
                     p != null ? p.getCreditRecommendation() : null,
                     p != null ? p.getRiskCategory() : null,
                     stepsCompleted, stepsRequired, agreementAccepted, complete,
-                    p != null ? p.getCreatedAt() : null, bureauState, null, null, null);
+                    p != null ? p.getCreatedAt() : null, bureauState, null, null, null, a.getJourneyStep());
         }
 
         public AdminApplicationView withAssignment(String assignedExecutiveName, Instant currentStageEnteredAt) {
@@ -129,7 +137,7 @@ public final class AdminApplicationDtos {
                     email, dob, address, employer, employmentStatus, monthlySalaryPaise, salaryBank,
                     salaryAccountNumber, salaryIfsc, creditScore, starRating, recommendation, riskCategory,
                     stepsCompleted, stepsRequired, agreementAccepted, complete, kycCapturedAt, bureauState,
-                    assignedExecutiveName, currentStageEnteredAt, trust);
+                    assignedExecutiveName, currentStageEnteredAt, trust, journeyStep);
         }
 
         public AdminApplicationView withTrust(com.navix.common.loan.TrustSignals trust) {
@@ -138,7 +146,7 @@ public final class AdminApplicationDtos {
                     email, dob, address, employer, employmentStatus, monthlySalaryPaise, salaryBank,
                     salaryAccountNumber, salaryIfsc, creditScore, starRating, recommendation, riskCategory,
                     stepsCompleted, stepsRequired, agreementAccepted, complete, kycCapturedAt, bureauState,
-                    assignedExecutiveName, currentStageEnteredAt, trust);
+                    assignedExecutiveName, currentStageEnteredAt, trust, journeyStep);
         }
     }
 }

@@ -9,6 +9,7 @@ import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
 import com.navix.loan.domain.PaymentMethod;
 import com.navix.loan.dto.LoanDtos.RepaymentRequest;
+import com.navix.loan.payu.PayuService;
 import com.navix.loan.service.RepaymentService;
 import java.time.LocalDate;
 import org.junit.jupiter.api.AfterEach;
@@ -23,10 +24,17 @@ import org.junit.jupiter.api.Test;
  */
 class RepaymentControllerRoleTest {
 
-    private final RepaymentController controller = new RepaymentController(mock(RepaymentService.class));
+    private final PayuService payu = mock(PayuService.class);
+    private final RepaymentController controller = new RepaymentController(mock(RepaymentService.class),
+            mock(com.navix.loan.service.CustomerService.class), payu);
 
     private static final RepaymentRequest REQUEST =
             new RepaymentRequest(500_000L, PaymentMethod.UPI, "TXN-1", null, LocalDate.now());
+
+    @org.junit.jupiter.api.BeforeEach
+    void manualAllowedByDefault() {
+        org.mockito.Mockito.when(payu.manualAllowed(org.mockito.ArgumentMatchers.anyLong())).thenReturn(true);
+    }
 
     @AfterEach
     void clearActor() {
@@ -64,5 +72,21 @@ class RepaymentControllerRoleTest {
         RepaymentRequest own = new RepaymentRequest(500_000L, PaymentMethod.UPI, "TXN-1",
                 "loan/repayment-proof/uuid-shot.jpg", LocalDate.now());
         assertThatCode(() -> controller.record(1L, own)).doesNotThrowAnyException();
+    }
+    @Test
+    void borrowerCannotClaimAPayuPaymentOrUseManualWhenPayuHasNotFailed() {
+        ActorContext.set(new CurrentActor("9000001", "Asha", "BORROWER"));
+        RepaymentRequest claimsPayu = new RepaymentRequest(500_000L, PaymentMethod.PAYU, "X", "loan/repayment-proof/a.jpg", LocalDate.now());
+        assertThatThrownBy(() -> controller.record(1L, claimsPayu))
+                .isInstanceOf(BusinessException.class).hasFieldOrPropertyWithValue("code", "INVALID_METHOD");
+
+        org.mockito.Mockito.when(payu.manualAllowed(1L)).thenReturn(false);
+        RepaymentRequest manual = new RepaymentRequest(500_000L, PaymentMethod.UPI, "TXN-1", "loan/repayment-proof/a.jpg", LocalDate.now());
+        assertThatThrownBy(() -> controller.record(1L, manual))
+                .isInstanceOf(BusinessException.class).hasFieldOrPropertyWithValue("code", "MANUAL_PAYMENT_NOT_AVAILABLE");
+
+        // ADMIN is unaffected by either rule.
+        ActorContext.set(new CurrentActor("1", "Admin", "ADMIN"));
+        assertThatCode(() -> controller.record(1L, manual)).doesNotThrowAnyException();
     }
 }

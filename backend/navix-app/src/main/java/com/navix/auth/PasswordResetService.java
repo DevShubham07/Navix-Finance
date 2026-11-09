@@ -6,6 +6,7 @@ import com.navix.iam.domain.StaffStatus;
 import com.navix.iam.entity.StaffUser;
 import com.navix.iam.repository.StaffUserRepository;
 import com.navix.loan.repository.CustomerProfileRepository;
+import com.navix.loan.repository.LoanApplicationRepository;
 import com.navix.notification.config.EmailProperties;
 import com.navix.notification.email.EmailClient;
 import com.navix.notification.email.EmailMessage;
@@ -49,6 +50,8 @@ public class PasswordResetService {
     private final BorrowerCredentialRepository credentialRepository;
     private final StaffUserRepository staffRepository;
     private final CustomerProfileRepository profileRepository;
+    private final LoanApplicationRepository applicationRepository;
+    private final com.navix.config.StaffSessionRegistry staffSessionRegistry;
     private final PasswordEncoder passwordEncoder;
     private final EmailClient emailClient;
     private final EmailSuppressionService suppression;
@@ -60,6 +63,8 @@ public class PasswordResetService {
                                 BorrowerCredentialRepository credentialRepository,
                                 StaffUserRepository staffRepository,
                                 CustomerProfileRepository profileRepository,
+                                LoanApplicationRepository applicationRepository,
+                                com.navix.config.StaffSessionRegistry staffSessionRegistry,
                                 PasswordEncoder passwordEncoder,
                                 EmailClient emailClient,
                                 EmailSuppressionService suppression,
@@ -69,6 +74,8 @@ public class PasswordResetService {
         this.credentialRepository = credentialRepository;
         this.staffRepository = staffRepository;
         this.profileRepository = profileRepository;
+        this.applicationRepository = applicationRepository;
+        this.staffSessionRegistry = staffSessionRegistry;
         this.passwordEncoder = passwordEncoder;
         this.emailClient = emailClient;
         this.suppression = suppression;
@@ -91,9 +98,11 @@ public class PasswordResetService {
     }
 
     /**
-     * Borrower forgot-password: the email must match a stored KYC profile's email — the reset link
-     * only ever goes to that inbox, so owning it is the proof; no mobile is asked. Always returns (no
-     * account-enumeration); only sends the link on a real match.
+     * Borrower forgot-password: the email must match a stored KYC profile's OTP-verified personal
+     * email — the reset link only ever goes to that inbox, so owning it is the proof; no mobile is
+     * asked. The token's subject is the customer id the profile's APPLICATION belongs to, never one
+     * derived from the profile's mobile (a borrower-editable string that could be aimed at any other
+     * borrower's id). Always returns (no account-enumeration); only sends the link on a real match.
      */
     @Transactional
     public void requestBorrowerReset(String email) {
@@ -101,10 +110,10 @@ public class PasswordResetService {
         if (normEmail.isEmpty()) {
             return;
         }
-        profileRepository.findFirstByEmailIgnoreCaseOrderByApplicationIdDesc(normEmail)
-                .filter(p -> p.getMobile() != null && !p.getMobile().isBlank())
+        profileRepository.findFirstByEmailIgnoreCaseAndPersonalEmailVerifiedTrueOrderByApplicationIdDesc(normEmail)
+                .flatMap(p -> applicationRepository.findById(p.getApplicationId()))
                 .ifPresentOrElse(
-                        p -> issueAndSend(BORROWER, AuthController.deriveCustomerId(p.getMobile()), normEmail),
+                        a -> issueAndSend(BORROWER, a.getCustomerId(), normEmail),
                         () -> log.info("borrower forgot-password no match email={}", Masking.maskEmail(normEmail)));
     }
 
@@ -157,7 +166,9 @@ public class PasswordResetService {
         StaffUser staff = staffRepository.findById(staffId)
                 .orElseThrow(() -> new BusinessException("INVALID_TOKEN", "This reset link is invalid."));
         staff.setPasswordHash(passwordEncoder.encode(newPassword));
+        staff.revokeSessions(); // a reset must end whoever was already signed in with the old password
         staffRepository.save(staff);
+        staffSessionRegistry.invalidate(staffId);
     }
 
     private void issueAndSend(String subjectType, long subjectId, String email) {

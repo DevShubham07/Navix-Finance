@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { can, canWorkAs, effectivePermissions, workingRolesFor } from "./rbac";
+import { can, canWorkAs, effectivePermissions, hasPermission, workingRolesFor } from "./rbac";
 
 describe("working roles", () => {
   it("ADMIN can work as Admin (first, the default) plus 7 operational roles, never DSA", () => {
@@ -38,6 +38,12 @@ describe("effectivePermissions", () => {
     }
   });
 
+  it("ADMIN working as Admin still gets the Mandate tab's actions", () => {
+    const p = effectivePermissions("ADMIN", "ADMIN");
+    expect(p).toContain("mandate:override");
+    expect(p).toContain("mandate:debit");
+  });
+
   it("Credit Head assigns but does not decide", () => {
     const p = effectivePermissions("CREDIT_HEAD", "CREDIT_HEAD");
     expect(p).not.toContain("loan:review");
@@ -67,5 +73,20 @@ describe("can", () => {
     expect(can(undefined, "CREDIT_HEAD", "loan:approve")).toBe(false);
     expect(can("CREDIT_HEAD", undefined, "loan:approve")).toBe(false);
     expect(can("CREDIT_HEAD", "CREDIT_HEAD", "loan:approve")).toBe(true);
+  });
+});
+
+describe("mandate:override", () => {
+  it("is held by DISBURSEMENT_HEAD and ADMIN only (ADMIN acts on it as Disbursement Head, like a release)", () => {
+    const roles = ["DISBURSEMENT_HEAD", "ADMIN", "CREDIT_HEAD", "CREDIT_EXECUTIVE", "ACCOUNTANT", "COLLECTION_HEAD", "COLLECTION_EXECUTIVE", "TELECALLER", "DSA"] as const;
+    expect(roles.filter((r) => hasPermission(r, "mandate:override"))).toEqual(["DISBURSEMENT_HEAD", "ADMIN"]);
+    expect(can("ADMIN", "DISBURSEMENT_HEAD", "mandate:override")).toBe(true);
+  });
+});
+
+describe("mandate:debit", () => {
+  it("grants mandate:debit to COLLECTION_EXECUTIVE, COLLECTION_HEAD and ADMIN only", () => {
+    const roles = ["COLLECTION_HEAD", "COLLECTION_EXECUTIVE", "ADMIN", "DISBURSEMENT_HEAD", "CREDIT_HEAD", "CREDIT_EXECUTIVE", "ACCOUNTANT", "TELECALLER", "DSA"] as const;
+    expect(roles.filter((r) => hasPermission(r, "mandate:debit"))).toEqual(["COLLECTION_HEAD", "COLLECTION_EXECUTIVE", "ADMIN"]);
   });
 });

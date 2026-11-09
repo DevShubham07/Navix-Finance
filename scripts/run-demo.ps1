@@ -73,7 +73,7 @@ if (-not $NoBackend) {
     "`$env:JAVA_HOME='$JdkHome';" +
     "`$env:DB_URL='jdbc:postgresql://localhost:$DbPort/navix';" +
     "`$env:DB_USERNAME='navix'; `$env:DB_PASSWORD='navix';" +
-    "`$env:NAVIX_ENV='dev';" +
+    "`$env:NAVIX_ENV='dev'; `$env:NAVIX_ALLOW_DEV_DEFAULTS='true';" +
     # Kill the AWS SSM parameter-store import (the RDS hazard).
     "`$env:SPRING_CONFIG_IMPORT='optional:configtree:./no-aws-config/';" +
     # Static dummy creds so the S3 beans construct offline instead of probing the credential chain.
@@ -113,6 +113,7 @@ Write-Host "  Frontend  http://localhost:3000        Staff console: /staff/login
 Write-Host "  Backend   http://localhost:$BackendPort  (Swagger: /swagger-ui.html)"
 Write-Host "  Postgres  localhost:$DbPort            Adminer http://localhost:8081"
 Write-Host ""
+Write-Host "  Staff logins are blanked by V92. Once the backend is up, run scripts\restore-demo-logins.sql on :$DbPort."
 Write-Host "  Admin login: meera.krishnan@navix.example / Admin@12345"
 Write-Host "  Next: .\scripts\seed-demo-data.ps1   then   .\scripts\seed-demo-data.ps1 -Verify"
 Write-Host ""

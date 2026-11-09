@@ -93,6 +93,11 @@ public class ApplicationFlowService {
     private final ReferralService referralService;
     private final DsaCommissionService dsaCommissionService;
     private final FeatureFlagService featureFlags;
+    private final MandateService mandateService;
+    // Repay-now fee discount (V95): resolved + pinned in reborrow, the one site that mints a returning application.
+    private final RepaymentDiscountOffers discountOffers;
+    // ADMIN one-use "allow re-application" (V95): lets a disqualified customer reach credit review.
+    private final com.navix.loan.repository.ReapplyAllowanceRepository allowanceRepository;
 
     /** Loan statuses that mean money is still owed past the due date — never fully repaid. */
     private static final Set<LoanStatus> DELINQUENT_LOAN_STATUSES =
@@ -159,10 +164,6 @@ public class ApplicationFlowService {
      * (revamp.md decision 47). Counted from the due date itself, not from the one-day salary grace.
      */
     public static final int LATE_REPAYMENT_TOLERANCE_DAYS = 5;
-
-    /** Staff roles permitted to cancel a pre-disbursement application (alongside the owning borrower). */
-    private static final Set<String> CANCEL_STAFF_ROLES = Set.of(
-            "CREDIT_EXECUTIVE", "CREDIT_HEAD", "DISBURSEMENT_HEAD", "ACCOUNTANT");
 
     // ---- creation & borrower steps -------------------------------------------------
 
@@ -260,7 +261,8 @@ public class ApplicationFlowService {
         // finds nothing bad — so it used to come back PRE_APPROVED and skip KYC + credit (Sep 2026,
         // #10737 after a fake-salary-slip reject). No repaid loan → NO_PRIOR_LOAN, which the /reloan
         // page turns into a fresh signup. A delinquent history still takes the auto-reject below.
-        if (!hasRepaidLoan(customerId) && !isDisqualifiedByHistory(customerId)) {
+        boolean disqualified = isDisqualifiedByHistory(customerId);
+        if (!hasRepaidLoan(customerId) && !disqualified) {
             throw new BusinessException("NO_PRIOR_LOAN", "No repaid advance found to borrow against");
         }
         Long salaryPaise = prior.getMonthlySalaryPaise();
@@ -280,7 +282,25 @@ public class ApplicationFlowService {
 
         // Action is "REBORROW" for both forks — the notification listener (NotificationEventListener
         // .mapAction) keys on the action + toStatus to pick the right template.
-        if (isDisqualifiedByHistory(customerId)) {
+        if (disqualified) {
+            // An ADMIN allowance (V95) is one use and buys exactly one thing: a place in the normal credit
+            // queue. Never PRE_APPROVED, never sanctioned here - a credit executive still decides.
+            Optional<com.navix.loan.entity.ReapplyAllowance> allowance =
+                    allowanceRepository.findFirstByCustomerIdAndUsedApplicationIdIsNullOrderByIdAsc(customerId);
+            if (allowance.isPresent()
+                    && allowanceRepository.consume(allowance.get().getId(), app.getId(), Instant.now()) == 1) {
+                discountOffers.pin(app);
+                LoanApplication allowedSource = latestSanctionedApplication(customerId).orElse(null);
+                if (allowedSource != null) {
+                    // The same person-level evidence a clean reborrow carries (identity, selfie, address,
+                    // references), so the reviewer sees it. No sanction is carried.
+                    copyCarriedVerifications(allowedSource.getId(), app.getId());
+                    copyReferences(allowedSource, app);
+                }
+                transition(app, ApplicationStatus.KYC_PENDING, "REBORROW_ALLOWED",
+                        "Re-application allowed by admin (allowance " + allowance.get().getId() + ")");
+                return applicationRepository.save(app);
+            }
             recordRejection(app, ApplicationRejection.PAST_DELINQUENCY,
                     "Repaid more than " + LATE_REPAYMENT_TOLERANCE_DAYS
                             + " days late, or a prior advance was never fully repaid",
@@ -289,6 +309,8 @@ public class ApplicationFlowService {
             return applicationRepository.save(app);
         }
 
+        // Clean path: pin the best unlocked repay-now discount (the rejected path above never gets one).
+        discountOffers.pin(app);
         transition(app, ApplicationStatus.PRE_APPROVED, "REBORROW", "Pre-approved returning borrower");
         LoanApplication source = latestSanctionedApplication(customerId).orElse(null);
         if (source == null) {
@@ -351,7 +373,7 @@ public class ApplicationFlowService {
      * each. The eSign is excluded — see {@link #reborrow}.
      *
      * <p>The copies keep the original status and provider but are re-stamped with a message naming
-     * the source application, so the staff Verification Dashboard shows evidence that was carried
+     * the source application, so the staff verification view shows evidence that was carried
      * over rather than passing it off as a check run today.
      */
     private void copyCarriedVerifications(Long sourceAppId, Long newAppId) {
@@ -473,6 +495,21 @@ public class ApplicationFlowService {
     @Transactional
     public LoanApplication autoRejectSystem(Long appId, String reasonCode, String detail, int blockDays) {
         return doAutoReject(appId, reasonCode, detail, blockDays);
+    }
+
+    /**
+     * {@link #autoRejectSystem(Long, String, String, int)} with an explicit block end (e.g.
+     * {@link ApplicationRejection#INDEFINITE}) and a separate event action + notes: the register
+     * {@code reasonCode}/{@code detail} are staff-only, while the {@code application_event} action and notes
+     * are readable by the borrower, so a rule that must not name itself passes a generic {@code AUTO_REJECT_*}.
+     */
+    @Transactional
+    public LoanApplication autoRejectSystem(Long appId, String reasonCode, String detail, Instant blockedUntil,
+                                            String eventAction, String eventNotes) {
+        LoanApplication app = require(appId);
+        recordRejection(app, reasonCode, detail, true, blockedUntil);
+        transition(app, ApplicationStatus.REJECTED, eventAction, eventNotes, blockedUntil);
+        return applicationRepository.save(app);
     }
 
     private LoanApplication doAutoReject(Long appId, String reasonCode, String detail, int blockDays) {
@@ -609,6 +646,8 @@ public class ApplicationFlowService {
         app.setSalaryCreditDay(salaryCreditDay != null ? salaryCreditDay : app.getSalaryCreditDay());
         if (st == ApplicationStatus.PRE_APPROVED) {
             // Pre-approved returning borrower → straight to the Disbursement Head (skips credit).
+            // Second door to disbursement: it never passes acceptOffer, so it needs the same gate.
+            requireMandate(app);
             transition(app, ApplicationStatus.DISBURSEMENT_PENDING, "APPLY_FAST_TRACK",
                     "amountPaise=" + amountPaise);
         } else {
@@ -761,6 +800,13 @@ public class ApplicationFlowService {
         return applicationRepository.save(app);
     }
 
+    /** Flag on => the application's disbursal account must be covered by a usable ACTIVE mandate. */
+    private void requireMandate(LoanApplication app) {
+        if (mandateService.mandateRequired(app)) {
+            throw new BusinessException("MANDATE_REQUIRED", "Register your eMandate before continuing");
+        }
+    }
+
     /**
      * The borrower accepts the sanctioned offer, ending the post-approval journey and handing the
      * file to the Disbursement Head. Phase 3's offer screens (amount → eSign → disbursal account) sit
@@ -786,8 +832,15 @@ public class ApplicationFlowService {
                 .isEmpty()) {
             throw new BusinessException("ESIGN_REQUIRED", "Sign your sanction letter before continuing");
         }
+        if (referenceRepository.findByApplicationIdOrderBySlotAsc(appId).stream()
+                .anyMatch(ApplicationReference::isOtpPending)) {
+            throw new BusinessException("REFERENCE_OTP_PENDING", "Both references must confirm their code first");
+        }
+        // UMRN present => may proceed. Flag off => the eMandate step does not exist.
+        requireMandate(app);
         long ceiling = app.getSanctionedAmountPaise() != null ? app.getSanctionedAmountPaise() : 0L;
-        long drawn = amountPaise != null ? amountPaise : ceiling;
+        // The e-signed Key Fact Statement carries the stored amount; a caller-supplied one is ignored.
+        long drawn = app.getAmountRequested() != null ? app.getAmountRequested() : ceiling;
         if (drawn < LoanMath.MIN_LOAN_PAISE) {
             throw new BusinessException("AMOUNT_TOO_LOW", "Requested amount is below the minimum of ₹1,000");
         }
@@ -796,6 +849,41 @@ public class ApplicationFlowService {
         }
         app.setAmountRequested(drawn);
         transition(app, ApplicationStatus.DISBURSEMENT_PENDING, "ACCEPT_OFFER", "amountPaise=" + drawn);
+        return applicationRepository.save(app);
+    }
+
+    /**
+     * Staff override of the blocking eMandate step, for ONE case only: the customer's latest attempt is
+     * {@code BANK_UNSUPPORTED} (the bank has no API mandate, so retrying can never help). Every other
+     * mandate state is the borrower's to retry, so it is refused here. Same gates as {@link #acceptOffer}
+     * (SANCTIONED, signed ESIGN) minus the mandate, plus a mandatory audited reason.
+     */
+    @Transactional
+    public LoanApplication mandateOverride(Long appId, String notes) {
+        requireAnyRole("DISBURSEMENT_HEAD");
+        LoanApplication app = require(appId);
+        if (app.getStatus() != ApplicationStatus.SANCTIONED) {
+            throw new BusinessException("NOT_APPLICABLE", "This application isn't sanctioned");
+        }
+        if (!mandateService.isBankUnsupported(appId)) {
+            throw new BusinessException("MANDATE_OVERRIDE_NOT_ALLOWED",
+                    "A mandate override is only available when the borrower's bank cannot register an online mandate");
+        }
+        if (verificationRepository.findByApplicationIdAndCheckType(appId, ApplicationVerificationService.ESIGN)
+                .filter(v -> ApplicationVerificationService.PASS.equals(v.getStatus())).isEmpty()) {
+            throw new BusinessException("AGREEMENT_NOT_SIGNED", "The borrower hasn't signed their agreement yet");
+        }
+        if (notes == null || notes.isBlank()) {
+            throw new BusinessException("NOTE_REQUIRED", "A reason is required to override the mandate");
+        }
+        long ceiling = app.getSanctionedAmountPaise() != null ? app.getSanctionedAmountPaise() : 0L;
+        long drawn = app.getAmountRequested() != null ? app.getAmountRequested() : ceiling;
+        if (drawn < LoanMath.MIN_LOAN_PAISE || drawn > ceiling) {
+            throw new BusinessException("AMOUNT_INVALID", "The borrower has not chosen a valid amount yet");
+        }
+        app.setAmountRequested(drawn);
+        transition(app, ApplicationStatus.DISBURSEMENT_PENDING, "MANDATE_OVERRIDE",
+                "Bank unsupported; overridden by " + ActorContext.get().name() + " — " + notes.trim());
         return applicationRepository.save(app);
     }
 
@@ -913,8 +1001,7 @@ public class ApplicationFlowService {
     }
 
     /**
-     * Who may cancel: ADMIN (oversight); the owning BORROWER (their own application only); or a
-     * pre-disbursement staff role. Anyone else (anonymous, an unrelated borrower) is rejected so a
+     * Who may cancel: ADMIN (oversight) or the owning BORROWER (their own application only). Anyone else (anonymous, an unrelated borrower) is rejected so a
      * cancel can't be driven by an actor with no authority over the application.
      */
     private void requireCancelAuthority(LoanApplication app) {
@@ -929,9 +1016,6 @@ public class ApplicationFlowService {
             }
             return;
         }
-        if (CANCEL_STAFF_ROLES.contains(role)) {
-            return;
-        }
         throw new BusinessException("FORBIDDEN_ROLE", "You are not allowed to cancel this application");
     }
 
@@ -944,9 +1028,18 @@ public class ApplicationFlowService {
      */
     @Transactional
     public void closeForLoan(Long loanId) {
+        closeForLoan(loanId, "Loan fully repaid");
+    }
+
+    /**
+     * As {@link #closeForLoan(Long)}, with the audit note supplied — a settlement closure says so. The
+     * action stays {@code REPAID}: notifications, the journey and every closed-status check key on it.
+     */
+    @Transactional
+    public void closeForLoan(Long loanId, String notes) {
         applicationRepository.findByLoanId(loanId).ifPresent(app -> {
             if (app.getStatus() == ApplicationStatus.ACTIVE || app.getStatus() == ApplicationStatus.OVERDUE) {
-                transition(app, ApplicationStatus.CLOSED, "REPAID", "Loan fully repaid");
+                transition(app, ApplicationStatus.CLOSED, "REPAID", notes);
                 applicationRepository.save(app);
             }
         });
@@ -959,6 +1052,12 @@ public class ApplicationFlowService {
         LoanApplication app = require(appId);
         requireCreditOwnership(app);
         return app;
+    }
+
+    /** The customer behind an application, with no assignment check — for callers applying the customer-book scope instead. */
+    @Transactional(readOnly = true)
+    public Long customerIdOf(Long appId) {
+        return require(appId).getCustomerId();
     }
 
     private static final java.time.ZoneId IST = java.time.ZoneId.of("Asia/Kolkata");
@@ -1327,6 +1426,11 @@ public class ApplicationFlowService {
      * flight. Server-enforced so a direct create call can't bypass the UI gating.
      */
     private void assertCanStartNewApplication(Long customerId) {
+        // Held to commit, i.e. across the caller's insert: two parallel requests queue here, so the
+        // second one sees the first one's application instead of both passing the check below.
+        if (customerId != null) {
+            mandateService.lockCustomer(customerId);
+        }
         assertNotBlocked(customerId);
         List<LoanApplication> apps = applicationRepository.findByCustomerId(customerId);
         if (apps.stream().anyMatch(a -> LIVE_LOAN_STATUSES.contains(a.getStatus()))) {
@@ -1334,6 +1438,10 @@ public class ApplicationFlowService {
         }
         if (apps.stream().anyMatch(a -> !a.getStatus().isTerminal() && !LIVE_LOAN_STATUSES.contains(a.getStatus()))) {
             throw new BusinessException("ACTIVE_APPLICATION", "Finish your in-progress application before starting a new one");
+        }
+        // Last on purpose: a borrower with a file in flight still gets ACTIVE_APPLICATION above and carries on.
+        if (featureFlags.isEnabled(IntakeSwitchService.FLAG, false)) {
+            throw new BusinessException("APPLICATIONS_CLOSED", "We are not accepting new applications right now");
         }
     }
 
@@ -1361,6 +1469,11 @@ public class ApplicationFlowService {
     private boolean hasRepaidLoan(Long customerId) {
         return loanRepository.findByCustomerId(customerId).stream()
                 .anyMatch(l -> l.getStatus() == LoanStatus.CLOSED);
+    }
+
+    /** Whether the repayment-history rule currently turns this customer away (ADMIN allow-re-application gate). */
+    public boolean isDisqualified(Long customerId) {
+        return isDisqualifiedByHistory(customerId);
     }
 
     private boolean isDisqualifiedByHistory(Long customerId) {
@@ -1464,13 +1577,32 @@ public class ApplicationFlowService {
      * call) and 90 (an engine rule) would between them say which one turned the borrower away.
      */
     private void assertNotBlocked(Long customerId) {
-        String mobile = latestProfileForCustomer(customerId).map(CustomerProfile::getMobile).orElse(null);
-        if (mobile == null || mobile.isBlank()) {
-            return;
+        // A staff block is also held on the customer id, so correcting the mobile on file (an ADMIN
+        // action) cannot quietly lift it.
+        if (customerId != null && rejectionRepository.findFirstByCustomerIdAndReasonCodeAndBlockedUntilAfter(
+                customerId, ApplicationRejection.BLOCKED_BY_STAFF, Instant.now()).isPresent()) {
+            log.info("blocked application start customer={} staff block", customerId);
+            throw new BusinessException("NOT_ELIGIBLE",
+                    "Your account is not eligible for new loans. Please contact support.");
         }
-        rejectionRepository.findFirstByMobileAndBlockedUntilAfterOrderByBlockedUntilDesc(mobile, Instant.now())
+        // Blocks are keyed on the customer id AND the mobile: a borrower who edits the mobile on their
+        // profile must not walk out from under a block recorded against them.
+        String mobile = latestProfileForCustomer(customerId).map(CustomerProfile::getMobile).orElse(null);
+        Optional<ApplicationRejection> byCustomer = customerId == null ? Optional.empty()
+                : rejectionRepository.findFirstByCustomerIdAndBlockedUntilAfterOrderByBlockedUntilDesc(
+                        customerId, Instant.now());
+        Optional<ApplicationRejection> byMobile = mobile == null || mobile.isBlank() ? Optional.empty()
+                : rejectionRepository.findFirstByMobileAndBlockedUntilAfterOrderByBlockedUntilDesc(
+                        mobile, Instant.now());
+        (byCustomer.isPresent() ? byCustomer : byMobile)
                 .ifPresent(block -> {
                     log.info("blocked application start customer={} until={}", customerId, block.getBlockedUntil());
+                    // A staff block has no date to promise (CustomerService.block, year 9999) — the
+                    // borrower is told to contact support rather than shown "apply again on 31 Dec 9999".
+                    if (block.isIndefinite()) {
+                        throw new BusinessException("NOT_ELIGIBLE",
+                                "Your account is not eligible for new loans. Please contact support.");
+                    }
                     throw new BusinessException("NOT_ELIGIBLE",
                             "You are not eligible at the moment. You can apply again on or after "
                                     + BLOCK_DATE.format(block.getBlockedUntil().atZone(IST)) + ".");

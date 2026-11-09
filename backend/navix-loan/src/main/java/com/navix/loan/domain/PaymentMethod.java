@@ -9,5 +9,7 @@ package com.navix.loan.domain;
 public enum PaymentMethod {
     UPI,
     BANK_TRANSFER,
-    NACH
+    NACH,
+    /** PayU Hosted Checkout: confirmed by PayU (verify_payment), recorded VERIFIED in one step. */
+    PAYU
 }
