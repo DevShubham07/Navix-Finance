@@ -615,8 +615,13 @@ public class ApplicationVerificationService {
         // resolve at all goes to REVIEW.
         boolean resolved = r.address() != null && !r.address().isBlank();
         profile.setAddressVerified(resolved);
-        if (resolved && (profile.getAddress() == null || profile.getAddress().isBlank())) {
+        if (resolved) {
+            String old = profile.getAddress();
             profile.setAddress(r.address());
+            if (old != null && !old.isBlank() && !old.equals(r.address())) {
+                changeLogger.logIfChanged(requireApplication(appId).getCustomerId(), appId, "address",
+                        old, r.address());
+            }
         }
         profileRepo.save(profile);
 
@@ -2085,7 +2090,9 @@ public class ApplicationVerificationService {
      * Declared salary + salary-slip keys (min 3 months) → provisional eligible limit (25% cap). On a
      * reborrow the customer may re-declare salary and/or salary-credit day: when {@code salaryCreditDay}
      * is supplied it overwrites the application's day, the eligible limit is recomputed inline, and any
-     * change to a previously-recorded salary/day is audited to {@code profile_change_log}.
+     * change to a previously-recorded salary/day is audited to {@code profile_change_log}. A BORROWER may
+     * only do this while the application is {@code DRAFT} (the signup payslips step); afterwards a salary
+     * change needs staff verification, so the call is refused. ADMIN is unrestricted.
      *
      * <p>{@code filePassword} is the borrower's optional key for password-protected slip PDFs (V56);
      * it is stored on every slip row this call persists.
@@ -2095,6 +2102,11 @@ public class ApplicationVerificationService {
                                    Integer salaryCreditDay, String filePassword) {
         if (monthlySalaryPaise <= 0) {
             throw new BusinessException("INVALID_SALARY", "Monthly salary must be positive");
+        }
+        if ("BORROWER".equals(ActorContext.get().role())
+                && requireApplication(appId).getStatus() != ApplicationStatus.DRAFT) {
+            throw new BusinessException("SALARY_INCREASE_NEEDS_REVIEW",
+                    "To update your salary, please contact support. We need to verify the new amount first.");
         }
         if (slipObjectKeys != null) {
             requireOwnApplicationKeys(appId, slipObjectKeys);

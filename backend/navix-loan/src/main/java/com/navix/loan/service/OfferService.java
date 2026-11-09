@@ -314,6 +314,7 @@ public class OfferService {
     @Transactional
     public StepResult esignInit(Long appId, EsignInitRequest req) {
         requireSanctioned(appId);
+        sanctionLetter(appId); // render at the current amount so the letter sent for signing is never stale
         return verification.esignInit(appId, req.successRedirectUrl(), req.failureRedirectUrl());
     }
 
@@ -597,9 +598,12 @@ public class OfferService {
     }
 
     private void requireNotSigned(Long appId) {
-        if (isSigned(appId)) {
+        // PENDING = an eSign session is open on the current letter; changing the amount now would
+        // let the borrower sign one amount and draw another.
+        if (isSigned(appId) || verificationRepo.findByApplicationIdAndCheckType(appId, ApplicationVerificationService.ESIGN)
+                .filter(v -> ApplicationVerificationService.PENDING.equals(v.getStatus())).isPresent()) {
             throw new BusinessException("TERMS_LOCKED",
-                    "You have already signed your agreement, so the loan amount can no longer be changed.");
+                    "You have started signing your agreement, so the loan amount can no longer be changed.");
         }
     }
 

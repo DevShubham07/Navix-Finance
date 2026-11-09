@@ -170,8 +170,7 @@ public class CustomerReviewService {
         String address = trimToNull(req.address());
         if (address != null) {
             log(customerId, appId, "address", p.getAddress(), address);
-            // address is deliberately not tracked in changedFields: the address step verifies first
-            // and saves after, so invalidating here would undo the check it just passed.
+            if (!address.equals(trimToNull(p.getAddress()))) changedFields.add("address");
             p.setAddress(address);
         }
         String employer = trimToNull(req.employer());
@@ -214,6 +213,7 @@ public class CustomerReviewService {
             log(customerId, appId, "officialEmail", p.getOfficialEmail(), officialEmail);
             if (!officialEmail.equalsIgnoreCase(p.getOfficialEmail())) {
                 p.setOfficialEmailOtpVerified(null); // inbox control was proven for the OLD address
+                changedFields.add("officialEmail");
             }
             p.setOfficialEmail(officialEmail);
         }
@@ -221,11 +221,13 @@ public class CustomerReviewService {
         if (accountNumber != null) {
             log(customerId, appId, "salaryAccountNumber",
                     Masking.maskAccount(p.getSalaryAccountNumber()), Masking.maskAccount(accountNumber));
+            if (!accountNumber.equals(p.getSalaryAccountNumber())) changedFields.add("salaryAccountNumber");
             p.setSalaryAccountNumber(accountNumber);
         }
         String ifsc = trimToNull(req.salaryIfsc());
         if (ifsc != null) {
             log(customerId, appId, "salaryIfsc", p.getSalaryIfsc(), ifsc.toUpperCase());
+            if (!ifsc.toUpperCase().equals(p.getSalaryIfsc())) changedFields.add("salaryIfsc");
             p.setSalaryIfsc(ifsc.toUpperCase());
         }
         String accountMobile = normalizeMobile(req.salaryAccountMobile());

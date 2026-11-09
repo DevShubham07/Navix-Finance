@@ -225,13 +225,26 @@ class CustomerReviewServiceTest {
     }
 
     @Test
-    void afterDraftChangedVerifiedFieldsAreInvalidated_butAddressIsNot() {
+    void afterDraftChangedVerifiedFieldsAreInvalidated_includingAddress() {
         stubProfile(ApplicationStatus.KYC_PENDING);
 
         service.saveProfile(APP_ID, slice("New address", "Globex", null, null, null, null));
 
         verify(verificationInvalidation).invalidateForFields(eq(APP_ID),
-                argThat(s -> s.equals(java.util.Set.of("employer"))));
+                argThat(s -> s.equals(java.util.Set.of("employer", "address"))));
+    }
+
+    @Test
+    void afterDraftOfficialEmailAndAccountChangesAreInvalidated() {
+        CustomerProfile p = stubProfile(ApplicationStatus.KYC_PENDING);
+        p.setSalaryAccountNumber("111");
+        p.setSalaryIfsc("HDFC0000001");
+
+        service.saveProfile(APP_ID, new ProfileRequest(null, null, null, null, null, null, null, null, null,
+                null, "b@acme.com", "222", "icic0000002", null, null, null, null, null, null));
+
+        verify(verificationInvalidation).invalidateForFields(eq(APP_ID),
+                argThat(s -> s.equals(java.util.Set.of("officialEmail", "salaryAccountNumber", "salaryIfsc"))));
     }
 
     @Test

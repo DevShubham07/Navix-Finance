@@ -2006,6 +2006,62 @@ class ApplicationVerificationServiceTest {
         verify(documentRepo, never()).save(any());
     }
 
+    private void stubSalaryApp(ApplicationStatus status) {
+        lenient().when(applicationRepo.findById(APP)).thenReturn(Optional.of(appWithStatus(APP, status)));
+        lenient().when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(profile()));
+    }
+
+    @Test
+    void verifySalary_isRefusedForABorrowerAfterDraft_withNoWrite() {
+        ActorContext.set(new CurrentActor("7", "Borrower", "BORROWER"));
+        stubSalaryApp(ApplicationStatus.SANCTIONED);
+
+        assertThatThrownBy(() -> service.verifySalary(APP, 4_000_000L, null, null, null))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "SALARY_INCREASE_NEEDS_REVIEW");
+        verify(profileRepo, never()).save(any());
+        verify(applicationRepo, never()).save(any());
+        verify(verificationRepo, never()).save(any());
+    }
+
+    @Test
+    void verifySalary_isAllowedForABorrowerInDraft() {
+        ActorContext.set(new CurrentActor("7", "Borrower", "BORROWER"));
+        stubSalaryApp(ApplicationStatus.DRAFT);
+
+        service.verifySalary(APP, 4_000_000L, null, null, null);
+
+        verify(profileRepo).save(any());
+    }
+
+    @Test
+    void verifySalary_isAllowedForAdminAfterDraft() {
+        ActorContext.set(new CurrentActor("1", "Admin", "ADMIN"));
+        stubSalaryApp(ApplicationStatus.SANCTIONED);
+
+        service.verifySalary(APP, 4_000_000L, null, null, null);
+
+        verify(profileRepo).save(any());
+    }
+
+    @Test
+    void verifyAddress_overwritesAnExistingProfileAddressWithTheResolvedOne() {
+        CustomerProfile p = profile();
+        p.setAddress("Old address");
+        LoanApplication app = appWithStatus(APP, ApplicationStatus.SANCTIONED);
+        app.setCustomerId(9L);
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(verification.verifyAddress(anyDouble(), anyDouble(), anyString())).thenReturn(
+                new com.navix.common.verification.VerificationPort.AddressCheck(
+                        "t1", "DIGITAP", true, "New resolved address", "122001", "HR", "Gurugram", "IN", 0.9));
+
+        service.verifyAddress(APP, 28.4, 77.0);
+
+        assertThat(p.getAddress()).isEqualTo("New resolved address");
+        verify(changeLogger).logIfChanged(9L, APP, "address", "Old address", "New resolved address");
+    }
+
     @Test
     void verifySalary_refusesASlipKeyFromAnotherApplication() {
         assertThatThrownBy(() -> service.verifySalary(APP, 4_000_000L,

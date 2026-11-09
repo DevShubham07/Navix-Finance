@@ -300,6 +300,52 @@ class OfferServiceTest {
         assertThat(app.getAmountRequested()).isEqualTo(1_500_000L);
     }
 
+    private void esignStatus(String status) {
+        com.navix.loan.entity.ApplicationVerification row = new com.navix.loan.entity.ApplicationVerification();
+        row.setStatus(status);
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, ApplicationVerificationService.ESIGN))
+                .thenReturn(Optional.of(row));
+    }
+
+    @Test
+    void whileAnEsignSessionIsPendingTheAmountCannotBeChanged() {
+        esignStatus(ApplicationVerificationService.PENDING);
+        app.setAmountRequested(1_500_000L);
+
+        assertThatThrownBy(() -> offer.chooseAmount(APP, 1_000_000L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "TERMS_LOCKED");
+        assertThat(app.getAmountRequested()).isEqualTo(1_500_000L);
+    }
+
+    @Test
+    void aFailedEsignStillAllowsTheAmountToChange() {
+        esignStatus("FAIL");
+
+        offer.chooseAmount(APP, 1_500_000L);
+
+        assertThat(app.getAmountRequested()).isEqualTo(1_500_000L);
+    }
+
+    @Test
+    void esignInitRendersTheLetterBeforeStartingTheSession() {
+        // Already signed: sanctionLetter returns the stored document without rendering, which is
+        // enough to prove it ran first (it is the only caller of the document lookup here).
+        signed();
+        ApplicationDocument doc = new ApplicationDocument();
+        doc.setId(5L);
+        doc.setS3ObjectKey("applications/1/sanction_letter/sanction-letter.pdf");
+        when(documentRepo.findFirstByApplicationIdAndDocTypeOrderByIdDesc(
+                APP, ApplicationVerificationService.SANCTION_LETTER)).thenReturn(Optional.of(doc));
+        when(storage.presignDownload(doc.getS3ObjectKey())).thenReturn("https://signed-url");
+
+        offer.esignInit(APP, new com.navix.loan.dto.OfferDtos.EsignInitRequest("https://ok", "https://no"));
+
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(storage, verification);
+        order.verify(storage).presignDownload(doc.getS3ObjectKey());
+        order.verify(verification).esignInit(APP, "https://ok", "https://no");
+    }
+
     @Test
     void afterSigningTheSanctionLetterIsNotRerenderedOrOverwritten() {
         signed();
