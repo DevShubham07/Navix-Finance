@@ -445,3 +445,11 @@ ECS subnets (priv) subnet-04debb2364f89a58f(1a)  subnet-0e88775cc900d5a94(1b)  s
 Public subnets     subnet-0341c9ce4312c066d  subnet-0dc2e83e75c4ac01e  subnet-0415f0d0f4c913dae  (ALB + NAT live here)
 Frontend (Vercel)  https://frontend-ruby-two-78.vercel.app
 ```
+
+---
+
+## Simulation environment
+
+A separate training stack, fully isolated from the resources above: RDS `navix-finance-sim`, S3
+`navix-finance-sim-documents`, ECS cluster `navix-sim`, ALB `navix-sim-alb` behind CloudFront, SSM
+`/navix/sim/*`. It holds a copy of real customer data. Runbook: `scripts/sim/README.md`.
