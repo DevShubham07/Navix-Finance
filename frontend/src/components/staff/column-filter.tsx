@@ -61,6 +61,17 @@ export { BLANK } from "@/lib/staff/column-filter-match";
  * checklist keyed on the label would silently merge two different payment methods into one tick.
  * Columns whose label is the value can leave `raw` out.
  */
+/**
+ * A named range for a `num` column ("₹5,000 to ₹10,000"). Bounds are in DISPLAY units (rupees, points)
+ * and inclusive, like the filter itself; leave one off for an open end. Consecutive bands should not
+ * overlap: start the next one just above the last (₹5,000.01) so a value belongs to exactly one.
+ */
+export interface FilterBand {
+  label: string;
+  min?: number;
+  max?: number;
+}
+
 export interface FilterColumn<T> {
   key: string;
   /** Exactly what the cell renders. */
@@ -75,6 +86,22 @@ export interface FilterColumn<T> {
   date?: (row: T) => string | null | undefined;
   /** Server-paged registers: the value list comes from the facets endpoint, not from the rows. */
   facet?: boolean;
+  /**
+   * `num` columns: named ranges offered in place of bare Minimum/Maximum boxes (plus "Custom range",
+   * which reveals them). Single choice.
+   */
+  bands?: FilterBand[];
+  /**
+   * `in` columns with a closed, known set (DPD bucket, risk): the choices, as stored value + label, so
+   * no facet is fetched and a value no row has yet is still offered.
+   */
+  fixed?: Array<{ raw: string; label: string }>;
+  /**
+   * `in` columns whose list can pass the server's 500-value cap (employer, officer): the panel keeps
+   * its checklist and looks values up on the server as the operator types, instead of degrading to a
+   * text filter.
+   */
+  lookup?: boolean;
   /**
    * Whether this column can be sorted. Default `true`.
    *
@@ -304,6 +331,21 @@ export interface PanelProps {
   labels?: Map<string, string>;
   filter: ColumnFilter | undefined;
   onApply: (next: ColumnFilter | undefined) => void;
+  /** `num` kind: named ranges replace the Min/Max boxes (which "Custom range" brings back). */
+  bands?: FilterBand[];
+  /**
+   * Open with nothing ticked, and read "nothing ticked" as no filter (Apply stays enabled).
+   * Used only by the dropdown row (`FilterBar` with `pinned`): a header caret keeps the Excel-style
+   * everything-ticked start, which is what people expect of a spreadsheet column.
+   */
+  startEmpty?: boolean;
+  /**
+   * Server-side lookup for a list the server had to truncate. Called (debounced) with the trimmed
+   * search text once the list is known to be cut off; "" means back to the full list.
+   */
+  onSearch?: (term: string) => void;
+  /** The server stopped listing: say so, and search on the server instead of in the cut list. */
+  truncated?: boolean;
   /**
    * Omit it and the panel renders no sort rows. A filter chip above the table is not a column
    * header, and for a `sortable: false` column it would offer a sort that does nothing — so "no
@@ -324,6 +366,10 @@ export function FilterPanel({
   labels,
   filter,
   onApply,
+  bands,
+  startEmpty = false,
+  onSearch,
+  truncated = false,
   onSort,
   onClose,
   trapOwner,
@@ -340,7 +386,7 @@ export function FilterPanel({
   // Staged drafts, one per kind. `filter === undefined` (unfiltered) opens the checklist with
   // everything ticked, which is what the reader sees in the table and therefore what they expect.
   const [ticked, setTicked] = React.useState<Set<string>>(
-    () => new Set(filter?.type === "in" ? filter.values : options),
+    () => new Set(filter?.type === "in" ? filter.values : startEmpty ? [] : options),
   );
 
   /**
@@ -363,12 +409,25 @@ export function FilterPanel({
    */
   const optionsKey = options.join("\u0000");
   React.useEffect(() => {
-    if (touched.current || filter?.type === "in") return;
+    if (touched.current || filter?.type === "in" || startEmpty) return;
     setTicked(new Set(options));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [optionsKey, filter?.type]);
   const [min, setMin] = React.useState(filter?.type === "num" && filter.min != null ? String(filter.min) : "");
   const [max, setMax] = React.useState(filter?.type === "num" && filter.max != null ? String(filter.max) : "");
+  // Which named range is chosen. `custom` also covers an existing filter that matches no band (a
+  // typed range from before, or a link), so it is never silently replaced by a band on open.
+  const [band, setBand] = React.useState<number | "custom" | null>(() => {
+    if (!bands || filter?.type !== "num") return null;
+    const i = bands.findIndex((b) => b.min === filter.min && b.max === filter.max);
+    return i >= 0 ? i : "custom";
+  });
+  const pickBand = (i: number | "custom") => {
+    setBand(i);
+    if (i === "custom" || !bands) return;
+    setMin(bands[i].min != null ? String(bands[i].min) : "");
+    setMax(bands[i].max != null ? String(bands[i].max) : "");
+  };
   const [from, setFrom] = React.useState(filter?.type === "date" ? (filter.from ?? "") : "");
   const [to, setTo] = React.useState(filter?.type === "date" ? (filter.to ?? "") : "");
   const [op, setOp] = React.useState<TextOp>(filter?.type === "text" ? filter.op : "contains");
@@ -381,11 +440,32 @@ export function FilterPanel({
     [labels],
   );
 
+  // Once the server has said "there is more than I listed", searching goes to the server (it holds
+  // the values this panel cannot see) and stays there for the life of the panel, so clearing the box
+  // asks for the full list again instead of filtering the last search's results.
+  const serverSearch = React.useRef(false);
+  if (truncated) serverSearch.current = true;
+  const searching = !!onSearch && serverSearch.current;
+
+  const firstSearch = React.useRef(true);
+  React.useEffect(() => {
+    if (firstSearch.current) {
+      firstSearch.current = false;
+      return;
+    }
+    if (!searching) return;
+    const t = setTimeout(() => onSearch?.(search.trim()), 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, searching]);
+
   const visible = React.useMemo(() => {
     const needle = search.trim().toLowerCase();
-    if (!needle) return options;
+    // A server lookup has already narrowed the list; its labels need not contain the text typed
+    // (an officer is found by name but listed by id), so do not filter it a second time.
+    if (!needle || searching) return options;
     return options.filter((o) => labelOf(o).toLowerCase().includes(needle));
-  }, [options, search, labelOf]);
+  }, [options, search, labelOf, searching]);
 
   const allVisibleChecked = visible.length > 0 && visible.every((o) => ticked.has(o));
 
@@ -418,7 +498,7 @@ export function FilterPanel({
   const datesInverted = !!from && !!to && from > to;
 
   const okDisabled =
-    (kind === "in" && ticked.size === 0)
+    (kind === "in" && !startEmpty && ticked.size === 0)
     || (kind === "num" && rangeInverted)
     || (kind === "date" && datesInverted);
 
@@ -428,7 +508,13 @@ export function FilterPanel({
       case "in":
         // Everything ticked is the same as no filter — store it as such so the column stops showing
         // as filtered and `optionsFor` on other columns stops narrowing against a no-op.
-        onApply(ticked.size === options.length ? undefined : { type: "in", values: [...ticked] });
+        // In the dropdown row, nothing ticked is also no filter, and "all of the visible ones" is NOT:
+        // a searched or truncated list is a subset of the column, not the whole of it.
+        onApply(
+          startEmpty
+            ? ticked.size === 0 ? undefined : { type: "in", values: [...ticked] }
+            : ticked.size === options.length ? undefined : { type: "in", values: [...ticked] },
+        );
         break;
       case "num":
         onApply(
@@ -584,6 +670,9 @@ export function FilterPanel({
               />
             </div>
 
+            {truncated && onSearch && (
+              <p className="mb-1 shrink-0 text-[11px] text-muted">Long list: type to find a value.</p>
+            )}
             <div className="max-h-52 min-h-0 flex-1 overflow-y-auto rounded border border-line">
               {visible.length === 0 ? (
                 <p className="px-2 py-3 text-center text-xs text-muted">No matches</p>
@@ -617,30 +706,60 @@ export function FilterPanel({
 
         {kind === "num" && (
           <div className="flex flex-col gap-2">
-            <label className="flex flex-col gap-1 text-xs text-muted">
-              Minimum
-              <input
-                autoFocus={!compact}
-                type="number"
-                inputMode="decimal"
-                value={min}
-                onChange={(e) => setMin(e.target.value)}
-                placeholder="No minimum"
-                className="rounded border border-line px-2 py-1 text-xs text-ink outline-none focus:border-navy"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-muted">
-              Maximum
-              <input
-                type="number"
-                inputMode="decimal"
-                value={max}
-                onChange={(e) => setMax(e.target.value)}
-                placeholder="No maximum"
-                className="rounded border border-line px-2 py-1 text-xs text-ink outline-none focus:border-navy"
-              />
-            </label>
-            {rangeInverted && <p className="text-xs text-error-700">Minimum is above the maximum.</p>}
+            {bands && (
+              <div role="radiogroup" aria-label={`${label} range`} className="flex flex-col">
+                {bands.map((b, i) => (
+                  <label key={b.label} className="flex cursor-pointer items-center gap-2 rounded px-1 py-1.5 text-xs hover:bg-grey-100">
+                    <input
+                      type="radio"
+                      name={`band-${label}`}
+                      checked={band === i}
+                      onChange={() => pickBand(i)}
+                      className="h-3.5 w-3.5 accent-navy"
+                    />
+                    {b.label}
+                  </label>
+                ))}
+                <label className="flex cursor-pointer items-center gap-2 rounded px-1 py-1.5 text-xs hover:bg-grey-100">
+                  <input
+                    type="radio"
+                    name={`band-${label}`}
+                    checked={band === "custom"}
+                    onChange={() => pickBand("custom")}
+                    className="h-3.5 w-3.5 accent-navy"
+                  />
+                  Custom range
+                </label>
+              </div>
+            )}
+            {(!bands || band === "custom") && (
+              <>
+                <label className="flex flex-col gap-1 text-xs text-muted">
+                  Minimum
+                  <input
+                    autoFocus={!compact && !bands}
+                    type="number"
+                    inputMode="decimal"
+                    value={min}
+                    onChange={(e) => setMin(e.target.value)}
+                    placeholder="No minimum"
+                    className="rounded border border-line px-2 py-1 text-xs text-ink outline-none focus:border-navy"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-muted">
+                  Maximum
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    value={max}
+                    onChange={(e) => setMax(e.target.value)}
+                    placeholder="No maximum"
+                    className="rounded border border-line px-2 py-1 text-xs text-ink outline-none focus:border-navy"
+                  />
+                </label>
+                {rangeInverted && <p className="text-xs text-error-700">Minimum is above the maximum.</p>}
+              </>
+            )}
           </div>
         )}
 
@@ -751,6 +870,8 @@ export interface FilterableThProps {
   labels?: Map<string, string>;
   filter: ColumnFilter | undefined;
   onApply: (next: ColumnFilter | undefined) => void;
+  /** `num` columns: named ranges instead of bare Min/Max boxes. */
+  bands?: FilterBand[];
   /** `false` drops the sort control and its chevron, leaving the label and the filter caret. */
   sortable?: boolean;
   /**
@@ -819,6 +940,7 @@ export function FilterableTh({
   labels,
   filter,
   onApply,
+  bands,
   sortable = true,
   onOpen,
   className,
@@ -882,6 +1004,7 @@ export function FilterableTh({
         labels,
         filter,
         onApply,
+        bands,
         onSort: (d) => setSort(sortKey, d),
       })}
     </th>

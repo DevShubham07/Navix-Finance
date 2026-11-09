@@ -20,7 +20,8 @@ import { useStaffMe } from "@/components/staff/pipeline/hooks";
 import { useQueueRange, useQueueQuery } from "@/components/staff/pipeline/queue-date-filter";
 import { PaginationBar } from "@/components/staff/pipeline/pagination";
 import { useBulkQueue, BulkActionBar, type QueueSelection, type RejectMode } from "@/components/staff/pipeline/bulk-actions";
-import { useQueueRegister, type QueueRegister } from "@/components/staff/pipeline/queue-register";
+import { QUEUE_PINNED, useQueueRegister, type QueueRegister } from "@/components/staff/pipeline/queue-register";
+import { FilterBar } from "@/components/staff/filter-bar";
 import { Th } from "@/lib/staff/register-th";
 import { bulkSelectionHint } from "@/lib/staff/queue-bulk";
 
@@ -315,7 +316,19 @@ export function QueuePanel({
       ) : apps.length === 0 ? (
         <EmptyState title={`Nothing in the ${countBadge} queue.`} />
       ) : (
-        <QueueTable actions={actions} withLoanHistory={withLoanHistory} selection={selection} register={register} caption={caption ?? title} />
+        <>
+          {/* Narrows WITHIN this panel's rows (client-side, unpaged), under the same bulk-selection
+              rule as the header carets: "Select all" still means the rows the filters leave. */}
+          <div className="px-5 pt-3">
+            <FilterBar
+              th={register.th}
+              total={register.cr.total}
+              onClear={() => register.rq.setFilters({})}
+              pinned={QUEUE_PINNED}
+            />
+          </div>
+          <QueueTable actions={actions} withLoanHistory={withLoanHistory} selection={selection} register={register} caption={caption ?? title} />
+        </>
       )}
     </section>
   );

@@ -184,3 +184,37 @@ describe("enabled", () => {
     await waitFor(() => expect(fetchPage).toHaveBeenCalledTimes(1));
   });
 });
+
+describe("facet lookup", () => {
+  it("re-asks the facet with the search text, and a new panel starts blank", async () => {
+    mount();
+    await waitFor(() => expect(sr.total).toBe(130));
+    act(() => sr.requestFacet("city"));
+    await waitFor(() => expect(fetchFacet).toHaveBeenCalledTimes(1));
+    expect(fetchFacet.mock.calls[0][1]).not.toHaveProperty("search");
+
+    act(() => sr.searchFacet("city", "pun"));
+    await waitFor(() => expect(fetchFacet).toHaveBeenCalledTimes(2));
+    expect(fetchFacet.mock.calls[1]).toEqual(["city", expect.objectContaining({ search: "pun" })]);
+
+    // Opening a panel again drops the lookup text: it reads the full list's cache entry, not the last search.
+    act(() => sr.requestFacet("city"));
+    await waitFor(() => expect(sr.facetLoading("city")).toBe(false));
+    expect(fetchFacet).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses the names the server sends beside its ids, without overriding the page's own labels", async () => {
+    fetchFacet.mockResolvedValue({
+      values: ["7", "ACTIVE"],
+      truncated: false,
+      labels: { "7": "Meena", ACTIVE: "Server says active" },
+    });
+    mount();
+    await waitFor(() => expect(sr.total).toBe(130));
+    act(() => sr.requestFacet("status"));
+    await waitFor(() => expect(sr.optionsFor("status")).toEqual(["7", "ACTIVE"]));
+    const labels = sr.labelsFor("status");
+    expect(labels.get("7")).toBe("Meena");
+    expect(labels.get("ACTIVE")).toBe("Active");
+  });
+});

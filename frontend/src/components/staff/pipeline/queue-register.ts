@@ -12,6 +12,7 @@
 import { paiseToINR, type ApplicationView } from "@/lib/api/applications";
 import { useStaffMe } from "@/components/staff/pipeline/hooks";
 import { type FilterColumn } from "@/components/staff/column-filter";
+import { AMOUNT_BANDS, CREDIT_SCORE_BANDS } from "@/lib/staff/filter-bands";
 import { istDay } from "@/lib/staff/column-filter-match";
 import { useRegisterQuery } from "@/lib/staff/register-query";
 import { useClientRegister } from "@/lib/staff/use-client-register";
@@ -29,9 +30,9 @@ export const QUEUE_COLUMN_LABEL: Record<string, string> = {
   customerName: "Customer",
   amountRequestedPaise: "Amount",
   loanDueDate: "Due",
-  creditScore: "Credit",
+  creditScore: "Credit score",
   status: "Stage",
-  creditDecidedByName: "Credit exec",
+  creditDecidedByName: "Credit executive",
   disbursedByName: "Disbursed by",
   collectionOfficerName: "Collections exec",
 };
@@ -59,12 +60,13 @@ export const QUEUE_FILTER_COLUMNS: Array<FilterColumn<ApplicationView>> = [
   {
     key: "amountRequestedPaise",
     kind: "num",
+    bands: AMOUNT_BANDS,
     value: (a) => (amountPaise(a) != null ? paiseToINR(amountPaise(a)!) : "—"),
     // Rupees: the bound is typed beside a rupee column.
     num: (a) => (amountPaise(a) != null ? amountPaise(a)! / 100 : null),
   },
   { key: "loanDueDate", kind: "date", value: (a) => istDay(a.loanDueDate) ?? "—", date: (a) => istDay(a.loanDueDate) },
-  { key: "creditScore", kind: "num", value: (a) => (a.creditScore != null ? String(a.creditScore) : "—"), num: (a) => a.creditScore ?? null },
+  { key: "creditScore", kind: "num", bands: CREDIT_SCORE_BANDS, value: (a) => (a.creditScore != null ? String(a.creditScore) : "—"), num: (a) => a.creditScore ?? null },
   { key: "status", value: (a) => humanise(stageRaw(a)), raw: stageRaw },
   person("creditDecidedByName"),
   person("disbursedByName"),
@@ -90,5 +92,8 @@ export function useQueueRegister(apps: ApplicationView[], registerId: string) {
   const th = thBag(rq, cr, QUEUE_FILTER_COLUMNS, QUEUE_COLUMN_LABEL);
   return { rq, cr, th, visibleIds: cr.rows.map((a) => a.id) };
 }
+
+/** The dropdown row each queue panel shows above its table; the other columns keep their header carets. */
+export const QUEUE_PINNED = ["amountRequestedPaise", "creditScore", "creditDecidedByName", "status"] as const;
 
 export type QueueRegister = ReturnType<typeof useQueueRegister>;

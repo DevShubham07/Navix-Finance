@@ -1,6 +1,7 @@
 package com.navix.common.query;
 
 import com.navix.common.query.ColumnFilter.Kind;
+import com.navix.common.util.LikeEscape;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -21,7 +22,18 @@ public final class SqlFacets {
     public static final int MAX_VALUES = 500;
 
     /** Raw stored values (a missing value is {@link ColumnFilter#BLANK}); the client labels them. */
-    public record Facet(List<String> values, boolean truncated) {
+    public record Facet(List<String> values, boolean truncated,
+            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_EMPTY)
+            java.util.Map<String, String> labels) {
+
+        public Facet(List<String> values, boolean truncated) {
+            this(values, truncated, java.util.Map.of());
+        }
+
+        /** Raw value to display text, for columns keyed by an id (an officer, an owner). */
+        public Facet withLabels(java.util.Map<String, String> labels) {
+            return new Facet(values, truncated, labels == null ? java.util.Map.of() : labels);
+        }
     }
 
     private SqlFacets() {
@@ -36,7 +48,16 @@ public final class SqlFacets {
      */
     public static Facet facet(NamedParameterJdbcTemplate jdbc, String prefix, String from, String scopeWhere,
             FilterSpec spec, FilterColumns columns, String column, MapSqlParameterSource params) {
-        String sql = sql(prefix, from, scopeWhere, spec, columns, column, params);
+        return facet(jdbc, prefix, from, scopeWhere, spec, columns, column, null, params);
+    }
+
+    /**
+     * As above, narrowed to values containing {@code search} (case-insensitive, bound as a parameter),
+     * so a list past {@link #MAX_VALUES} can still be looked up on the server.
+     */
+    public static Facet facet(NamedParameterJdbcTemplate jdbc, String prefix, String from, String scopeWhere,
+            FilterSpec spec, FilterColumns columns, String column, String search, MapSqlParameterSource params) {
+        String sql = sql(prefix, from, scopeWhere, spec, columns, column, search, params);
         if (sql == null) {
             return new Facet(List.of(), false);
         }
@@ -52,15 +73,37 @@ public final class SqlFacets {
     /** The statement alone, for tests; {@code null} when the column is not a facetable one. */
     static String sql(String prefix, String from, String scopeWhere, FilterSpec spec, FilterColumns columns,
             String column, MapSqlParameterSource params) {
+        return sql(prefix, from, scopeWhere, spec, columns, column, null, params);
+    }
+
+    /** A blank search is no search; an over-long one is cut, so a lookup cannot become a payload. */
+    public static String normaliseSearch(String search) {
+        if (search == null || search.isBlank()) {
+            return null;
+        }
+        String t = search.strip();
+        return t.length() > MAX_SEARCH ? t.substring(0, MAX_SEARCH) : t;
+    }
+
+    static final int MAX_SEARCH = 100;
+
+    static String sql(String prefix, String from, String scopeWhere, FilterSpec spec, FilterColumns columns,
+            String column, String search, MapSqlParameterSource params) {
         FilterColumns.Def def = columns.get(column);
         if (def == null || !def.accepts(Kind.IN)) {
             return null;
         }
         String scope = scopeWhere == null || scopeWhere.isBlank() ? "true" : scopeWhere;
+        String needle = normaliseSearch(search);
+        String like = "";
+        if (needle != null) {
+            params.addValue("facetSearch", "%" + LikeEscape.escapeLike(needle.toLowerCase(java.util.Locale.ROOT)) + "%");
+            like = " and lower(cast((" + def.sql() + ") as text)) like :facetSearch escape '\\'";
+        }
         return (prefix == null ? "" : prefix)
                 + "select distinct cast((" + def.sql() + ") as text) as v from " + from
                 + " where (" + scope + ")"
-                + SqlFilter.and(spec.without(column), columns, params)
+                + SqlFilter.and(spec.without(column), columns, params) + like
                 // limit +1 is how we learn there were more than we return
                 + " order by v nulls last limit " + (MAX_VALUES + 1);
     }

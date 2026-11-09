@@ -237,3 +237,63 @@ describe("the empty-result notice", () => {
     expect(screen.queryByText(/No rows match/)).not.toBeInTheDocument();
   });
 });
+
+describe("FilterBar with pinned columns", () => {
+  function Pinned({ pinned = ["status", "amount"] }: { pinned?: string[] }) {
+    const [filters, setFilters] = React.useState<ColumnFilterSet>({});
+    const th = {
+      keys: KEYS,
+      filters,
+      setFilter: (key: string, next: ColumnFilter | undefined) =>
+        setFilters((p) => {
+          const n = { ...p, [key]: next };
+          if (!next) delete n[key];
+          return n;
+        }),
+      kindFor: (k: string) => KINDS[k],
+      optionsFor: () => ["A", "B"],
+      labelsFor: () => new Map(),
+      headerFor: (k: string) => HEADERS[k],
+      bandsFor: (k: string) => (k === "amount" ? [{ label: "Up to 5,000", max: 5000 }] : undefined),
+    } as unknown as ThBag;
+    return <FilterBar th={th} total={3} onClear={() => setFilters({})} pinned={pinned} />;
+  }
+
+  it("shows the pinned columns as buttons and the rest under More filters", () => {
+    render(<Pinned />);
+    expect(screen.getByRole("button", { name: "Status" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Amount" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Add filter/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "More filters" }));
+    expect(screen.getByRole("menuitem", { name: "Due" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Name" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Status" })).not.toBeInTheDocument();
+  });
+
+  it("opens a dropdown with nothing ticked, and a band for a numeric column", () => {
+    render(<Pinned />);
+    fireEvent.click(screen.getByRole("button", { name: "Status" }));
+    const dlg = screen.getByRole("dialog");
+    for (const box of within(dlg).getAllByRole("checkbox")) expect(box).not.toBeChecked();
+    fireEvent.click(within(dlg).getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Amount" }));
+    expect(within(screen.getByRole("dialog")).getByRole("radio", { name: "Up to 5,000" })).toBeInTheDocument();
+  });
+
+  it("marks an applied filter, keeps it as a removable chip, and Clear all removes it", () => {
+    render(<Pinned />);
+    fireEvent.click(screen.getByRole("button", { name: "Status" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByLabelText("B"));
+    apply();
+    expect(screen.getByRole("button", { name: "Status (filtered)" })).toHaveClass("bg-navy");
+    expect(screen.getByRole("button", { name: "Remove Status filter" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Clear all" }));
+    expect(screen.queryByRole("button", { name: /^Remove / })).not.toBeInTheDocument();
+  });
+
+  it("is untouched for a page that passes no pinned list", () => {
+    render(<Harness />);
+    expect(screen.getByRole("button", { name: /Add filter/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "More filters" })).not.toBeInTheDocument();
+  });
+});

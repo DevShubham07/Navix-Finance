@@ -31,7 +31,7 @@ import org.springframework.stereotype.Component;
  * {@code loan_cycle} (a window function over stored columns). <b>Outstanding is deliberately absent</b>:
  * it is compute-on-read money ({@code RepaymentService.outstandingAsOf}) and re-deriving it here would
  * be a second source of truth for what a borrower owes. The collections officer lives in
- * navix-collections, which this module may not depend on. Both are filtered and sorted in Java by
+ * navix-collections, which this module may not depend on (the officer filter is keyed by staff id). Both are filtered and sorted in Java by
  * the service, over the ids this query returns.
  *
  * <p>Keep the {@code status} CASE in step with {@code Loan.effectiveStatus}, and the segment clauses
@@ -79,6 +79,18 @@ public class LoanRegisterQuery {
                        case when l.status = 'ACTIVE' and l.due_date is not null and l.due_date < :today
                             then 'OVERDUE' else l.status end as status,
                        greatest(0, coalesce(l.closed_on, :today) - l.due_date) as dpd,
+                       -- The Collections tab's scheme and open-loan rule (CollectionsWorklistQuery /
+                       -- DpdCalculator): only an open loan has a bucket; a closed one is NULL (blank).
+                       case when l.status in ('ACTIVE', 'OVERDUE', 'IN_COLLECTIONS') and l.due_date is not null then
+                         case
+                           when cast(:today as date) - l.due_date <= 0 then 'UPCOMING'
+                           when cast(:today as date) - l.due_date <= 7 then 'T0_T7'
+                           when cast(:today as date) - l.due_date <= 30 then 'T8_T30'
+                           when cast(:today as date) - l.due_date <= 60 then 'T30_T60'
+                           when cast(:today as date) - l.due_date <= 90 then 'T60_T90'
+                           else 'T90_PLUS'
+                         end
+                       end as dpd_bucket,
                        row_number() over (partition by l.customer_id
                                           order by l.disbursed_on asc nulls last, l.id) as loan_cycle
                 from loan l
@@ -130,6 +142,7 @@ public class LoanRegisterQuery {
                 .scaled("netDisbursedPaise", "r.net_disbursed", 100, NUM)
                 .scaled("totalRepayablePaise", "r.total_repayable", 100, NUM)
                 .column("dpd", "r.dpd", NUM)
+                .column("dpdBucket", "r.dpd_bucket", IN)
                 // The effective status, so a checklist offers OVERDUE (which is never a stored value
                 // until collections flips it). TEXT is the "too many values" fallback only.
                 .column("status", "r.status", IN, TEXT);
@@ -178,10 +191,15 @@ public class LoanRegisterQuery {
      * dropped by {@link SqlFacets}. The facet is only reachable for a column registered {@code IN}.
      */
     public SqlFacets.Facet facet(Filter filter, FilterSpec spec, String column) {
+        return facet(filter, spec, column, null);
+    }
+
+    /** As above, narrowed to values containing {@code search}. */
+    public SqlFacets.Facet facet(Filter filter, FilterSpec spec, String column, String search) {
         MapSqlParameterSource params = new MapSqlParameterSource();
         List<String> base = baseClauses(filter, true, params);
         return SqlFacets.facet(jdbc, cte(filter, params), "reg r", base.isEmpty() ? null : String.join(" and ", base),
-                spec, FILTER_COLUMNS, column, params);
+                spec, FILTER_COLUMNS, column, search, params);
     }
 
     private static String select(Filter filter, FilterSpec spec, String sort, String dir, MapSqlParameterSource params) {

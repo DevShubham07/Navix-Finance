@@ -21,13 +21,26 @@ import {
 // `vi.mock` calls below are hoisted above every import, so the page sees the mocked modules.
 import CustomersPage from "@/app/staff/customers/page";
 
-const replace = vi.fn();
+// A router.replace moves the URL and tells every mounted `useSearchParams`, as the real router does:
+// the Joined window now lives in the URL, so a click on "Today" has to come back through it.
+const replace = vi.fn((url: string) => {
+  window.history.replaceState({}, "", url);
+  window.dispatchEvent(new Event("navix-test-nav"));
+});
 
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({ replace, push: vi.fn(), refresh: vi.fn(), back: vi.fn(), forward: vi.fn(), prefetch: vi.fn() }),
-  usePathname: () => "/staff/customers",
-  useSearchParams: () => new URLSearchParams(window.location.search),
-}));
+vi.mock("next/navigation", async () => {
+  const React = await import("react");
+  const subscribe = (cb: () => void) => {
+    window.addEventListener("navix-test-nav", cb);
+    return () => window.removeEventListener("navix-test-nav", cb);
+  };
+  return {
+    useRouter: () => ({ replace, push: vi.fn(), refresh: vi.fn(), back: vi.fn(), forward: vi.fn(), prefetch: vi.fn() }),
+    usePathname: () => "/staff/customers",
+    useSearchParams: () =>
+      new URLSearchParams(React.useSyncExternalStore(subscribe, () => window.location.search, () => "")),
+  };
+});
 
 // The real dialogs fetch whole files; here they only have to prove what they were opened on.
 vi.mock("@/components/staff/application-detail-dialog", () => ({
@@ -102,7 +115,7 @@ function renderPage() {
 let pageCalls: CustomerListFilters[];
 
 beforeEach(() => {
-  replace.mockReset();
+  replace.mockClear();
   window.history.replaceState({}, "", "/staff/customers");
   pageCalls = [];
   // `useStaffMe` asks the BFF who is signed in.
@@ -164,6 +177,8 @@ describe("CustomersPage", () => {
     await goToPage2();
 
     fireEvent.click(screen.getByRole("button", { name: "Today" }));
+    // The window is written to the URL (and read back from it), not held in page state.
+    await waitFor(() => expect(new URLSearchParams(window.location.search).get("win")).toBe("TODAY"));
     await waitFor(() => expect(pageCalls.some((f) => f.from != null && f.page === 1)).toBe(true));
     expect(await screen.findByText("Page 1 of 3")).toBeInTheDocument();
     expect(pageCalls.filter((f) => f.from != null && f.page !== 1)).toEqual([]);
@@ -212,7 +227,7 @@ describe("CustomersPage", () => {
     // The bar's onClear is setFilters({}), not clearAll(): the latter would also wipe the search box.
     window.history.replaceState({}, "", "/staff/customers?q=asha&f.name=text%3Acontains%3Aa");
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "Clear filters" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Clear all" }));
 
     // `replace` is a bare mock here (it does not move window.location), so read the URL it was handed.
     await waitFor(() => expect(replace).toHaveBeenCalled());

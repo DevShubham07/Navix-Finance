@@ -15,12 +15,9 @@ import { ExportMenu } from "@/components/staff/export-menu";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
 import { AdminLogPaymentButton } from "@/components/staff/admin-log-payment";
 import { loansApi, paiseToINR, type LoanRegisterRow } from "@/lib/api/applications";
-import {
-  QueueDateFilter,
-  rangeFor,
-  type QueuePeriod,
-  type QueueRange,
-} from "@/components/staff/pipeline/queue-date-filter";
+import { QueueDateFilter } from "@/components/staff/pipeline/queue-date-filter";
+import { useUrlDateWindow } from "@/lib/staff/use-url-date-window";
+import { AMOUNT_BANDS, DPD_BUCKET_OPTIONS, LOAN_CYCLE_BANDS } from "@/lib/staff/filter-bands";
 import { type FilterColumn } from "@/components/staff/column-filter";
 import { FilterBar } from "@/components/staff/filter-bar";
 import { Th, thBag, describeRegister } from "@/lib/staff/register-th";
@@ -50,8 +47,11 @@ const SORT_KEYS = [
   "borrowerName", "loanCycle", "netDisbursedPaise", "totalRepayablePaise", "status", "assignedOfficerName",
 ] as const;
 
-/** Columns offering a filter dropdown. The same keys the sort uses, so a header is one control. */
-const FILTER_KEYS = SORT_KEYS;
+/** Columns offering a filter dropdown: the sort keys, plus the DPD bucket (a filter, not a sort). */
+const FILTER_KEYS = [...SORT_KEYS, "dpdBucket"] as const;
+
+/** The dropdown row under the segment tabs; the other filter keys sit under "More filters". */
+const PINNED = ["status", "dpdBucket", "principalPaise", "assignedOfficerName", "outstandingPaise", "loanCycle"] as const;
 
 /** Header text per key — read by the headers, the filter panels and the export's "Filtered:" line. */
 const COLUMN_LABEL: Record<string, string> = {
@@ -65,7 +65,8 @@ const COLUMN_LABEL: Record<string, string> = {
   netDisbursedPaise: "Net disbursed",
   totalRepayablePaise: "Repayable",
   outstandingPaise: "Outstanding",
-  dpd: "DPD",
+  dpd: "DPD (days)",
+  dpdBucket: "DPD",
   status: "Status",
   assignedOfficerName: "Officer",
 };
@@ -179,9 +180,8 @@ function LoansPageInner() {
   const [openLoan, setOpenLoan] = React.useState<OpenLoan | null>(
     Number.isFinite(openParam) && openParam > 0 ? { loanId: openParam } : null,
   );
-  const [period, setPeriod] = React.useState<QueuePeriod>("ALL");
-  const [custom, setCustom] = React.useState<QueueRange>({});
-  const range = React.useMemo(() => rangeFor(period, custom), [period, custom]);
+  // The "Disbursed on" window lives in the URL (win / wfrom / wto): it survives a refresh and a link.
+  const { period, custom, range, setPeriod, setCustom, windowKey } = useUrlDateWindow();
 
   const can = useCan();
   // Behind the permission gate: no request until the session says who is signed in AND that they may
@@ -259,24 +259,35 @@ function LoansPageInner() {
       { key: "disbursedOn", kind: "date", value: (l) => (l.disbursedOn ? formatDate(l.disbursedOn) : "—") },
       { key: "dueDate", kind: "date", value: (l) => (l.dueDate ? formatDate(l.dueDate) : "—") },
       { key: "closedOn", kind: "date", value: (l) => (l.closedOn ? formatDate(l.closedOn) : "—") },
-      { key: "loanCycle", kind: "num", value: (l) => ordinal(l.loanCycle) },
-      { key: "principalPaise", kind: "num", value: (l) => paiseToINR(l.principalPaise) },
+      { key: "loanCycle", kind: "num", bands: LOAN_CYCLE_BANDS, value: (l) => ordinal(l.loanCycle) },
+      { key: "principalPaise", kind: "num", bands: AMOUNT_BANDS, value: (l) => paiseToINR(l.principalPaise) },
       { key: "netDisbursedPaise", kind: "num", value: (l) => paiseToINR(l.netDisbursedPaise) },
       { key: "totalRepayablePaise", kind: "num", value: (l) => paiseToINR(l.totalRepayablePaise) },
-      { key: "outstandingPaise", kind: "num", value: (l) => paiseToINR(l.outstandingPaise) },
+      { key: "outstandingPaise", kind: "num", bands: AMOUNT_BANDS, value: (l) => paiseToINR(l.outstandingPaise) },
       { key: "dpd", kind: "num", value: (l) => loanRegisterDpdLabel(loanRegisterDpd(l)) },
+      { key: "dpdBucket", fixed: DPD_BUCKET_OPTIONS, value: () => "" },
       { key: "status", facet: true, value: (l) => loanStatusLabel(l.status), raw: (l) => l.status },
       {
         key: "assignedOfficerName",
         facet: true,
+        // The filter carries the officer's staff ID (two officers who share a name stay two choices);
+        // the checklist shows the name the server sends beside it. A blank is a loan nobody is working.
+        lookup: true,
         value: (l) => l.assignedOfficerName ?? "Unallocated",
-        raw: (l) => l.assignedOfficerName ?? "",
+        raw: (l) => (l.assignedOfficerId != null ? String(l.assignedOfficerId) : ""),
       },
     ];
-    return cols.map((c) => (c.facet && cr.facetTruncated(c.key) ? { ...c, kind: "text" as const } : c));
+    // The server accepts only a checklist (IN) for the officer column, so a truncated list must not
+    // degrade to a text filter it would silently drop: `lookup` columns search the server instead.
+    return cols.map((c) =>
+      c.facet && !c.lookup && cr.facetTruncated(c.key) ? { ...c, kind: "text" as const } : c,
+    );
   }, [cr]);
 
-  const th = thBag(rq, cr, filterColumns, COLUMN_LABEL, cr.requestFacet);
+  const th = thBag(rq, cr, filterColumns, COLUMN_LABEL, cr.requestFacet, {
+    search: cr.searchFacet,
+    truncated: cr.facetTruncated,
+  });
   const { pageRows, total, pageCount } = cr;
   const sortKey = rq.state.sort.key;
   const page = rq.state.page;
@@ -294,16 +305,13 @@ function LoansPageInner() {
     // page 1 without touching the filters, in one update.
     if (next !== seg) rq.apply({});
   }
-  function resetPageIfRangeChanges(next: QueueRange) {
-    if ((next.from ?? "") !== (range.from ?? "") || (next.to ?? "") !== (range.to ?? "")) rq.apply({});
-  }
-  function changePeriod(next: QueuePeriod) {
-    setPeriod(next);
-    resetPageIfRangeChanges(rangeFor(next, custom));
-  }
-  function changeCustom(next: QueueRange) {
-    setCustom(next);
-    resetPageIfRangeChanges(rangeFor(period, next));
+  // The window is in the URL, which `rq` also writes. Resetting the page from a handler would race
+  // the two writes, so the reset happens during the render that first sees the new window; React
+  // discards that render and re-runs it at page 1, so no request goes out for the stale page.
+  const [pagedWindow, setPagedWindow] = React.useState(windowKey);
+  if (pagedWindow !== windowKey) {
+    setPagedWindow(windowKey);
+    rq.setPage(1);
   }
 
   // Grouping follows the active date sort; switched off entirely for amount/DPD sorts, where date
@@ -417,12 +425,12 @@ function LoansPageInner() {
             placeholder="Borrower, mobile, PAN, loan or application ID"
             ariaLabel="Search loans"
           />
-          <QueueDateFilter period={period} setPeriod={changePeriod} custom={custom} setCustom={changeCustom} />
+          <QueueDateFilter label="Disbursed on" period={period} setPeriod={setPeriod} custom={custom} setCustom={setCustom} />
           {role && <span className="rounded-full bg-navy-tint px-3 py-1 text-sm font-semibold text-navy">{ROLE_LABEL[role]}</span>}
         </div>
 
         {/* `onClear` is setFilters({}), not clearAll(): clearAll also wipes the search box, and "Clear filters" must not. */}
-        <FilterBar th={th} total={total} onClear={() => rq.setFilters({})} />
+        <FilterBar th={th} total={total} onClear={() => rq.setFilters({})} pinned={PINNED} />
 
         <div className="rounded border border-line bg-white shadow-sm">
           {/* Under keepPreviousData an empty previous result must not read as "No loans for <the

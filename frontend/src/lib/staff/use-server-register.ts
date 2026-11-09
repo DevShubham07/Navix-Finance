@@ -44,6 +44,8 @@ export interface ServerFacet {
   values: string[];
   /** The server stopped listing: this column cannot offer a complete checklist. */
   truncated: boolean;
+  /** Raw value to display text, for a column the server keys by id (an officer, an owner). */
+  labels?: Record<string, string>;
 }
 
 export interface ServerRegisterOptions<T, P extends ServerPage<T> = ServerPage<T>> {
@@ -51,7 +53,10 @@ export interface ServerRegisterOptions<T, P extends ServerPage<T> = ServerPage<T
   key: readonly unknown[];
   /** `params` is `rq.queryParams` — filters, search, sort; page and size are passed separately. */
   fetchPage: (params: Record<string, string>, page: number, size: number) => Promise<P>;
-  /** `params` already has this column's own `f.<column>` removed (the server's `spec.without(col)`). */
+  /**
+   * `params` already has this column's own `f.<column>` removed (the server's `spec.without(col)`),
+   * and carries `search` while a lookup text is set — the server narrows the list to values containing it.
+   */
   fetchFacet: (column: string, params: Record<string, string>) => Promise<ServerFacet>;
   /** Raw value → label, per column, for the checklist. Absent columns show the raw value. */
   labels?: Record<string, Record<string, string>> | ((column: string) => Map<string, string>);
@@ -82,6 +87,11 @@ export interface ServerRegister<T> extends ClientRegister<T> {
    * One column is live at a time (a panel at a time); earlier columns stay readable from cache.
    */
   requestFacet: (column: string) => void;
+  /**
+   * Re-ask a column's facet narrowed to values containing `term` (server-side lookup past the
+   * 500-value cap). "" returns to the full list. Debounce in the caller; this fires one request per call.
+   */
+  searchFacet: (column: string, term: string) => void;
   /** True when the server truncated this column's values; fall back to a text filter, not a dropdown. */
   facetTruncated: (column: string) => boolean;
   facetLoading: (column: string) => boolean;
@@ -134,19 +144,21 @@ export function useServerRegister<T, P extends ServerPage<T> = ServerPage<T>>(
   }, [pageQ.data, pageQ.isPlaceholderData, page, pageCount, rq]);
 
   /** The facet's own params: every active filter EXCEPT this column's, so its options respect the others. */
+  const [active, setActive] = React.useState<string | null>(null);
+  // The lookup text belongs to the ACTIVE column only; opening another column starts it blank.
+  const [lookup, setLookup] = React.useState("");
   const facetParams = React.useCallback(
     (column: string) => {
       const { [FILTER_PREFIX + column]: _own, ...rest } = params;
-      return rest;
+      return column === active && lookup ? { ...rest, search: lookup } : rest;
     },
-    [params],
+    [params, active, lookup],
   );
   const facetKey = React.useCallback(
     (column: string) => [...opts.key, "facet", column, facetParams(column)] as const,
     [opts.key, facetParams],
   );
 
-  const [active, setActive] = React.useState<string | null>(null);
   const facetQ = useQuery({
     queryKey: active ? facetKey(active) : [...opts.key, "facet", "__none__"],
     queryFn: () => opts.fetchFacet(active!, facetParams(active!)),
@@ -176,10 +188,15 @@ export function useServerRegister<T, P extends ServerPage<T> = ServerPage<T>>(
   const labelsFor = React.useCallback(
     (column: string) => {
       const l = opts.labels;
-      if (typeof l === "function") return l(column);
-      return new Map(Object.entries(l?.[column] ?? {}));
+      const base = typeof l === "function" ? new Map(l(column)) : new Map(Object.entries(l?.[column] ?? {}));
+      // Names the server sent beside its ids (an officer, an owner) fill the gaps the page's own
+      // labels leave, so a former officer is still a name rather than a number.
+      for (const [raw, text] of Object.entries(facetOf(column)?.labels ?? {})) {
+        if (!base.has(raw)) base.set(raw, text);
+      }
+      return base;
     },
-    [opts.labels],
+    [opts.labels, facetOf],
   );
 
   const rows = pageQ.data?.rows ?? (NO_ROWS as T[]);
@@ -193,7 +210,14 @@ export function useServerRegister<T, P extends ServerPage<T> = ServerPage<T>>(
     pageCount,
     optionsFor,
     labelsFor,
-    requestFacet: setActive,
+    requestFacet: (column: string) => {
+      setActive(column);
+      setLookup("");
+    },
+    searchFacet: (column: string, term: string) => {
+      setActive(column);
+      setLookup(term);
+    },
     facetTruncated,
     facetLoading,
     isLoading: pageQ.isLoading,

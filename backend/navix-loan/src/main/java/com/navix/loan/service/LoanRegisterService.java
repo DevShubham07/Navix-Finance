@@ -186,8 +186,7 @@ public class LoanRegisterService {
             if (outstandingFilter != null && !within(outstanding.getOrDefault(l.getId(), 0L), outstandingFilter)) {
                 continue;
             }
-            if (officerFilter != null && !officerFilter.values().contains(
-                    officerKey(officerNames.get(officerIds.get(l.getId()))))) {
+            if (officerFilter != null && !officerFilter.values().contains(officerKey(officerIds.get(l.getId())))) {
                 continue;
             }
             kept.add(l);
@@ -221,6 +220,13 @@ public class LoanRegisterService {
     @Transactional(readOnly = true)
     public SqlFacets.Facet facet(String column, String q, String segment, LocalDate from, LocalDate to,
             Map<String, String> filterParams) {
+        return facet(column, q, segment, from, to, filterParams, null);
+    }
+
+    /** As above; {@code search} narrows the list server-side (an officer by name, other columns by value). */
+    @Transactional(readOnly = true)
+    public SqlFacets.Facet facet(String column, String q, String segment, LocalDate from, LocalDate to,
+            Map<String, String> filterParams, String search) {
         rejectDsa();
         requireRole("COLLECTION_HEAD");
         LoanRegisterQuery.Filter filter = filter(q, segment, from, to, LocalDate.now());
@@ -230,17 +236,36 @@ public class LoanRegisterService {
                     .map(LoanRegisterQuery.Hit::loanId).toList();
             Map<Long, Long> officerIds = collectionCaseDirectory.assignedOfficerByLoanId(ids);
             Map<Long, String> names = officerNames(officerIds.values());
-            Set<String> values = new LinkedHashSet<>();
-            names.values().stream().filter(Objects::nonNull).sorted(String.CASE_INSENSITIVE_ORDER).forEach(values::add);
-            // A loan nobody is working is a value people filter for, not an absence to hide.
-            if (officerIds.size() < ids.size() || names.containsValue(null)) {
-                values.add(ColumnFilter.BLANK);
+            String needle = SqlFacets.normaliseSearch(search);
+            String needleLower = needle == null ? null : needle.toLowerCase(Locale.ROOT);
+            // Values are officer IDs; the names ride along as labels. Sorted by name, and a search
+            // is matched against the name, so a long list narrows here rather than being cut at 500.
+            List<Map.Entry<Long, String>> officers = new ArrayList<>();
+            for (Long id : new LinkedHashSet<>(officerIds.values())) {
+                if (id == null) {
+                    continue;
+                }
+                String name = names.get(id) == null ? "Officer #" + id : names.get(id);
+                if (needleLower == null || name.toLowerCase(Locale.ROOT).contains(needleLower)) {
+                    officers.add(Map.entry(id, name));
+                }
             }
-            List<String> out = new ArrayList<>(values);
+            officers.sort(Map.Entry.comparingByValue(String.CASE_INSENSITIVE_ORDER));
+            List<String> out = new ArrayList<>();
+            Map<String, String> labels = new LinkedHashMap<>();
+            for (Map.Entry<Long, String> o : officers) {
+                out.add(String.valueOf(o.getKey()));
+                labels.put(String.valueOf(o.getKey()), o.getValue());
+            }
+            // A loan nobody is working is a value people filter for, not an absence to hide.
+            if (needle == null && officerIds.size() < ids.size()) {
+                out.add(ColumnFilter.BLANK);
+            }
             boolean truncated = out.size() > SqlFacets.MAX_VALUES;
-            return new SqlFacets.Facet(truncated ? out.subList(0, SqlFacets.MAX_VALUES) : out, truncated);
+            return new SqlFacets.Facet(truncated ? out.subList(0, SqlFacets.MAX_VALUES) : out, truncated)
+                    .withLabels(labels);
         }
-        return registerQuery.facet(filter, spec, column);
+        return registerQuery.facet(filter, spec, column, search);
     }
 
     private static LoanRegisterQuery.Filter filter(String q, String segment, LocalDate from, LocalDate to,
@@ -281,9 +306,12 @@ public class LoanRegisterService {
         return s == null ? null : s.toLowerCase(Locale.ROOT);
     }
 
-    /** The checklist's value for an officer: their name, or the blank sentinel when there is none to show. */
-    private static String officerKey(String name) {
-        return name == null ? ColumnFilter.BLANK : name;
+    /**
+     * The checklist's value for an officer: their staff ID (so two officers who share a name stay two
+     * choices, as on the Collections tab), or the blank sentinel for a loan nobody is working.
+     */
+    private static String officerKey(Long officerId) {
+        return officerId == null ? ColumnFilter.BLANK : String.valueOf(officerId);
     }
 
     /** Inclusive bounds, rupees to paise HALF_UP on the OPERAND — the same rule {@code SqlFilter} applies. */

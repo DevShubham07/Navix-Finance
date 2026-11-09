@@ -42,6 +42,12 @@ class LoanRegisterQueryTest {
     }
 
     @Test
+    void dpdBucketIsAChecklistOverTheCollectionsBuckets() {
+        assertThat(LoanRegisterQuery.FILTER_COLUMNS.get("dpdBucket").accepts(Kind.IN)).isTrue();
+        assertThat(LoanRegisterQuery.FILTER_COLUMNS.get("dpdBucket").accepts(Kind.NUM)).isFalse();
+    }
+
+    @Test
     void identityColumnsAreTextOnlySoTheyCanNeverHaveADropdown() {
         assertThat(LoanRegisterQuery.FILTER_COLUMNS.get("borrowerName").accepts(Kind.IN)).isFalse();
         assertThat(LoanRegisterQuery.FILTER_COLUMNS.get("borrowerName").accepts(Kind.TEXT)).isTrue();

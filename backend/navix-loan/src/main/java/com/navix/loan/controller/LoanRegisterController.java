@@ -70,7 +70,8 @@ public class LoanRegisterController {
             @RequestParam(required = false) String seg,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(required = false) String search,
             @RequestParam Map<String, String> all) {
-        return ApiResponse.ok(loanRegisterService.facet(column, q, seg, from, to, all));
+        return ApiResponse.ok(loanRegisterService.facet(column, q, seg, from, to, all, search));
     }
 }

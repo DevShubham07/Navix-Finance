@@ -54,19 +54,18 @@ import {
   type ApplicationStatus,
 } from "@/lib/api/applications";
 import { AmountCell, DueCell, dpdFor } from "@/components/staff/pipeline/cells";
+import { QueueDateFilter } from "@/components/staff/pipeline/queue-date-filter";
+import { useUrlDateWindow } from "@/lib/staff/use-url-date-window";
 import {
-  QueueDateFilter,
-  rangeFor,
-  type QueuePeriod,
-  type QueueRange,
-} from "@/components/staff/pipeline/queue-date-filter";
+  CREDIT_SCORE_BANDS,
+  DPD_BUCKET_OPTIONS,
+  LOAN_AMOUNT_BANDS,
+  RISK_OPTIONS,
+  SALARY_BANDS,
+} from "@/lib/staff/filter-bands";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import { SEGMENTS, SEGMENT_LABEL, segmentOf, type CustomerSegment } from "@/lib/customers/segments";
-import {
-  customerRowTarget,
-  dateWindowChanged,
-  type CustomerRowTarget,
-} from "@/lib/customers/customers-register";
+import { customerRowTarget, type CustomerRowTarget } from "@/lib/customers/customers-register";
 
 const ZERO_COUNTS: CustomerSummaryCounts = {
   all: 0,
@@ -146,7 +145,13 @@ const SORT_KEYS = ["stageDate", "date", "name", "customerId", "stage", "mobile",
  * Columns the server can filter — `CustomerBookQuery.FILTER_COLUMNS`. Only what the book CTE carries
  * (identity, dates, stage); account / amount / owner are not in it, so they stay plain headers.
  */
-const FILTER_KEYS = ["name", "mobile", "pan", "date", "stageDate", "stage"] as const;
+const FILTER_KEYS = [
+  "name", "mobile", "pan", "date", "stageDate", "stage",
+  "joined", "dpd", "loanAmount", "employer", "salary", "risk", "creditScore", "owner",
+] as const;
+
+/** The dropdown row under the segment tabs; everything else in FILTER_KEYS sits under "More filters". */
+const PINNED = ["stage", "dpd", "loanAmount", "owner", "creditScore", "risk", "employer"] as const;
 
 const COLUMN_LABEL: Record<string, string> = {
   name: "Customer",
@@ -155,11 +160,21 @@ const COLUMN_LABEL: Record<string, string> = {
   date: "Date",
   stageDate: "Stage date",
   stage: "Stage",
+  joined: "Joined",
+  dpd: "DPD",
+  loanAmount: "Loan amount",
+  employer: "Employer",
+  salary: "Monthly salary",
+  risk: "Risk",
+  creditScore: "Credit score",
+  owner: "Owner",
 };
 
 /** The server's RAW stage keys → the words the chips and the Stage column use. A filter travels as the key. */
 const FACET_LABELS: Record<string, Record<string, string>> = {
   stage: SEGMENT_LABEL,
+  // Owners are staff ids (the server sends their names as labels); a customer nobody owns is blank.
+  owner: { __NULL__: "Unallocated" },
 };
 
 export default function CustomersPage() {
@@ -182,9 +197,8 @@ function CustomersPageInner() {
   const can = useCan();
   const qc = useQueryClient();
 
-  const [period, setPeriod] = React.useState<QueuePeriod>("ALL");
-  const [custom, setCustom] = React.useState<QueueRange>({});
-  const range = React.useMemo(() => rangeFor(period, custom), [period, custom]);
+  // The "Joined" window lives in the URL (win / wfrom / wto), so it survives a refresh and a shared link.
+  const { period, custom, range, setPeriod, setCustom, windowKey } = useUrlDateWindow();
 
   // One owner for search, column filters, sort, page and size. This is the only register on the page,
   // so it owns the URL (the `?q=` deep link from the global-search palette lands here too); `seg` and
@@ -212,20 +226,13 @@ function CustomersPageInner() {
   // the enforcement is the backend's.
   const fullView = me?.role ? can("customer:view:all") : true;
 
-  const changePeriod = (next: QueuePeriod) => {
-    if (dateWindowChanged(range, rangeFor(next, custom))) rq.apply({});
-    setPeriod(next);
-  };
-  const changeCustom = (next: QueueRange) => {
-    if (dateWindowChanged(range, rangeFor(period, next))) rq.apply({});
-    setCustom(next);
-  };
   // `seg` and `mine` live in the URL and also change from outside this page's handlers (the sidebar's
   // segment links, back/forward). router.replace commits the new URL only after Next resolves the
   // navigation, so a reset in setSeg would land first and fetch the OLD segment's page 1. Instead the
   // reset is applied during the render that first sees the new URL values; React discards that render
   // and re-runs it with page 1 before committing, so no query is issued for the stale page.
-  const urlScope = `${seg}|${mine ? "mine" : "all"}`;
+  // The window is in the URL for the same reason, so it joins the scope key.
+  const urlScope = `${seg}|${mine ? "mine" : "all"}|${windowKey}`;
   const [pagedScope, setPagedScope] = React.useState(urlScope);
   if (pagedScope !== urlScope) {
     setPagedScope(urlScope);
@@ -275,13 +282,30 @@ function CustomersPageInner() {
         value: (c) => SEGMENT_LABEL[segmentOf(c)],
         raw: (c) => segmentOf(c),
       },
+      // The columns below are filtered on the server only (the row does not carry them all), so these
+      // accessors are never used to match: they declare each column's kind and its choices.
+      { key: "joined", kind: "date", value: () => "", date: () => null },
+      { key: "dpd", fixed: DPD_BUCKET_OPTIONS, value: () => "" },
+      { key: "loanAmount", kind: "num", bands: LOAN_AMOUNT_BANDS, value: (c) => (c.amountPaise != null ? paiseToINR(c.amountPaise) : "—"), num: (c) => (c.amountPaise != null ? c.amountPaise / 100 : null) },
+      { key: "employer", facet: true, lookup: true, value: () => "" },
+      { key: "salary", kind: "num", bands: SALARY_BANDS, value: () => "" },
+      { key: "risk", fixed: RISK_OPTIONS, value: () => "" },
+      { key: "creditScore", kind: "num", bands: CREDIT_SCORE_BANDS, value: (c) => (c.creditScore != null ? String(c.creditScore) : "—"), num: (c) => c.creditScore ?? null },
+      { key: "owner", facet: true, value: (c) => c.ownerName ?? "", raw: (c) => (c.ownerStaffId != null ? String(c.ownerStaffId) : "") },
     ];
-    return cols.map((c) => (c.facet && cr.facetTruncated(c.key) ? { ...c, kind: "text" as const } : c));
+    // A truncated stage list degrades to text, as before. A `lookup` column (employer) keeps its
+    // checklist and searches the server instead, so it is never cut to its first 500 values.
+    return cols.map((c) =>
+      c.facet && !c.lookup && cr.facetTruncated(c.key) ? { ...c, kind: "text" as const } : c,
+    );
   }, [cr]);
   // No `onToggle` override: `thBag` opens a new column in the direction its declared kind implies —
   // newest-first for the two date columns, A→Z for the text ones — which is the behaviour this
   // register had before it moved onto the shared hook.
-  const th = thBag(rq, cr, filterColumns, COLUMN_LABEL, cr.requestFacet);
+  const th = thBag(rq, cr, filterColumns, COLUMN_LABEL, cr.requestFacet, {
+    search: cr.searchFacet,
+    truncated: cr.facetTruncated,
+  });
 
   // Chip counts are a separate, cheap aggregate. They follow search, the window, "mine" and the column
   // filters, but not the segment chip itself (nor the `stage` column filter, which is the same
@@ -389,7 +413,7 @@ function CustomersPageInner() {
       seg !== "all" ? `Segment: ${SEGMENT_LABEL[seg]}` : "",
       mine ? "My customers" : "",
       query ? `Search: “${query}”` : "",
-      range.from || range.to ? `Created ${range.from ?? "…"} to ${range.to ?? "…"}` : "",
+      range.from || range.to ? `Joined ${range.from ?? "…"} to ${range.to ?? "…"}` : "",
       describeRegister(th),
     ]
       .filter(Boolean)
@@ -484,7 +508,7 @@ function CustomersPageInner() {
             ariaLabel="Search customers"
             inputClassName="w-72"
           />
-          <QueueDateFilter period={period} setPeriod={changePeriod} custom={custom} setCustom={changeCustom} />
+          <QueueDateFilter label="Joined" period={period} setPeriod={setPeriod} custom={custom} setCustom={setCustom} />
           {mine && (
             <span className="rounded-full bg-navy-tint px-2.5 py-0.5 text-xs font-semibold text-navy">
               My customers
@@ -523,7 +547,7 @@ function CustomersPageInner() {
         )}
 
         {/* `onClear` is setFilters({}), not clearAll(): clearAll also wipes the search box, and "Clear filters" must not. */}
-        <FilterBar th={th} total={total} onClear={() => rq.setFilters({})} />
+        <FilterBar th={th} total={total} onClear={() => rq.setFilters({})} pinned={PINNED} />
 
         <div className="rounded border border-line bg-white shadow-sm">
           {cr.isLoading ? (

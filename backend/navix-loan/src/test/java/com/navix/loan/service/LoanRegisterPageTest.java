@@ -183,7 +183,7 @@ class LoanRegisterPageTest {
     }
 
     @Test
-    void theOfficerFilterMatchesByNameAndTheBlankSentinelMeansUnallocated() {
+    void theOfficerFilterMatchesByStaffIdAndTheBlankSentinelMeansUnallocated() {
         stubLoans(loan(1, 1_000_000), loan(2, 1_000_000), loan(3, 1_000_000));
         when(registerQuery.allHits(any(), any(), any(), any()))
                 .thenReturn(List.of(new Hit(1, 1), new Hit(2, 1), new Hit(3, 1)));
@@ -191,11 +191,11 @@ class LoanRegisterPageTest {
         when(staffDirectory.findStaff(7L)).thenReturn(Optional.of(new StaffSummary(7L, "Meena", "COLLECTION_EXECUTIVE", true)));
         when(staffDirectory.findStaff(8L)).thenReturn(Optional.of(new StaffSummary(8L, "Raj", "COLLECTION_EXECUTIVE", true)));
 
-        assertThat(ids(service.page(null, null, null, null, Map.of("f.assignedOfficerName", "in:Meena"),
+        assertThat(ids(service.page(null, null, null, null, Map.of("f.assignedOfficerName", "in:7"),
                 null, null, 1, 25).rows())).containsExactly(1L);
         assertThat(ids(service.page(null, null, null, null, Map.of("f.assignedOfficerName", "in:__NULL__"),
                 null, null, 1, 25).rows())).containsExactly(3L);
-        assertThat(ids(service.page(null, null, null, null, Map.of("f.assignedOfficerName", "in:Raj,__NULL__"),
+        assertThat(ids(service.page(null, null, null, null, Map.of("f.assignedOfficerName", "in:8,__NULL__"),
                 null, null, 1, 25).rows())).containsExactly(2L, 3L);
         // Officer sort: names A-Z, nobody last in both directions.
         assertThat(ids(service.page(null, null, null, null, Map.of(), "assignedOfficerName", "asc", 1, 25).rows()))
@@ -205,15 +205,20 @@ class LoanRegisterPageTest {
     }
 
     @Test
-    void theOfficerFacetListsNamesAndBlankWhenSomeLoanHasNoOfficer() {
+    void theOfficerFacetListsIdsWithNameLabelsAndBlankWhenSomeLoanHasNoOfficer() {
         when(registerQuery.allHits(any(), any(), any(), any())).thenReturn(List.of(new Hit(1, 1), new Hit(2, 1)));
         when(collectionCaseDirectory.assignedOfficerByLoanId(anyCollection())).thenReturn(Map.of(1L, 7L));
         when(staffDirectory.findStaff(7L)).thenReturn(Optional.of(new StaffSummary(7L, "Meena", "COLLECTION_EXECUTIVE", true)));
 
         var facet = service.facet("assignedOfficerName", null, null, null, null, Map.of());
 
-        assertThat(facet.values()).containsExactly("Meena", ColumnFilter.BLANK);
+        assertThat(facet.values()).containsExactly("7", ColumnFilter.BLANK);
+        assertThat(facet.labels()).containsEntry("7", "Meena");
         assertThat(facet.truncated()).isFalse();
+        // A search matches the officer's NAME, and a lookup leaves the unallocated value out.
+        assertThat(service.facet("assignedOfficerName", null, null, null, null, Map.of(), "mee").values())
+                .containsExactly("7");
+        assertThat(service.facet("assignedOfficerName", null, null, null, null, Map.of(), "zzz").values()).isEmpty();
     }
 
     @Test

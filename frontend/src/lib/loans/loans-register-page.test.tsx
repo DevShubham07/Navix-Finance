@@ -26,13 +26,26 @@ import { istCalendarToday } from "@/lib/customers/customer-360";
 // `vi.mock` calls below are hoisted above every import, so the page sees the mocked modules.
 import LoansPage from "@/app/staff/loans/page";
 
-const replace = vi.fn((url: string) => window.history.replaceState({}, "", url));
+// A router.replace moves the URL and tells every mounted `useSearchParams`, as the real router does:
+// the date window now lives in the URL, so a click on "Today" has to come back through it.
+const replace = vi.fn((url: string) => {
+  window.history.replaceState({}, "", url);
+  window.dispatchEvent(new Event("navix-test-nav"));
+});
 
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({ replace, push: vi.fn(), refresh: vi.fn(), back: vi.fn(), forward: vi.fn(), prefetch: vi.fn() }),
-  usePathname: () => "/staff/loans",
-  useSearchParams: () => new URLSearchParams(window.location.search),
-}));
+vi.mock("next/navigation", async () => {
+  const React = await import("react");
+  const subscribe = (cb: () => void) => {
+    window.addEventListener("navix-test-nav", cb);
+    return () => window.removeEventListener("navix-test-nav", cb);
+  };
+  return {
+    useRouter: () => ({ replace, push: vi.fn(), refresh: vi.fn(), back: vi.fn(), forward: vi.fn(), prefetch: vi.fn() }),
+    usePathname: () => "/staff/loans",
+    useSearchParams: () =>
+      new URLSearchParams(React.useSyncExternalStore(subscribe, () => window.location.search, () => "")),
+  };
+});
 
 // Captures what the page hands the export menu. The real one renders nothing for a non-ADMIN, and
 // what is under test here is the ROWS and the `getAllRows` the page passes, not who may click it.
@@ -411,6 +424,8 @@ describe("LoansPage", () => {
       await screen.findByText("Small");
 
       const panel = openFilter("Principal");
+      // Named ranges first; a typed bound is under "Custom range".
+      fireEvent.click(within(panel).getByRole("radio", { name: "Custom range" }));
       fireEvent.change(within(panel).getByLabelText("Minimum"), { target: { value: "10000" } });
       fireEvent.click(within(panel).getByRole("button", { name: "Apply" }));
 
@@ -514,7 +529,7 @@ describe("LoansPage", () => {
     // The bar's onClear is setFilters({}), not clearAll(): the latter would also wipe the search box.
     window.history.replaceState({}, "", "/staff/loans?q=asha&f.status=in%3ACLOSED");
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "Clear filters" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Clear all" }));
 
     await waitFor(() => expect(pageCalls.at(-1)?.filters ?? pageCalls.at(-1)).not.toHaveProperty("f.status"));
     const url = new URLSearchParams(window.location.search);

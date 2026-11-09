@@ -34,4 +34,24 @@ class SqlFacetsTest {
         assertNull(SqlFacets.sql("", "book b", null, FilterSpec.empty(), COLS, "x; drop table loan", p));
         assertNull(SqlFacets.sql("", "book b", null, FilterSpec.empty(), COLS, "amount", p));
     }
+
+    @Test
+    void searchIsABoundCaseInsensitiveContainsAndLikeMetacharactersAreLiteral() {
+        MapSqlParameterSource p = new MapSqlParameterSource();
+        String sql = SqlFacets.sql("", "book b", null, FilterSpec.empty(), COLS, "status", " 50%_Co ", p);
+        assertTrue(sql.contains("and lower(cast((b.status) as text)) like :facetSearch escape '\\'"), sql);
+        assertEquals("%50\\%\\_co%", p.getValue("facetSearch"));
+        assertFalse(sql.toLowerCase().contains("co %"), "the term is never spliced into SQL");
+        assertFalse(sql.contains("_co"), sql);
+    }
+
+    @Test
+    void blankSearchAddsNothingAndLongSearchIsCut() {
+        MapSqlParameterSource p = new MapSqlParameterSource();
+        String sql = SqlFacets.sql("", "book b", null, FilterSpec.empty(), COLS, "status", "   ", p);
+        assertFalse(sql.contains("facetSearch"), sql);
+        assertFalse(p.hasValue("facetSearch"));
+        assertEquals(100, SqlFacets.normaliseSearch("x".repeat(500)).length());
+        assertNull(SqlFacets.normaliseSearch(null));
+    }
 }

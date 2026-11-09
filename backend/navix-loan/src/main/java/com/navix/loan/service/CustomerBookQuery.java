@@ -2,6 +2,7 @@ package com.navix.loan.service;
 
 import static com.navix.common.query.ColumnFilter.Kind.DAY;
 import static com.navix.common.query.ColumnFilter.Kind.IN;
+import static com.navix.common.query.ColumnFilter.Kind.NUM;
 import static com.navix.common.query.ColumnFilter.Kind.TEXT;
 import static com.navix.common.util.LikeEscape.escapeLike;
 
@@ -66,17 +67,34 @@ public class CustomerBookQuery {
 
     private static final String BOOK_CTE = """
             with latest_app as (
-                select distinct on (a.customer_id) a.customer_id, a.id as app_id, a.status as app_status, a.created_at
+                select distinct on (a.customer_id) a.customer_id, a.id as app_id, a.status as app_status, a.created_at,
+                       a.amount_requested, a.eligible_limit,
+                       min(a.created_at) over (partition by a.customer_id) as joined
                 from loan_application a
                 order by a.customer_id, a.id desc
             ), latest_loan as (
                 select distinct on (l.customer_id) l.customer_id,
                        case when l.status = 'ACTIVE' and l.due_date is not null and l.due_date < :today
-                            then 'OVERDUE' else l.status end as loan_status
+                            then 'OVERDUE' else l.status end as loan_status,
+                       l.principal,
+                       -- The Collections tab's scheme and open-loan rule (CollectionsWorklistQuery /
+                       -- DpdCalculator), measured to today in IST: only an open loan has a bucket, so a
+                       -- closed or never-disbursed customer is NULL (the blank value), not "not yet due".
+                       case when l.status in ('ACTIVE', 'OVERDUE', 'IN_COLLECTIONS') and l.due_date is not null then
+                         case
+                           when cast(:today as date) - l.due_date <= 0 then 'UPCOMING'
+                           when cast(:today as date) - l.due_date <= 7 then 'T0_T7'
+                           when cast(:today as date) - l.due_date <= 30 then 'T8_T30'
+                           when cast(:today as date) - l.due_date <= 60 then 'T30_T60'
+                           when cast(:today as date) - l.due_date <= 90 then 'T60_T90'
+                           else 'T90_PLUS'
+                         end
+                       end as dpd_bucket
                 from loan l
                 order by l.customer_id, l.id desc
             ), prof as (
-                select distinct on (a.customer_id) a.customer_id, p.full_name, p.pan, p.mobile
+                select distinct on (a.customer_id) a.customer_id, p.full_name, p.pan, p.mobile,
+                       p.employer, p.monthly_salary_paise, p.bureau_score, p.risk_category
                 from customer_profile p
                 join loan_application a on a.id = p.application_id
                 order by a.customer_id, a.id desc
@@ -90,7 +108,10 @@ public class CustomerBookQuery {
             ), book as (
                 select la.customer_id,
                        la.created_at,
+                       la.joined,
                        o.owner_staff_id,
+                       ll.dpd_bucket,
+                       coalesce(ll.principal, la.amount_requested, la.eligible_limit) as loan_amount,
                        (la.app_status <> 'DRAFT' and exists (
                             select 1 from loan cl
                             where cl.customer_id = la.customer_id and cl.status = 'CLOSED'
@@ -100,6 +121,8 @@ public class CustomerBookQuery {
                             where r.mobile = pr.mobile and r.blocked_until > now()) as blocked,
                        coalesce(s.at, la.created_at) as status_changed_at,
                        pr.full_name, pr.pan, pr.mobile,
+                       pr.employer, pr.monthly_salary_paise as salary, pr.bureau_score as credit_score,
+                       pr.risk_category,
                        case
                          when ll.loan_status in ('OVERDUE', 'IN_COLLECTIONS') then 'overdue'
                          when la.app_status in ('OVERDUE', 'DEFAULTED') then 'overdue'
@@ -154,8 +177,9 @@ public class CustomerBookQuery {
      * The columns a staffer can filter on, each tied to a SQL expression written here as a literal —
      * the request only ever picks a key (same idea as {@link #SORTS}, which this mirrors), so nothing
      * user-supplied reaches the statement. Every expression is over the {@code book} CTE, so a column
-     * the CTE does not carry (account, IFSC, amount, owner NAME …) is not filterable until the CTE
-     * grows it; and none of them is money, so there is no display scale to declare.
+     * the CTE does not carry (account, IFSC, owner NAME …) is not filterable until the CTE
+     * grows it. The two money columns (loanAmount, salary) are paise in the CTE and rupees on screen,
+     * so they declare a display scale of 100 on the bound operand.
      *
      * <p>No scope column is registered, deliberately: {@code owner_staff_id} and {@code customer_id}
      * are what {@link BookFilter#scopeIds()} / {@code mineIds()} restrict on, and a filter on either
@@ -176,6 +200,23 @@ public class CustomerBookQuery {
             .column("date", "b.created_at", DAY)
             .column("stageDate", "b.status_changed_at", DAY)
             .column("stage", "b.segment", IN, TEXT)
+            // Customer-level facts. `joined` is the FIRST application's created_at (the Customers
+            // date window filters on it); `date` above stays the latest application's.
+            .column("joined", "b.joined", DAY)
+            // Same buckets and open-loan rule as the Collections DPD tab; NULL = no open loan.
+            .column("dpd", "b.dpd_bucket", IN)
+            // Latest loan principal, else what the latest application asked for / was limited to.
+            .scaled("loanAmount", "b.loan_amount", 100, NUM)
+            .column("employer", "b.employer", IN, TEXT)
+            .scaled("salary", "b.salary", 100, NUM)
+            .column("risk", "b.risk_category", IN)
+            .column("creditScore", "b.credit_score", NUM)
+            // Keyed `owner` and bound to the owner id, NOT registered under the scope column's own name.
+            // Scope (BookFilter.scopeIds / mineIds) restricts first and these filters are ANDed after
+            // it in `where`, so an owner filter can only narrow what the caller may already see; it
+            // cannot widen into another staffer's book. Values are staff ids (the client shows names);
+            // blank = unallocated.
+            .column("owner", "b.owner_staff_id", IN)
             .build();
 
     /** The stage column is the chip row's own dimension: see {@link #segmentCounts(BookFilter, FilterSpec)}. */
@@ -244,10 +285,15 @@ public class CustomerBookQuery {
      * it out.
      */
     public SqlFacets.Facet facet(BookFilter filter, FilterSpec spec, String column) {
+        return facet(filter, spec, column, null);
+    }
+
+    /** As above, narrowed to values containing {@code search} (server-side lookup past the 500 cap). */
+    public SqlFacets.Facet facet(BookFilter filter, FilterSpec spec, String column, String search) {
         MapSqlParameterSource params = new MapSqlParameterSource();
         List<String> base = baseClauses(filter, false, params);
         return SqlFacets.facet(jdbc, BOOK_CTE, "book b", base.isEmpty() ? null : String.join(" and ", base),
-                spec, FILTER_COLUMNS, column, params);
+                spec, FILTER_COLUMNS, column, search, params);
     }
 
     /**
@@ -278,11 +324,11 @@ public class CustomerBookQuery {
         }
         if (f.from() != null) {
             p.addValue("from", Timestamp.from(f.from()));
-            clauses.add("b.created_at >= :from");
+            clauses.add("b.joined >= :from");
         }
         if (f.to() != null) {
             p.addValue("to", Timestamp.from(f.to()));
-            clauses.add("b.created_at < :to");
+            clauses.add("b.joined < :to");
         }
         if (applySegment && f.segment() != null && !f.segment().isBlank() && !"all".equals(f.segment())) {
             if ("unallocated".equals(f.segment())) {

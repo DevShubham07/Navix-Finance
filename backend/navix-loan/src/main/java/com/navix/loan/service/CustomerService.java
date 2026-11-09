@@ -5,6 +5,7 @@ import com.navix.common.exception.BusinessException;
 import com.navix.common.exception.ResourceNotFoundException;
 import com.navix.common.notification.event.LoanLimitRevisedEvent;
 import com.navix.common.query.FilterSpec;
+import com.navix.common.query.ColumnFilter;
 import com.navix.common.query.SqlFacets;
 import com.navix.common.notification.event.SanctionedAmountRevisedEvent;
 import com.navix.common.security.ActorContext;
@@ -428,9 +429,32 @@ public class CustomerService {
     @Transactional(readOnly = true)
     public SqlFacets.Facet facets(String q, LocalDate from, LocalDate to, boolean mine, String column,
             Map<String, String> columnFilters) {
+        return facets(q, from, to, mine, column, columnFilters, null);
+    }
+
+    /** As above, narrowed to values containing {@code search} so a long list can be looked up server-side. */
+    @Transactional(readOnly = true)
+    public SqlFacets.Facet facets(String q, LocalDate from, LocalDate to, boolean mine, String column,
+            Map<String, String> columnFilters, String search) {
         rejectDsa();
         CustomerBookQuery.BookFilter filter = bookFilter(q, from, to, null, mine);
-        return bookQuery.facet(filter, columnSpec(columnFilters).without(column), column);
+        SqlFacets.Facet facet = bookQuery.facet(filter, columnSpec(columnFilters).without(column), column, search);
+        if (!"owner".equals(column)) {
+            return facet;
+        }
+        // Owner values are staff ids; the checklist shows their names.
+        Map<String, String> labels = new java.util.HashMap<>();
+        for (String v : facet.values()) {
+            if (!ColumnFilter.BLANK.equals(v)) {
+                try {
+                    staffDirectory.findStaff(Long.parseLong(v)).map(StaffSummary::name)
+                            .ifPresent(n -> labels.put(v, n));
+                } catch (NumberFormatException ignored) {
+                    // not an id: leave it unlabelled
+                }
+            }
+        }
+        return facet.withLabels(labels);
     }
 
     private static FilterSpec columnSpec(Map<String, String> columnFilters) {

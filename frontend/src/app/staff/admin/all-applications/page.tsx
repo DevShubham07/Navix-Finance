@@ -22,6 +22,8 @@ import {
 } from "@/lib/api/applications";
 import { type FilterColumn } from "@/components/staff/column-filter";
 import { Th, thBag, describeRegister } from "@/lib/staff/register-th";
+import { FilterBar } from "@/components/staff/filter-bar";
+import { AMOUNT_BANDS, CREDIT_SCORE_BANDS } from "@/lib/staff/filter-bands";
 import { useRegisterQuery } from "@/lib/staff/register-query";
 import { useServerRegister } from "@/lib/staff/use-server-register";
 import { PaginationBar } from "@/components/staff/pipeline/pagination";
@@ -81,13 +83,17 @@ const FILTER_COLUMNS: Array<FilterColumn<AdminApplicationView>> = [
     key: "amount",
     sortable: false,
     kind: "num",
+    bands: AMOUNT_BANDS,
     value: (a) => (a.amountRequestedPaise != null ? paiseToINR(a.amountRequestedPaise) : "—"),
     num: (a) => (a.amountRequestedPaise != null ? a.amountRequestedPaise / 100 : null),
   },
-  { key: "creditScore", sortable: false, kind: "num", value: (a) => String(a.creditScore ?? "—"), num: (a) => a.creditScore },
+  { key: "creditScore", sortable: false, kind: "num", bands: CREDIT_SCORE_BANDS, value: (a) => String(a.creditScore ?? "—"), num: (a) => a.creditScore },
   { key: "risk", sortable: false, value: (a) => a.riskCategory || "—", raw: (a) => a.riskCategory ?? "", facet: true },
 ];
 const FILTER_KEYS = FILTER_COLUMNS.map((c) => c.key);
+
+/** The dropdown row above the table; identity columns (name, PAN, account, IFSC, mobile) stay under "More filters". */
+const PINNED = ["status", "amount", "creditScore", "risk"] as const;
 
 /** The server's page endpoint caps `size` at 100; "Download all" walks it. */
 const EXPORT_CHUNK = 100;
@@ -309,6 +315,8 @@ function AllApplicationsRegister({ staffId }: { staffId: string }) {
         )}
       </div>
 
+      <FilterBar th={th} total={total} onClear={() => rq.setFilters({})} pinned={PINNED} />
+
       {cr.isLoading ? (
         <Skeleton variant="table" rows={8} cols={16} className="rounded border border-line bg-white" />
       ) : cr.isError ? (
@@ -318,7 +326,7 @@ function AllApplicationsRegister({ staffId }: { staffId: string }) {
           {/* `staff-register-scroll` pins the header (globals.css); PaginationBar is already a sibling
               after this scroller, so it stays put. The offset clears the shell header, PageHeader,
               the search/completeness toolbar and the pagination footer. */}
-          <div className={`staff-table-scroll staff-register-scroll${cr.isPlaceholderData ? " opacity-60" : ""}`} style={{ "--register-offset": "24rem" } as React.CSSProperties}>
+          <div className={`staff-table-scroll staff-register-scroll${cr.isPlaceholderData ? " opacity-60" : ""}`} style={{ "--register-offset": "28rem" } as React.CSSProperties}>
             <table className="staff-data-table">
               <caption className="sr-only">All applications</caption>
               <thead>

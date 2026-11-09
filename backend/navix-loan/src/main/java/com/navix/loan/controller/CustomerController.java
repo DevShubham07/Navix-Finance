@@ -99,9 +99,10 @@ public class CustomerController {
             @org.springframework.format.annotation.DateTimeFormat(
                     iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate to,
             @RequestParam(defaultValue = "false") boolean mine,
+            @RequestParam(required = false) String search,
             @RequestParam java.util.Map<String, String> all) {
         requireStaff();
-        return ApiResponse.ok(customerService.facets(q, from, to, mine, col, all));
+        return ApiResponse.ok(customerService.facets(q, from, to, mine, col, all, search));
     }
 
     /** The segment-chip counts over the whole (scoped, filtered) book. */

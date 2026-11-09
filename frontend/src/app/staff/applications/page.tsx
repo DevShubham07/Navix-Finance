@@ -28,7 +28,8 @@ import {
   CollectionPaymentValidationQueue,
 } from "@/components/staff/collection-payments";
 import { CollectionAssignActions } from "@/components/staff/pipeline/collection-actions";
-import { useQueueRegister } from "@/components/staff/pipeline/queue-register";
+import { QUEUE_PINNED, useQueueRegister } from "@/components/staff/pipeline/queue-register";
+import { FilterBar } from "@/components/staff/filter-bar";
 import {
   HistoryQueue,
   PAST_DISBURSED_STATUSES,
@@ -42,12 +43,10 @@ import { AdminLogPaymentButton } from "@/components/staff/admin-log-payment";
 import {
   QueueDateFilter,
   QueueRangeProvider,
-  rangeFor,
   useQueueRange,
   useQueueQuery,
-  type QueuePeriod,
-  type QueueRange,
 } from "@/components/staff/pipeline/queue-date-filter";
+import { useUrlDateWindow } from "@/lib/staff/use-url-date-window";
 import { EmptyState, ErrorState, InfoTooltip, Skeleton } from "@/components/ui";
 
 /** Roles that don't drive the credit/disbursement pipeline but do need the repayment/closed
@@ -70,9 +69,8 @@ function StaffApplicationsPageInner() {
   const initialQuery = useSearchParams().get("q") ?? "";
   // One global Today/Yesterday/Custom/All-time filter, page-wide (not per-panel) — a decided
   // product requirement (see the queue-date-filter module doc).
-  const [period, setPeriod] = React.useState<QueuePeriod>("ALL");
-  const [custom, setCustom] = React.useState<QueueRange>({});
-  const range = React.useMemo(() => rangeFor(period, custom), [period, custom]);
+  // Kept in the URL (win / wfrom / wto), so a refresh or a shared link keeps the window.
+  const { period, custom, range, setPeriod, setCustom } = useUrlDateWindow();
 
   // The page-wide search box — commits on Enter/Search, not on keystroke. Narrows WITHIN the date
   // window above; folded into `QueueRangeProvider` alongside `range` rather than a second provider,
@@ -104,7 +102,7 @@ function StaffApplicationsPageInner() {
         <span className="rounded-full bg-navy-tint px-3 py-1 text-sm font-semibold text-navy">{ROLE_LABEL[role]}</span>
         {isPipeline && (
           <>
-            <QueueDateFilter period={period} setPeriod={setPeriod} custom={custom} setCustom={setCustom} />
+            <QueueDateFilter label="Applied on" period={period} setPeriod={setPeriod} custom={custom} setCustom={setCustom} />
             <SearchBar
               initialValue={query}
               onSearch={setQuery}
@@ -558,6 +556,10 @@ function RepaymentColumn({
       ) : apps.length === 0 ? (
         <EmptyState title={emptyText} />
       ) : (
+        <>
+          <div className="px-5 pt-3">
+            <FilterBar th={register.th} total={register.cr.total} onClear={() => register.rq.setFilters({})} pinned={QUEUE_PINNED} />
+          </div>
         <QueueTable
           register={register}
           caption={`Awaiting repayment — ${title}`}
@@ -571,6 +573,7 @@ function RepaymentColumn({
             </>
           )}
         />
+        </>
       )}
     </div>
   );
@@ -620,7 +623,12 @@ function ClosedPanel() {
           ) : apps.length === 0 ? (
             <EmptyState title="Nothing in the CLOSED queue." />
           ) : (
-            <QueueTable register={register} actions={() => null} caption="Closed (fully repaid)" />
+            <>
+              <div className="px-5 pt-3">
+                <FilterBar th={register.th} total={register.cr.total} onClear={() => register.rq.setFilters({})} pinned={QUEUE_PINNED} />
+              </div>
+              <QueueTable register={register} actions={() => null} caption="Closed (fully repaid)" />
+            </>
           )}
         </div>
       )}

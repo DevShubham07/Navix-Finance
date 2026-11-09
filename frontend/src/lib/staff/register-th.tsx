@@ -16,7 +16,7 @@
  */
 
 import * as React from "react";
-import { FilterableTh, type FilterColumn } from "@/components/staff/column-filter";
+import { FilterableTh, type FilterBand, type FilterColumn } from "@/components/staff/column-filter";
 import type { SortDir } from "@/components/staff/sortable-table";
 import type { ColumnFilter } from "@/lib/staff/column-filter-match";
 import { describeFilters } from "@/lib/staff/column-filter-params";
@@ -39,6 +39,22 @@ export interface ThBag {
   headerFor: (key: string) => string;
   /** Fired once when a column's panel opens — how a server-paged register fetches its facet. */
   onOpenFacet?: (key: string) => void;
+  /** Named ranges for a `num` column, when it declares them. */
+  bandsFor?: (key: string) => FilterBand[] | undefined;
+  /**
+   * Server-side lookup for a long checklist (a `lookup` column on a server-paged register):
+   * `onSearchFacet(key, term)` re-asks the facet with the text typed, and `truncatedFor` says whether
+   * the server cut the list. Both are undefined where no lookup exists (client registers, other columns).
+   */
+  onSearchFacet?: (key: string, term: string) => void;
+  truncatedFor?: (key: string) => boolean;
+}
+
+export interface ThLookup {
+  /** `ServerRegister.searchFacet`. */
+  search: (key: string, term: string) => void;
+  /** `ServerRegister.facetTruncated`. */
+  truncated: (key: string) => boolean;
 }
 
 /** Bundle a register's view + facets + column declarations into what {@link Th} needs. */
@@ -64,7 +80,10 @@ export function thBag<T>(
   headers: Record<string, string>,
   /** Server-paged registers pass `requestFacet`; a client-side one has every value in memory. */
   onOpenFacet?: (key: string) => void,
+  /** Server-paged registers with a long list (employer, officer): the server-side lookup. */
+  lookup?: ThLookup,
 ): ThBag {
+  const column = (key: string) => columns.find((c) => c.key === key);
   return {
     keys: columns.map((c) => c.key),
     sortKey: rq.state.sort.key,
@@ -81,8 +100,16 @@ export function thBag<T>(
     setFilter: rq.setFilter,
     kindFor: (key) => columns.find((c) => c.key === key)?.kind ?? "in",
     sortableFor: (key) => columns.find((c) => c.key === key)?.sortable ?? true,
-    optionsFor: cr.optionsFor,
-    labelsFor: cr.labelsFor,
+    // A closed set (DPD bucket, risk) lists its own choices: no facet, and a value nobody has yet is
+    // still on offer.
+    optionsFor: (key) => column(key)?.fixed?.map((f) => f.raw) ?? cr.optionsFor(key),
+    labelsFor: (key) => {
+      const fixed = column(key)?.fixed;
+      return fixed ? new Map(fixed.map((f) => [f.raw, f.label])) : cr.labelsFor(key);
+    },
+    bandsFor: (key) => column(key)?.bands,
+    onSearchFacet: lookup ? (key, term) => lookup.search(key, term) : undefined,
+    truncatedFor: (key) => (lookup && column(key)?.lookup ? lookup.truncated(key) : false),
     headerFor: (key) => headers[key] ?? key,
     onOpenFacet,
   };
@@ -117,6 +144,7 @@ export function Th({ th, col, className }: { th: ThBag; col: string; className?:
       sortable={th.sortableFor(col)}
       options={th.optionsFor(col)}
       labels={th.labelsFor(col)}
+      bands={th.bandsFor?.(col)}
       filter={th.filters[col]}
       onApply={(next) => th.setFilter(col, next)}
       onOpen={th.onOpenFacet ? () => th.onOpenFacet?.(col) : undefined}
