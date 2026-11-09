@@ -262,6 +262,14 @@ public final class ProviderJson {
                 error == null ? ProviderCall.SUCCESS : ProviderCall.FAILED, error));
     }
 
+    /**
+     * A provider response as JSON, with credentials masked — for any copy a client keeps beyond the
+     * call. Signzy's BSA echoes the statement PDF password back in its response, for one.
+     */
+    public static String withoutCredentials(JsonNode response) {
+        return ProviderLogRedactor.redactCredentials(response.toString());
+    }
+
     private static String rawJson(Object value) {
         try {
             return JSON.writeValueAsString(value);

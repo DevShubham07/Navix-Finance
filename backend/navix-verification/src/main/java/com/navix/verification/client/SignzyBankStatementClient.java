@@ -3,6 +3,7 @@ package com.navix.verification.client;
 import static com.navix.verification.support.ProviderJson.integer;
 import static com.navix.verification.support.ProviderJson.post;
 import static com.navix.verification.support.ProviderJson.text;
+import static com.navix.verification.support.ProviderJson.withoutCredentials;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.navix.verification.config.SignzyProperties;
@@ -103,7 +104,7 @@ public class SignzyBankStatementClient {
         JsonNode root = post(signzy, DOWNLOAD,
                 new BsaDownloadRequest(authToken(), reportId, BOTH_FORMATS));
         JsonNode result = root.path("result");
-        return new BsaReportFiles(text(result.path("json")), text(result.path("excel")), root.toString());
+        return new BsaReportFiles(text(result.path("json")), text(result.path("excel")), withoutCredentials(root));
     }
 
     /**
@@ -112,7 +113,7 @@ public class SignzyBankStatementClient {
      * second — so both are read, and whichever is present supplies the transaction count and the
      * tampering verdict.
      */
-    private static BsaReport report(JsonNode root) {
+    static BsaReport report(JsonNode root) {
         JsonNode report = root.path("report");
         return new BsaReport(
                 text(report.path("reportId")),
@@ -120,7 +121,7 @@ public class SignzyBankStatementClient {
                 text(report.path("reportStatusDescription")),
                 text(report.path("bankScore")),
                 accountsOf(root),
-                root.toString());
+                withoutCredentials(root));
     }
 
     /**

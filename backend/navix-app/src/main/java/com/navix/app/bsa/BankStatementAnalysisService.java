@@ -65,6 +65,8 @@ public class BankStatementAnalysisService {
     private static final String STATEMENT_PERIOD = "6m";
     /** Floor between two progress polls, so refetch-on-focus cannot hammer Signzy. */
     private static final Duration POLL_EVERY = Duration.ofSeconds(10);
+    /** Reports take minutes; one still open after this will never finish or cannot be read back. */
+    private static final Duration PENDING_EXPIRES_AFTER = Duration.ofHours(24);
 
     private final BankStatementAnalysisRepository repository;
     private final CustomerService customerService;
@@ -109,6 +111,7 @@ public class BankStatementAnalysisService {
     public BankAnalysisView run(Long customerId) {
         requireCreditOrAdmin();
         repository.findFirstByCustomerIdOrderByCreatedAtDesc(customerId)
+                .map(this::expireIfStale)
                 .filter(r -> BankStatementAnalysis.PENDING.equals(r.getStatus()))
                 .ifPresent(r -> {
                     throw new BusinessException("BSA_IN_PROGRESS",
@@ -182,7 +185,7 @@ public class BankStatementAnalysisService {
         boolean needsUrls = BankStatementAnalysis.ANALYSED.equals(row.getStatus())
                 && row.getReportId() != null && row.getReportExcelUrl() == null;
         if ((!running && !needsUrls) || polledRecently(row)) {
-            return row;
+            return expireIfStale(row);
         }
         ProviderCallContext.setSource(ProviderCallContext.MANUAL);
         ProviderCallContext.setApplicationId(row.getApplicationId());
@@ -205,6 +208,22 @@ public class BankStatementAnalysisService {
             ProviderCallContext.clear();
         }
         row.setLastPolledAt(Instant.now());
+        return expireIfStale(repository.save(row));
+    }
+
+    /**
+     * Without this a report Signzy never finishes, or that we are not licensed to read back, stays
+     * PENDING for good — and PENDING refuses every later run for that customer.
+     */
+    private BankStatementAnalysis expireIfStale(BankStatementAnalysis row) {
+        if (!BankStatementAnalysis.PENDING.equals(row.getStatus()) || row.getCreatedAt() == null
+                || row.getCreatedAt().isAfter(Instant.now().minus(PENDING_EXPIRES_AFTER))) {
+            return row;
+        }
+        String lastError = row.getMessage();
+        row.setStatus(BankStatementAnalysis.FAILED);
+        row.setMessage(trimTo("Signzy did not finish this analysis within 24 hours."
+                + (lastError == null ? "" : " Last error: " + lastError), 500));
         return repository.save(row);
     }
 

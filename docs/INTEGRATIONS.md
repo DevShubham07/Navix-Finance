@@ -176,6 +176,8 @@ and is set only by the demo seed script and tests). Specs + verified corrections
 
 ### Signzy Bank Statement Analysis (BSA) — on demand only
 
+Full reference, known gaps and test procedure: [`BANK_STATEMENT_ANALYSIS.md`](BANK_STATEMENT_ANALYSIS.md).
+
 Three calls on the **production** Signzy host, wired as `SignzyBankStatementClient` + `/api/staff/bank-analysis`:
 `POST /api/v3/statementanalysis/analyze-statement` → `/retrieve-work-order` → `/download-report`.
 It deliberately bypasses `VerificationPort` (one vendor, no fallback, a flow spanning three calls) and
