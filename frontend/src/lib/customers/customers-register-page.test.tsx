@@ -163,6 +163,18 @@ describe("CustomersPage", () => {
     expect(within(screen.getByRole("dialog")).getByText("Customer 77")).toBeInTheDocument();
   });
 
+  it("offers row selection when working as Admin", async () => {
+    vi.mocked(globalThis.fetch).mockImplementation(
+      async () => new Response(JSON.stringify({ session: { id: 5, name: "Admin", role: "ADMIN" } })),
+    );
+    renderPage();
+
+    expect(await screen.findByRole("checkbox", { name: "Select all" })).toBeInTheDocument();
+    expect(within(rowFor("Asha Verma")).getByRole("checkbox")).toBeEnabled();
+    expect(within(rowFor("Bilal Khan")).getByRole("checkbox")).toBeDisabled();
+    expect(within(rowFor("Asha Verma")).getByRole("button", { name: "Assign" })).toBeInTheDocument();
+  });
+
   it("says how the register is ordered, visibly and to a screen reader", async () => {
     renderPage();
     await screen.findByText("Asha Verma");

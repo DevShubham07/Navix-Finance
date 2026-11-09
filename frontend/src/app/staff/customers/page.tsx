@@ -363,7 +363,12 @@ function CustomersPageInner() {
   // rejectable stage are selectable at all, so select-all can never sweep an already-decided or
   // live-loan row into a reject/assign run. Scoped to the page on screen: "select all" means the
   // rows the staffer can see, never the thousands behind the pagination.
-  const { canBulkReject, canBulkAssign } = useBulkRoleFlags();
+  const roleFlags = useBulkRoleFlags();
+  // The Admin working role holds no queue permissions, but the backend lets ADMIN assign and reject.
+  // Offered on this screen only: the queues still keep each working role to its own work.
+  const workingAsAdmin = me?.role === "ADMIN";
+  const canBulkReject = roleFlags.canBulkReject || workingAsAdmin;
+  const canBulkAssign = roleFlags.canBulkAssign || workingAsAdmin;
   // Row-level Reject only (not bulk select / assign): ADMIN may also reject a PRE_APPROVED lead — the
   // manual clean-up for pre-approvals the old reborrow gap minted for customers with no repaid loan.
   // The backend allows PRE_APPROVED → REJECTED for ADMIN alone (ApplicationFlowService.rejectLead).
