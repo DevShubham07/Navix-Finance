@@ -113,6 +113,24 @@ export function unauthorized(message: string): NextResponse {
   );
 }
 
+/**
+ * Login CSRF guard for the session-planting auth POSTs. A cross-site `text/plain` form can deliver
+ * valid JSON, so an attacker could log the victim into the attacker's account; SameSite=Lax does not
+ * help a login. Require a JSON content-type (not sendable by a plain cross-site form) and, when the
+ * browser sends `Sec-Fetch-Site`, that it is `same-origin`. A missing header (curl, Playwright) passes.
+ */
+export function rejectCrossSite(req: NextRequest | Request): NextResponse | null {
+  const type = req.headers.get("content-type") ?? "";
+  if (!type.toLowerCase().startsWith("application/json")) {
+    return forbidden("Unsupported content type.");
+  }
+  const site = req.headers.get("sec-fetch-site");
+  if (site !== null && site !== "same-origin") {
+    return forbidden("Cross-site request blocked.");
+  }
+  return null;
+}
+
 /** Envelope-shaped 403 for a proxy call the session is not allowed to make. */
 export function forbidden(message: string): NextResponse {
   return NextResponse.json(

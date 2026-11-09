@@ -148,7 +148,10 @@ export async function ensureBorrowerSession(
   name?: string,
 ): Promise<BorrowerSession | null> {
   const existing = await fetchBorrowerSession();
-  if (existing) return existing;
+  // Reuse a session only if it belongs to this mobile (last 10 digits), so a stale session for
+  // another number is not silently adopted. An empty `mobile` keeps the old reuse-anything behaviour.
+  const last10 = (m: string) => m.replace(/\D/g, "").slice(-10);
+  if (existing && (!mobile || last10(existing.mobile ?? "") === last10(mobile))) return existing;
   if (!otp) return null;
   const res = await fetch("/api/auth/borrower/login", {
     method: "POST",

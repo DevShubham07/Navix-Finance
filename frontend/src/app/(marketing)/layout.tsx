@@ -3,6 +3,7 @@ import { MarketingHeader } from "@/components/site/marketing-header";
 import { MarketingFooter } from "@/components/site/marketing-footer";
 import { MarketingScripts } from "@/components/site/marketing-scripts";
 import { StructuredData } from "@/components/site/structured-data";
+import { GoogleAnalytics } from "@/components/analytics/google-analytics";
 
 /**
  * Public marketing area — the design-export chrome (header + drawer + footer) and
@@ -13,6 +14,7 @@ import { StructuredData } from "@/components/site/structured-data";
 export default function MarketingLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="navix-mkt">
+      <GoogleAnalytics />
       <StructuredData />
       <MarketingHeader />
       <main>{children}</main>
