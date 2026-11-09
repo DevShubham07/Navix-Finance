@@ -8,6 +8,7 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { NAVIX_MARK_PNG } from "./brand-mark";
+import { isExportSimulation } from "./simulation-mode";
 
 /** A column: a header label and an accessor that pulls a cell value from a row. */
 export interface ExportColumn<Row> {
@@ -56,12 +57,18 @@ const PDF_CELL_PAD = 4;
 const PDF_MAX_COL_WIDTH = 170;
 const NUMERIC = /^-?[\d,]+(\.\d+)?$/;
 
+const SIMULATION_LABEL = "SIMULATION - NOT REAL DATA";
+
+function exportName(filename: string): string {
+  return isExportSimulation() ? `SIMULATION-${filename}` : filename;
+}
+
 function triggerDownload(content: BlobPart, filename: string, mime: string): void {
   const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = filename;
+  a.download = exportName(filename);
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -93,8 +100,9 @@ export function exportCsv<Row>(fileBase: string, columns: ExportColumn<Row>[], r
  * `csvCell`.
  */
 export function exportCsvText(fileBase: string, csv: string): void {
+  const labelled = isExportSimulation() ? `${SIMULATION_LABEL}\n${csv}` : csv;
   // BOM so Excel reads UTF-8 (₹ etc.) correctly.
-  triggerDownload("﻿" + csv, `${fileBase}.csv`, "text/csv;charset=utf-8;");
+  triggerDownload("﻿" + labelled, `${fileBase}.csv`, "text/csv;charset=utf-8;");
 }
 
 /** Height of the navy header band plus its gold rule, below which a page's content starts. */
@@ -139,7 +147,7 @@ function drawPdfHeader(doc: jsPDF, title: string, subtitle?: string): void {
 }
 
 /** "DhanBoost · Confidential" + "Page i of n" on every page of the document. */
-function drawPdfFooter(doc: jsPDF): void {
+export function drawPdfFooter(doc: jsPDF): void {
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const pageCount = doc.getNumberOfPages();
@@ -150,6 +158,12 @@ function drawPdfFooter(doc: jsPDF): void {
     doc.setTextColor(130, 130, 130);
     doc.text("DhanBoost · Confidential", 40, pageHeight - 18);
     doc.text(`Page ${i} of ${pageCount}`, pageWidth - 40, pageHeight - 18, { align: "right" });
+    if (isExportSimulation()) {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(178, 34, 34);
+      doc.text(SIMULATION_LABEL, pageWidth / 2, pageHeight - 18, { align: "center" });
+    }
   }
 }
 
@@ -265,7 +279,7 @@ export function exportPdf<Row>(opts: {
 
   drawPdfFooter(doc);
 
-  doc.save(`${fileBase}.pdf`);
+  doc.save(exportName(`${fileBase}.pdf`));
 }
 
 /** One table of a multi-section PDF: a heading, a header row and its body rows. */
@@ -344,7 +358,7 @@ export function exportPdfSections(opts: {
 
   drawPdfFooter(doc);
 
-  doc.save(`${fileBase}.pdf`);
+  doc.save(exportName(`${fileBase}.pdf`));
 }
 
 /** A report already formatted to strings, for {@link exportReportPdf}. */
@@ -485,7 +499,7 @@ export function exportReportPdf(r: PdfReport): void {
   }
 
   drawPdfFooter(doc);
-  doc.save(`${r.fileBase}.pdf`);
+  doc.save(exportName(`${r.fileBase}.pdf`));
 }
 
 /**
@@ -550,7 +564,7 @@ export function exportCustomerTablePdf(o: CustomerTablePdf): void {
     horizontalPageBreakRepeat: 0,
   });
   drawPdfFooter(doc);
-  doc.save(`${o.fileBase}.pdf`);
+  doc.save(exportName(`${o.fileBase}.pdf`));
 }
 
 /** One customer's card: a title bar and titled sections of label/value rows. */
@@ -618,5 +632,5 @@ export function exportCustomerCardsPdf(o: {
     y = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y) + 14;
   }
   drawPdfFooter(doc);
-  doc.save(`${o.fileBase}.pdf`);
+  doc.save(exportName(`${o.fileBase}.pdf`));
 }

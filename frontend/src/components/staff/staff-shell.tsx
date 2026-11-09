@@ -17,6 +17,7 @@ import { SimulationBanner } from "@/components/staff/simulation-banner";
 import { clearWorkingRole } from "@/lib/auth/working-role";
 import { clearRecent } from "@/lib/staff/search-recents";
 import { clearAllRegisterViews } from "@/lib/staff/register-view-store";
+import { setExportSimulation } from "@/lib/export/simulation-mode";
 import { cn } from "@/lib/utils";
 import { navGroupsFor, navHref, navLabel, navVisible, SEGMENTED_PARENT_PATHS } from "@/components/staff/staff-nav";
 import { COLLECTION_BUCKETS, collectionBucketCounts } from "@/lib/collection-buckets";
@@ -303,6 +304,9 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
 
   // Portalled dialogs/drawers/search live outside `.navix-crm`; this body flag lets the black-text rule reach them.
   const authed = !isPublic && !loading && !!session;
+  React.useEffect(() => {
+    setExportSimulation(session?.sim === true);
+  }, [session?.sim]);
   React.useEffect(() => {
     if (!authed) return;
     document.body.classList.add("staff-console");
