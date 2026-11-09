@@ -133,12 +133,16 @@ class MessageTemplateServiceTest {
     }
 
     @Test
-    void whatsAppStartsDraftAndCannotBeApprovedByHand() {
-        var req = new StoredTemplateRequest("WHATSAPP", "db_new", null, "Dear {{1}}, thanks.", "SERVICE", "ACTIVE",
-                "fake_name", null, List.of("name"), "ANY");
-        var saved = service.create(req);
-        assertThat(saved.status()).isEqualTo("DRAFT");
-        assertThat(saved.providerId()).isNull();
+    void whatsAppStartsDraftAndItsStatusCanBeSetByHand() {
+        var draft = service.create(new StoredTemplateRequest("WHATSAPP", "db_new", null, "Dear {{1}}, thanks.", "SERVICE", null,
+                null, null, List.of("name"), "ANY"));
+        assertThat(draft.status()).isEqualTo("DRAFT");
+        assertThat(draft.providerId()).isNull();
+
+        var approved = service.create(new StoredTemplateRequest("WHATSAPP", "db_two", null, "Dear {{1}}, thanks.", "SERVICE", "ACTIVE",
+                null, null, List.of("name"), "ANY"));
+        assertThat(approved.status()).isEqualTo("ACTIVE");
+        assertThat(approved.providerId()).isEqualTo("db_two");
     }
 
     @Test

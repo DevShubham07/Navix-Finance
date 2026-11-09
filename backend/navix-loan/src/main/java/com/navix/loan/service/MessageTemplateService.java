@@ -177,13 +177,23 @@ public class MessageTemplateService {
         requireEnabledAdmin();
         MessageTemplate t = repository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Template", String.valueOf(id)));
-        if (MessageCatalogue.WHATSAPP.equals(t.getChannel())
+        if (MessageCatalogue.WHATSAPP.equals(t.getChannel()) && t.isSystemManaged()) {
+            // A listed SmartChat template: only its status, and wording not yet on file, are kept here.
+            String missing = t.getBody() == null ? trimToNull(req.body()) : null;
+            if (missing != null) {
+                checkWhatsAppBody(missing);
+                t.setBody(missing);
+            }
+            applyWhatsAppStatus(t, req);
+            return view(repository.save(t));
+        }
+        boolean wordingChanged = !Objects.equals(trimToNull(req.body()), t.getBody())
+                || !jsonList(req.variables()).equals(t.getVariables());
+        if (MessageCatalogue.WHATSAPP.equals(t.getChannel()) && wordingChanged
                 && !Set.of(MessageTemplate.DRAFT, MessageTemplate.REJECTED).contains(t.getStatus())) {
             throw new BusinessException("TEMPLATE_LOCKED",
                     "This template is with Meta. To change it, add a new one under a new name.");
         }
-        boolean wordingChanged = !Objects.equals(trimToNull(req.body()), t.getBody())
-                || !jsonList(req.variables()).equals(t.getVariables());
         if (MessageTemplate.ACTIVE.equals(t.getStatus()) && !EMAIL.equals(t.getChannel())
                 && t.getBody() != null && !t.getBody().isBlank() && wordingChanged) {
             throw new BusinessException("TEMPLATE_LOCKED",
@@ -205,7 +215,10 @@ public class MessageTemplateService {
         checkPlaceholders(t.getChannel(), subject, body, variables);
         switch (t.getChannel()) {
             case MessageCatalogue.SMS -> applySmsStatus(t, req, body);
-            case MessageCatalogue.WHATSAPP -> checkWhatsAppBody(body);
+            case MessageCatalogue.WHATSAPP -> {
+                checkWhatsAppBody(body);
+                applyWhatsAppStatus(t, req);
+            }
             default -> {
                 if (body == null || subject == null || subject.length() > 200
                         || subject.chars().anyMatch(Character::isISOControl)) {
@@ -219,6 +232,25 @@ public class MessageTemplateService {
         t.setBody(body);
         t.setVariables(jsonList(variables));
         t.setRule(effectiveRule(req.rule(), variables));
+    }
+
+    /** Kept by hand when SmartChat's list cannot be read; Refresh overwrites it when it can. */
+    private void applyWhatsAppStatus(MessageTemplate t, StoredTemplateRequest req) {
+        String status = req.status() == null || req.status().isBlank() ? t.getStatus() : req.status().trim();
+        if (!STATUSES.contains(status)) {
+            throw new BusinessException("INVALID_STATUS", "Unknown template status");
+        }
+        String stored = trimToNull(req.providerId());
+        if (stored == null && MessageTemplate.ACTIVE.equals(status)) {
+            stored = t.getName();
+        }
+        if (stored != null && !stored.equals(t.getProviderId())
+                && repository.existsByChannelAndProviderId(t.getChannel(), stored)) {
+            throw new BusinessException("STORED_NAME_IN_USE", "Another template already has this stored name");
+        }
+        t.setStatus(status);
+        t.setProviderId(stored);
+        t.setRejectionReason(MessageTemplate.REJECTED.equals(status) ? truncate(trimToNull(req.remarks()), 1000) : null);
     }
 
     private void applySmsStatus(MessageTemplate t, StoredTemplateRequest req, String body) {

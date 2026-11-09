@@ -2,15 +2,17 @@
 
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Plus, RefreshCw } from "lucide-react";
+import { Check, Copy, Loader2, Plus, RefreshCw, Search } from "lucide-react";
 import { Dialog, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState, ErrorState, Select, Skeleton } from "@/components/ui";
+import { Badge, type BadgeVariant } from "@/components/ui/badge";
 import { Tabs } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { NoAccessNotice, PermissionGate } from "@/components/staff/live-pipeline";
 import { useQueueSelection } from "@/components/staff/pipeline/bulk-actions";
 import { SendMessageDialog, type MessageTargetItem } from "@/components/staff/send-message-dialog";
 import {
+  customerMessagesApi,
   customersApi,
   featureFlagsApi,
   storedTemplatesApi,
@@ -39,11 +41,11 @@ const VARIABLE_OPTIONS = [
   { value: "in:date", label: "Typed when sending (date)" },
 ];
 
-const STATUS_TONE: Record<StoredTemplate["status"], string> = {
-  DRAFT: "text-muted",
-  SUBMITTED: "text-warning-700",
-  ACTIVE: "text-success-700",
-  REJECTED: "text-error-700",
+const STATUS_BADGE: Record<StoredTemplate["status"], BadgeVariant> = {
+  DRAFT: "neutral",
+  SUBMITTED: "warning",
+  ACTIVE: "success",
+  REJECTED: "error",
 };
 
 function statusLabel(channel: MessageChannel, status: StoredTemplate["status"]): string {
@@ -93,9 +95,9 @@ function Templates() {
 
   return (
     <div>
-      <PageHeader title="Templates" subtitle="SMS, WhatsApp and email templates, with their status. Admin only." />
+      <PageHeader title="Templates" subtitle="Every SMS, WhatsApp and email template, its approval status, and who can receive it." />
       {off && (
-        <p role="status" className="mb-3 rounded border border-warning-200 bg-warning-50 p-2 text-sm text-ink">
+        <p role="status" className="mb-4 rounded-lg border border-warning-100 bg-warning-50 px-3 py-2 text-sm text-ink">
           Customer messaging is switched off (admin-messaging flag). Templates can be read, but not added, changed or sent.
         </p>
       )}
@@ -105,16 +107,151 @@ function Templates() {
   );
 }
 
+type StatusFilter = "ALL" | StoredTemplate["status"];
+
+const STATUS_ORDER: Record<StoredTemplate["status"], number> = { ACTIVE: 0, SUBMITTED: 1, DRAFT: 2, REJECTED: 3 };
+
+const TILES: { key: StatusFilter; label: string; idle: string; on: string }[] = [
+  { key: "ALL", label: "All templates", idle: "border-line bg-white text-navy", on: "border-navy bg-navy text-white" },
+  { key: "ACTIVE", label: "Ready to send", idle: "border-success-100 bg-success-50 text-success-800", on: "border-success-700 bg-success-700 text-white" },
+  { key: "SUBMITTED", label: "In review", idle: "border-warning-100 bg-warning-50 text-warning-800", on: "border-warning-700 bg-warning-700 text-white" },
+  { key: "REJECTED", label: "Rejected", idle: "border-error-100 bg-error-50 text-error-800", on: "border-error-700 bg-error-700 text-white" },
+];
+
+const OPTION_LABEL: Record<string, string> = Object.fromEntries(VARIABLE_OPTIONS.map((o) => [o.value, o.label]));
+
+function variableLabel(variable: string | undefined, position: number): string {
+  if (!variable) return `Variable ${position}`;
+  if (variable.startsWith("in:")) return toVariable(variable).label || `Variable ${position}`;
+  return OPTION_LABEL[variable] ?? variable;
+}
+
+/** The message as the customer reads it, with each variable shown by what fills it. */
+function Wording({ template }: { template: StoredTemplate }) {
+  if (!template.body) {
+    return (
+      <p className="rounded-md bg-grey-50 px-3 py-2 text-xs italic text-muted">
+        {template.channel === "WHATSAPP" ? "Wording is kept on SmartChat. Use Edit to save a copy here." : "Wording not filled in."}
+      </p>
+    );
+  }
+  let next = 0;
+  return (
+    <p className="whitespace-pre-wrap break-words rounded-md bg-ivory px-3 py-2 text-[13px] leading-relaxed text-ink">
+      {template.body.split(/(\{#var#\}|\{\{\d+\}\})/).map((part, i) => {
+        const numbered = part.match(/^\{\{(\d+)\}\}$/);
+        if (part !== "{#var#}" && !numbered) return <React.Fragment key={i}>{part}</React.Fragment>;
+        const position = numbered ? Number(numbered[1]) : ++next;
+        return (
+          <span key={i} className="mx-0.5 inline-block rounded bg-navy-tint px-1.5 text-xs font-semibold text-navy">
+            {variableLabel(template.variables[position - 1], position)}
+          </span>
+        );
+      })}
+    </p>
+  );
+}
+
+function CopyId({ value }: { value: string }) {
+  const [copied, setCopied] = React.useState(false);
+  return (
+    <button
+      type="button"
+      aria-label={`Copy ${value}`}
+      title="Copy"
+      className="inline-flex items-center gap-1 break-all text-left font-mono text-xs text-muted hover:text-navy"
+      onClick={() => {
+        void navigator.clipboard?.writeText(value);
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1500);
+      }}
+    >
+      {value} {copied ? <Check size={12} className="flex-shrink-0 text-success-700" /> : <Copy size={12} className="flex-shrink-0" />}
+    </button>
+  );
+}
+
+function TemplateCard({
+  template: t,
+  off,
+  sendKey,
+  onEdit,
+  onSend,
+}: {
+  template: StoredTemplate;
+  off: boolean;
+  sendKey: string | null;
+  onEdit: () => void;
+  onSend: () => void;
+}) {
+  const idLabel = t.channel === "SMS" ? "DLT id" : t.channel === "WHATSAPP" ? "Stored as" : "Provider id";
+  // A listed template that the catalogue can send is not really unsendable, whatever the row says.
+  const note = sendKey ? null : t.unsendableReason;
+  return (
+    <article className="flex flex-col gap-3 rounded-lg border border-line bg-white p-4 shadow-sm transition-shadow hover:shadow-md">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <h3 className="break-all font-mono text-sm font-semibold text-navy">{t.name}</h3>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            <Badge size="sm" variant={STATUS_BADGE[t.status]}>{statusLabel(t.channel, t.status)}</Badge>
+            <Badge size="sm" variant="neutral">{t.category === "MARKETING" ? "Marketing" : "Service"}</Badge>
+          </div>
+        </div>
+        <div className="flex flex-shrink-0 gap-2">
+          <button type="button" disabled={off} onClick={onEdit} className="btn btn-sm btn-outline disabled:opacity-50">
+            Edit
+          </button>
+          <button
+            type="button"
+            disabled={off || sendKey == null}
+            title={note ?? undefined}
+            onClick={onSend}
+            className="btn btn-sm btn-navy disabled:opacity-50"
+          >
+            Send
+          </button>
+        </div>
+      </div>
+
+      {t.subject && <p className="text-sm font-semibold text-ink">{t.subject}</p>}
+      <Wording template={t} />
+
+      {t.rejectionReason && (
+        <p className="rounded-md border border-error-100 bg-error-50 px-3 py-2 text-xs text-error-800">{t.rejectionReason}</p>
+      )}
+      {(t.providerId || note) && (
+        <div className="mt-auto flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-line pt-2">
+          {t.providerId ? (
+            <span className="flex items-center gap-1.5 text-xs text-muted">
+              {idLabel} <CopyId value={t.providerId} />
+            </span>
+          ) : (
+            <span />
+          )}
+          {note && <span className="text-xs text-muted">{note}</span>}
+        </div>
+      )}
+    </article>
+  );
+}
+
 function ChannelPanel({ channel, off }: { channel: MessageChannel; off: boolean }) {
   const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["stored-templates", channel],
     queryFn: () => storedTemplatesApi.list(channel),
   });
+  const catalogue = useQuery({
+    queryKey: ["customer-message-templates"],
+    queryFn: () => customerMessagesApi.templates(),
+    enabled: channel === "WHATSAPP" && !off,
+  });
   const [editing, setEditing] = React.useState<StoredTemplate | "new" | null>(null);
-  const [sending, setSending] = React.useState<StoredTemplate | null>(null);
+  const [sending, setSending] = React.useState<{ template: StoredTemplate; key: string } | null>(null);
   const [targets, setTargets] = React.useState<MessageTargetItem[] | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
+  const [filter, setFilter] = React.useState<StatusFilter>("ALL");
+  const [search, setSearch] = React.useState("");
 
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: ["stored-templates", channel] });
@@ -129,107 +266,126 @@ function ChannelPanel({ channel, off }: { channel: MessageChannel; off: boolean 
         `${r.updated} updated.` + (r.notFound.length ? ` Not on SmartChat yet: ${r.notFound.join(", ")}.` : ""),
       );
     },
-    onError: (e) => setNotice(formatApiError(e, "Could not read templates from SmartChat.")),
+    onError: (e) =>
+      setNotice(`${formatApiError(e, "Could not read templates from SmartChat.")} You can still update a status with Edit.`),
   });
 
-  const rows = q.data ?? [];
+  const all = React.useMemo(
+    () => [...(q.data ?? [])].sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]),
+    [q.data],
+  );
+  const counts = (key: StatusFilter) => (key === "ALL" ? all.length : all.filter((t) => t.status === key).length);
+  const term = search.trim().toLowerCase();
+  const matching = all.filter(
+    (t) =>
+      (filter === "ALL" || t.status === filter) &&
+      (term === "" || t.name.toLowerCase().includes(term) || (t.body ?? "").toLowerCase().includes(term)),
+  );
+  // Rejected templates fold away so they don't bury the ones that can be used.
+  const foldRejected = filter === "ALL";
+  const main = foldRejected ? matching.filter((t) => t.status !== "REJECTED") : matching;
+  const rejected = foldRejected ? matching.filter((t) => t.status === "REJECTED") : [];
+
+  /** What Send opens: the stored template, or for a listed WhatsApp one its entry in the send catalogue. */
+  const sendKeyFor = (t: StoredTemplate): string | null => {
+    if (!t.systemManaged) return t.unsendableReason == null ? t.key : null;
+    if (t.channel !== "WHATSAPP" || t.status !== "ACTIVE") return null;
+    const key = t.name.replace(/^db_/, "").replace(/_v1_164$/, "");
+    return catalogue.data?.some((c) => c.key === key) ? key : null;
+  };
+  const singleOnly = (s: { template: StoredTemplate; key: string }) =>
+    catalogue.data?.find((c) => c.key === s.key)?.singleOnly ?? s.template.variables.some((v) => v.startsWith("in:"));
+
   const closeSend = () => {
     setSending(null);
     setTargets(null);
   };
+  const card = (t: StoredTemplate) => (
+    <TemplateCard
+      key={t.id}
+      template={t}
+      off={off}
+      sendKey={sendKeyFor(t)}
+      onEdit={() => setEditing(t)}
+      onSend={() => {
+        const key = sendKeyFor(t);
+        if (key) setSending({ template: t, key });
+      }}
+    />
+  );
 
   return (
     <div>
-      <div className="mb-3 flex flex-wrap items-center gap-2">
+      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {TILES.map((tile) => (
+          <button
+            key={tile.key}
+            type="button"
+            aria-pressed={filter === tile.key}
+            onClick={() => setFilter(tile.key)}
+            className={`rounded-lg border px-4 py-3 text-left transition-colors ${filter === tile.key ? tile.on : tile.idle}`}
+          >
+            <span className="block text-2xl font-bold leading-none">{counts(tile.key)}</span>
+            <span className="mt-1 block text-xs font-semibold">{tile.label}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[14rem] flex-1">
+          <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+          <input
+            type="search"
+            aria-label="Search templates"
+            placeholder="Search by name or wording"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full rounded-lg border border-line bg-white py-2 pl-9 pr-3 text-sm text-ink focus:border-navy focus:outline-none"
+          />
+        </div>
+        {channel === "WHATSAPP" && (
+          <button
+            type="button"
+            disabled={off || refresh.isPending}
+            onClick={() => refresh.mutate()}
+            className="btn btn-sm btn-outline disabled:opacity-50"
+          >
+            {refresh.isPending ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Refresh status from SmartChat
+          </button>
+        )}
         <button type="button" disabled={off} onClick={() => setEditing("new")} className="btn btn-sm btn-navy disabled:opacity-50">
           <Plus size={14} /> Add template
         </button>
-        {channel === "WHATSAPP" && (
-          <>
-            <button
-              type="button"
-              disabled={off || refresh.isPending}
-              onClick={() => refresh.mutate()}
-              className="btn btn-sm btn-outline disabled:opacity-50"
-            >
-              {refresh.isPending ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Refresh status from SmartChat
-            </button>
-            <p className="text-xs text-muted">
-              SmartChat cannot create templates through its API. File the template in the SmartChat portal, add it here under the
-              same name, then refresh to pick up its status.
-            </p>
-          </>
-        )}
-        {channel === "SMS" && <p className="text-xs text-muted">The DLT portal has no API, so status and DLT ids are kept here by hand.</p>}
       </div>
+      <p className="mb-4 text-xs text-muted">
+        {channel === "WHATSAPP"
+          ? "New templates are filed on the SmartChat portal first, then added here under the same name."
+          : channel === "SMS"
+            ? "DLT has no API, so status and DLT ids are kept here by hand. A new SMS also needs adding in Ultron before it can send."
+            : "Email templates can be sent as soon as they are saved."}
+      </p>
       {notice && (
-        <p role="status" className="mb-3 text-xs text-ink">
+        <p role="status" className="mb-4 rounded-lg border border-line bg-white px-3 py-2 text-xs text-ink">
           {notice}
         </p>
       )}
 
       {q.isLoading ? (
-        <Skeleton variant="table" rows={6} cols={6} className="rounded border border-line bg-white" />
+        <Skeleton variant="table" rows={6} cols={2} className="rounded-lg border border-line bg-white" />
       ) : q.isError ? (
         <ErrorState error={q.error} onRetry={() => void q.refetch()} />
+      ) : matching.length === 0 ? (
+        <EmptyState title={all.length === 0 ? "No templates yet." : "No templates match."} />
       ) : (
-        <div className="overflow-hidden rounded border border-line bg-white shadow-sm">
-          <div className="staff-table-scroll">
-            <table className="staff-data-table">
-              <caption className="sr-only">{channel} templates</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Name</th>
-                  <th scope="col">Wording</th>
-                  <th scope="col">Category</th>
-                  <th scope="col">Status</th>
-                  <th scope="col">{channel === "SMS" ? "DLT id" : channel === "WHATSAPP" ? "Stored name" : "Provider id"}</th>
-                  <th scope="col">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line align-top">
-                {rows.map((t) => (
-                  <tr key={t.id} className="hover:bg-grey-50">
-                    <td className="font-semibold text-ink">{t.name}</td>
-                    <td className="max-w-[28rem] whitespace-pre-wrap text-xs text-muted">
-                      {t.subject && <span className="block font-semibold text-ink">{t.subject}</span>}
-                      {t.body || <span className="text-warning-700">Wording not filled in</span>}
-                    </td>
-                    <td className="whitespace-nowrap">{t.category === "MARKETING" ? "Marketing" : "Service"}</td>
-                    <td className="whitespace-nowrap">
-                      <span className={`font-semibold ${STATUS_TONE[t.status]}`}>{statusLabel(channel, t.status)}</span>
-                      {t.rejectionReason && <span className="block max-w-[14rem] whitespace-normal text-xs text-muted">{t.rejectionReason}</span>}
-                    </td>
-                    <td className="whitespace-nowrap font-mono text-xs text-muted">{t.providerId ?? "—"}</td>
-                    <td className="whitespace-nowrap">
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          disabled={off}
-                          onClick={() => setEditing(t)}
-                          className="btn btn-sm btn-outline disabled:opacity-50"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          disabled={off || t.unsendableReason != null}
-                          title={t.unsendableReason ?? undefined}
-                          onClick={() => setSending(t)}
-                          className="btn btn-sm btn-navy disabled:opacity-50"
-                        >
-                          Send
-                        </button>
-                      </div>
-                      {t.unsendableReason && <span className="mt-1 block whitespace-normal text-xs text-muted">{t.unsendableReason}</span>}
-                    </td>
-                  </tr>
-                ))}
-                {rows.length === 0 && <EmptyState title="No templates yet." inTable={6} />}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <>
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">{main.map(card)}</div>
+          {rejected.length > 0 && (
+            <details className="mt-4 rounded-lg border border-line bg-white p-3">
+              <summary className="cursor-pointer text-sm font-semibold text-navy">Rejected ({rejected.length})</summary>
+              <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2">{rejected.map(card)}</div>
+            </details>
+          )}
+        </>
       )}
 
       {editing && (
@@ -245,8 +401,8 @@ function ChannelPanel({ channel, off }: { channel: MessageChannel; off: boolean 
       )}
       {sending && !targets && (
         <RecipientPicker
-          single={sending.variables.some((v) => v.startsWith("in:"))}
-          templateName={sending.name}
+          single={singleOnly(sending)}
+          templateName={sending.template.name}
           onCancel={closeSend}
           onPick={setTargets}
         />
@@ -349,7 +505,9 @@ function TemplateForm({
   const [remarks, setRemarks] = React.useState(template?.rejectionReason ?? "");
   const [variables, setVariables] = React.useState<Variable[]>((template?.variables ?? []).map(toVariable));
 
-  const count = placeholderCount(channel, `${channel === "EMAIL" ? subject : ""}\n${body}`);
+  // A template listed from SmartChat: its wording lives with Meta, so only the status is kept here.
+  const listedOnly = channel === "WHATSAPP" && template?.systemManaged === true;
+  const count = listedOnly ? 0 : placeholderCount(channel, `${channel === "EMAIL" ? subject : ""}\n${body}`);
   // One picker per placeholder; a new one defaults to the customer's name.
   const shown = Array.from({ length: count }, (_, i) => variables[i] ?? { kind: "name", label: "" });
   const setVariable = (i: number, patch: Partial<Variable>) =>
@@ -366,7 +524,7 @@ function TemplateForm({
         category,
         rule,
         variables: shown.map(fromVariable),
-        ...(channel === "SMS" ? { status, providerId, remarks } : {}),
+        ...(channel !== "EMAIL" ? { status, providerId, remarks } : {}),
       };
       return template ? storedTemplatesApi.update(template.id, input) : storedTemplatesApi.create(input);
     },
@@ -391,7 +549,7 @@ function TemplateForm({
         )}
         <div className="field">
           <label htmlFor="tpl-body">Wording</label>
-          <textarea id="tpl-body" rows={5} value={body} onChange={(e) => setBody(e.target.value)} />
+          <textarea id="tpl-body" rows={5} value={body} readOnly={listedOnly && Boolean(template?.body)} onChange={(e) => setBody(e.target.value)} />
           <p className="mt-1 text-xs text-muted">{PLACEHOLDER_HINT[channel]}</p>
         </div>
         {shown.map((v, i) => (
@@ -410,6 +568,7 @@ function TemplateForm({
             )}
           </div>
         ))}
+        {!listedOnly && <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Select
           label="Category"
           value={category}
@@ -429,7 +588,8 @@ function TemplateForm({
             { value: "OVERDUE", label: "Customers with an overdue loan" },
           ]}
         />
-        {channel === "SMS" && (
+        </div>}
+        {channel !== "EMAIL" && (
           <>
             <Select
               label="Status"
@@ -437,14 +597,19 @@ function TemplateForm({
               onChange={(e) => setStatus(e.target.value as StoredTemplate["status"])}
               options={[
                 { value: "DRAFT", label: "Draft" },
-                { value: "SUBMITTED", label: "Submitted to DLT" },
-                { value: "ACTIVE", label: "Active" },
+                { value: "SUBMITTED", label: channel === "SMS" ? "Submitted to DLT" : "Pending at SmartChat" },
+                { value: "ACTIVE", label: channel === "SMS" ? "Active" : "Approved" },
                 { value: "REJECTED", label: "Rejected" },
               ]}
             />
             <div className="field">
-              <label htmlFor="tpl-dlt">DLT template id</label>
-              <input id="tpl-dlt" inputMode="numeric" value={providerId} onChange={(e) => setProviderId(e.target.value.replace(/\D/g, ""))} />
+              <label htmlFor="tpl-dlt">{channel === "SMS" ? "DLT template id" : "Name stored on SmartChat"}</label>
+              <input
+                id="tpl-dlt"
+                inputMode={channel === "SMS" ? "numeric" : undefined}
+                value={providerId}
+                onChange={(e) => setProviderId(channel === "SMS" ? e.target.value.replace(/\D/g, "") : e.target.value.trim())}
+              />
             </div>
             <div className="field">
               <label htmlFor="tpl-remarks">Remarks</label>
