@@ -22,6 +22,8 @@ export interface StaffBffSession {
   id: string;
   name: string;
   role: StaffRole;
+  /** Set only by the login route for the designated simulation account. */
+  sim?: true;
 }
 
 export interface BorrowerBffSession {

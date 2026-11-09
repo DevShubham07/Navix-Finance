@@ -8,7 +8,7 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server";
-import { config } from "@/lib/config";
+import { targetForToken } from "@/lib/api/sim-routing";
 
 /**
  * Proxy `req` to `${backendBaseUrl}${backendPath}${search}`, forwarding the
@@ -21,7 +21,8 @@ export async function proxyToBackend(
   token: string,
 ): Promise<NextResponse> {
   const search = req.nextUrl.search; // includes leading "?" or ""
-  const url = `${config.backendBaseUrl}${backendPath}${search}`;
+  const target = targetForToken(req, token);
+  const url = `${target.baseUrl}${backendPath}${search}`;
 
   // Cross-tier correlation: reuse an inbound X-Request-Id (browser) or mint one, forward it to the
   // backend (RequestLoggingFilter honors + echoes it), and return it to the browser on every path so
@@ -31,6 +32,7 @@ export async function proxyToBackend(
     Accept: "application/json",
     Authorization: `Bearer ${token}`,
     "X-Request-Id": requestId,
+    ...target.headers,
   };
   const acting = req.headers.get("x-acting-role");
   if (acting) headers["X-Acting-Role"] = acting;
