@@ -44,6 +44,7 @@ class ApplicationQueueScopeTest {
     private final ApplicationFlowService flow = mock(ApplicationFlowService.class);
     private final ApplicationActorDirectory actors = mock(ApplicationActorDirectory.class);
     private final CollectionCaseDirectory cases = mock(CollectionCaseDirectory.class);
+    private final com.navix.loan.service.CustomerService customers = mock(com.navix.loan.service.CustomerService.class);
     private final ApplicationController controller = new ApplicationController(flow,
             mock(CustomerReviewService.class), mock(ApplicationVerificationService.class),
             mock(VerificationOutreachService.class), mock(CreditBriefService.class),
@@ -51,10 +52,11 @@ class ApplicationQueueScopeTest {
             mock(MandateService.class), mock(StaffDirectory.class), actors, cases,
             mock(LoanRepository.class), mock(ApplicationEventRepository.class),
             mock(EligibilityService.class), mock(CustomerTrustSignalsService.class),
-            mock(com.navix.loan.service.CustomerService.class));
+            customers);
 
     @BeforeEach
     void threeActiveLoans() {
+        when(customers.visibleAmong(any())).thenReturn(Set.of(1001L, 1002L, 1003L));
         when(flow.byStatus(eq(ApplicationStatus.ACTIVE), any(), any(), any()))
                 .thenReturn(List.of(app(1L, 101L), app(2L, 102L), app(3L, 103L)));
     }
@@ -101,6 +103,7 @@ class ApplicationQueueScopeTest {
         LoanApplication a = new LoanApplication();
         a.setId(id);
         a.setLoanId(loanId);
+        a.setCustomerId(id + 1000);
         a.setStatus(ApplicationStatus.ACTIVE);
         return a;
     }

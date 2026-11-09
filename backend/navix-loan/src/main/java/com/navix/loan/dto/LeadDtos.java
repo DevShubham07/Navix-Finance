@@ -148,16 +148,18 @@ public final class LeadDtos {
             int issueCount,
             List<ImportIssue> issues,
             /**
-             * S3 key of the uploaded file, which is kept whatever happens to the import — so a list
-             * that failed to parse can still be fetched back and inspected. Contact data by
-             * definition, so it is withheld from roles without {@code customer:view}, exactly like
-             * {@code issues}.
+             * Whether the uploaded file can be fetched back (via the job's download endpoint). The key
+             * itself is never exposed. False for roles without {@code customer:view}, like {@code issues}.
              */
-            String s3Key,
+            boolean downloadable,
             String errorMessage,
             Instant startedAt,
             Instant finishedAt,
             Instant createdAt) {
+    }
+
+    /** Presigned GET url for an import's original file. */
+    public record ImportDownload(String url) {
     }
 
     public record StatusCount(String status, long count) {

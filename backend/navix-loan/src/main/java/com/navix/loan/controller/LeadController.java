@@ -5,6 +5,7 @@ import com.navix.common.web.ApiResponse;
 import com.navix.loan.dto.LeadDtos.CreateLeadRequest;
 import com.navix.loan.dto.LeadDtos.DispositionRequest;
 import com.navix.loan.dto.LeadDtos.ImportFileRequest;
+import com.navix.loan.dto.LeadDtos.ImportDownload;
 import com.navix.loan.dto.LeadDtos.ImportJobView;
 import com.navix.loan.dto.LeadDtos.LeadOutcomeRequest;
 import com.navix.loan.dto.LeadDtos.LeadPage;
@@ -161,6 +162,12 @@ public class LeadController {
     @GetMapping("/import/jobs/{id}")
     public ApiResponse<ImportJobView> importJob(@PathVariable Long id) {
         return ApiResponse.ok(leadImportJobService.get(id));
+    }
+
+    /** Presigned link to the job's original file; uploader or ADMIN only. */
+    @GetMapping("/import/jobs/{id}/download")
+    public ApiResponse<ImportDownload> importDownload(@PathVariable Long id) {
+        return ApiResponse.ok(new ImportDownload(leadImportJobService.downloadUrl(id)));
     }
 
     /** The caller's own recent imports. */

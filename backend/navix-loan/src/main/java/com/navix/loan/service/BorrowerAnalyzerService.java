@@ -2,6 +2,7 @@ package com.navix.loan.service;
 
 import com.navix.loan.dto.AnalyzerDtos.AnalyzerView;
 import com.navix.loan.dto.AnalyzerDtos.BandRow;
+import com.navix.common.security.ActorContext;
 import com.navix.loan.dto.AnalyzerDtos.Benchmarks;
 import com.navix.loan.dto.AnalyzerDtos.CustomerFacts;
 import com.navix.loan.dto.AnalyzerDtos.GroupStats;
@@ -130,7 +131,29 @@ public class BorrowerAnalyzerService {
         customerService.requireVisible(customerId);
         // ponytail: scans every loan per request; cache it if the book reaches several thousand loans.
         List<LoanRow> rows = jdbc.query(LOAN_ROWS_SQL, new MapSqlParameterSource(), (rs, i) -> loanRow(rs));
-        return view(rows, loadInputs(customerId), customerId, LocalDate.now(IST));
+        AnalyzerView v = view(rows, loadInputs(customerId), customerId, LocalDate.now(IST));
+        return forRole(v, ActorContext.get().role());
+    }
+
+    static AnalyzerView forRole(AnalyzerView v, String role) {
+        return MONEY_VIEW_ROLES.contains(role) ? v : withoutBookMoney(v);
+    }
+
+    /** Roles that may see the book-wide rupee totals; everyone else gets counts only. */
+    private static final java.util.Set<String> MONEY_VIEW_ROLES =
+            java.util.Set.of("ADMIN", "CREDIT_HEAD", "COLLECTION_HEAD", "DISBURSEMENT_HEAD");
+
+    static AnalyzerView withoutBookMoney(AnalyzerView v) {
+        Benchmarks b = v.benchmarks();
+        Benchmarks nb = new Benchmarks(b.recentStart(), noMoney(b.all()), noMoney(b.earlyFirst()),
+                noMoney(b.recentFirst()), noMoney(b.repeat()), null, b.patterns(), b.concerns(), b.informational(),
+                b.pointTable(), b.bands(), b.incomeUncorroborated(), b.repeatEarlyPayer());
+        return new AnalyzerView(v.asOf(), v.mode(), v.band(), v.concernCount(), v.unknownCount(), v.pointers(),
+                v.informational(), v.facts(), v.ownRecord(), v.incomeUncorroborated(), nb);
+    }
+
+    private static GroupStats noMoney(GroupStats g) {
+        return new GroupStats(g.key(), g.loans(), g.customers(), g.bad(), null, null, null, null, g.zeroPaidBad());
     }
 
     // ---- loaders (SQL only) ------------------------------------------------------------------

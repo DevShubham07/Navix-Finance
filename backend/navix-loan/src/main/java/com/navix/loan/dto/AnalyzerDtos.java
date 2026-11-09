@@ -31,8 +31,8 @@ public final class AnalyzerDtos {
     }
 
     /** key: ALL, EARLY_FIRST, RECENT_FIRST, REPEAT. */
-    public record GroupStats(String key, int loans, int customers, int bad, long principalPaise,
-                             long badPrincipalPaise, long paidOutPaise, long collectedPaise, int zeroPaidBad) {
+    public record GroupStats(String key, int loans, int customers, int bad, Long principalPaise,
+                             Long badPrincipalPaise, Long paidOutPaise, Long collectedPaise, int zeroPaidBad) {
     }
 
     public record PatternCount(String pattern, int customers) {

@@ -247,8 +247,12 @@ public class RepaymentService {
     }
 
     private String presignedProof(Payment p) {
-        String key = p.getProofUrl();
-        return key == null || key.isBlank() ? null : storage.presignDownload(key);
+        return isProofKey(p.getProofUrl()) ? storage.presignDownload(p.getProofUrl()) : null;
+    }
+
+    /** Only a repayment-proof upload is ever presigned; free-text refs, {@code NACH:} refs and traversal keys are not. */
+    public static boolean isProofKey(String key) {
+        return key != null && key.startsWith("loan/repayment-proof/") && !key.contains("..");
     }
 
     /**

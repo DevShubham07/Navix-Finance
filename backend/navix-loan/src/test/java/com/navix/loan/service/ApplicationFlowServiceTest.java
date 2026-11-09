@@ -1502,4 +1502,22 @@ class ApplicationFlowServiceTest {
         loan.setDueDate(dueDate);
         return loan;
     }
+
+    @Test
+    void cancel_onlyAdminAndTheOwningBorrowerMay() {
+        for (String role : new String[] {"CREDIT_EXECUTIVE", "ACCOUNTANT", "CREDIT_HEAD", "DISBURSEMENT_HEAD"}) {
+            appAt(ApplicationStatus.DRAFT);
+            actor("99", role);
+            assertThatThrownBy(() -> flow.cancel(1L, "x"))
+                    .isInstanceOf(BusinessException.class).hasFieldOrPropertyWithValue("code", "FORBIDDEN_ROLE");
+        }
+        LoanApplication byAdmin = appAt(ApplicationStatus.DRAFT);
+        actor("1", "ADMIN");
+        assertThat(flow.cancel(1L, "x").getStatus()).isEqualTo(ApplicationStatus.CANCELLED);
+        assertThat(byAdmin.getStatus()).isEqualTo(ApplicationStatus.CANCELLED);
+
+        appAt(ApplicationStatus.DRAFT);
+        actor("7", "BORROWER");
+        assertThat(flow.cancel(1L, "x").getStatus()).isEqualTo(ApplicationStatus.CANCELLED);
+    }
 }

@@ -67,9 +67,12 @@ function rate(bad: number, n: number): string {
   return `${Math.round((bad * 100) / n)}% (${bad} of ${n} loans)${n < 10 ? ", few loans" : ""}`;
 }
 
-function share(part: number, whole: number): string {
+function share(part: number | null, whole: number | null): string {
+  if (part == null || whole == null) return "—";
   return whole === 0 ? "none" : `${Math.round((part * 100) / whole)}%`;
 }
+
+const inr = (n: number | null): string => (n == null ? "—" : paiseToINR(n));
 
 function pointerValue(p: AnalyzerPointer, facts: AnalyzerFacts): string {
   if (p.key === "JOB_NOT_CONFIRMED") {
@@ -321,6 +324,8 @@ function PortfolioSection({ v }: { v: AnalyzerView }) {
   const b = v.benchmarks;
   const [open, setOpen] = React.useState<string | null>(null);
   const a = b.all;
+  // The server sends null rupee totals to roles without the book-wide money view; counts stay.
+  const showMoney = a.principalPaise != null;
   const kpis: { key: string; label: string; value: string; gradient: string; exact: string; how: string }[] = [
     {
       key: "loans", label: "Loans with a known result", value: String(a.loans), gradient: "from-navy-700 to-navy-900",
@@ -334,12 +339,12 @@ function PortfolioSection({ v }: { v: AnalyzerView }) {
     },
     {
       key: "money", label: "Money that went bad", value: share(a.badPrincipalPaise, a.principalPaise), gradient: "from-orange-500 to-orange-700",
-      exact: `${paiseToINR(a.badPrincipalPaise)} of ${paiseToINR(a.principalPaise)} lent`,
+      exact: `${inr(a.badPrincipalPaise)} of ${inr(a.principalPaise)} lent`,
       how: "Principal of bad loans divided by principal of all loans with a known result.",
     },
     {
       key: "collected", label: "Collected vs paid out", value: share(a.collectedPaise, a.paidOutPaise), gradient: "from-sky-500 to-sky-700",
-      exact: `${paiseToINR(a.collectedPaise)} collected, ${paiseToINR(a.paidOutPaise)} paid out`,
+      exact: `${inr(a.collectedPaise)} collected, ${inr(a.paidOutPaise)} paid out`,
       how: "Verified payments received, against what we actually paid out (net disbursed plus GST on the fee).",
     },
     {
@@ -357,7 +362,7 @@ function PortfolioSection({ v }: { v: AnalyzerView }) {
   return (
     <Section title="Portfolio gist" icon={Sparkles}>
       <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
-        {kpis.map((k) => (
+        {kpis.filter((k) => showMoney || (k.key !== "money" && k.key !== "collected")).map((k) => (
           <button
             key={k.key}
             type="button"
@@ -389,7 +394,7 @@ function PortfolioSection({ v }: { v: AnalyzerView }) {
       <div className="staff-table-scroll mt-3">
         <table className="staff-data-table staff-table-fit" aria-label="Loan groups">
           <thead>
-            <tr><th>Group</th><th>Loans</th><th>Bad</th><th>Share of money</th><th>Paid out</th><th>Collected</th><th>Net</th></tr>
+            <tr><th>Group</th><th>Loans</th><th>Bad</th>{showMoney && <><th>Share of money</th><th>Paid out</th><th>Collected</th><th>Net</th></>}</tr>
           </thead>
           <tbody>
             {groups.map((g) => (
@@ -397,10 +402,14 @@ function PortfolioSection({ v }: { v: AnalyzerView }) {
                 <td>{groupName[g.key] ?? g.key}</td>
                 <td>{g.loans}{g.loans < 10 ? " (few loans)" : ""}</td>
                 <td>{rate(g.bad, g.loans)}</td>
-                <td>{share(g.badPrincipalPaise, g.principalPaise)}</td>
-                <td>{paiseToINR(g.paidOutPaise)}</td>
-                <td>{paiseToINR(g.collectedPaise)}</td>
-                <td>{paiseToINR(g.collectedPaise - g.paidOutPaise)}</td>
+                {showMoney && (
+                  <>
+                    <td>{share(g.badPrincipalPaise, g.principalPaise)}</td>
+                    <td>{inr(g.paidOutPaise)}</td>
+                    <td>{inr(g.collectedPaise)}</td>
+                    <td>{g.collectedPaise == null || g.paidOutPaise == null ? "—" : paiseToINR(g.collectedPaise - g.paidOutPaise)}</td>
+                  </>
+                )}
               </tr>
             ))}
           </tbody>
@@ -422,11 +431,13 @@ function PortfolioSection({ v }: { v: AnalyzerView }) {
         </table>
       </div>
 
-      <p className="mt-3 text-xs text-muted">
-        {b.breakEvenBps == null
-          ? "Break-even: not enough good and bad loans to work it out."
-          : `Break-even: the book makes money while no more than ${(b.breakEvenBps / 100).toFixed(0)}% of lent money goes bad.`}
-      </p>
+      {showMoney && (
+        <p className="mt-3 text-xs text-muted">
+          {b.breakEvenBps == null
+            ? "Break-even: not enough good and bad loans to work it out."
+            : `Break-even: the book makes money while no more than ${(b.breakEvenBps / 100).toFixed(0)}% of lent money goes bad.`}
+        </p>
+      )}
       <p className="mt-1 text-xs text-muted">
         As of {formatDate(v.asOf)}. Live from loans due at least 6 days ago. Loans we rejected are not included. A short
         history, so treat small groups with care.

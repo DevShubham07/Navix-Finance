@@ -31,9 +31,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class StorageController {
 
-    /** The one prefix a generic download may name: the staff lead-import screen's "download file". */
-    static final String DOWNLOADABLE_PREFIX = StorageCategory.LEAD_IMPORT.prefix() + "/";
-
     private final DocumentStorageService storage;
     private final StorageProperties props;
 
@@ -47,21 +44,13 @@ public class StorageController {
     }
 
     /**
-     * Get a presigned GET URL for an existing key. Only lead-import files are downloadable here, and
-     * only by non-DSA staff — the same audience {@code LeadImportJobService} shows the key to. Every
-     * other document is presigned server-side by the service that has already checked ownership.
+     * Generic download is closed: a key from the client is never presigned here. Lead-import files are
+     * fetched through the job-scoped {@code /api/leads/import/jobs/{id}/download} (uploader or ADMIN);
+     * every other document is presigned server-side by the service that has checked ownership.
      */
     @GetMapping("/presign-download")
     public PresignDownloadResponse presignDownload(@RequestParam("key") String key) {
-        String role = ActorContext.get().role();
-        if (!isStaff(role) || "DSA".equals(role)) {
-            throw forbidden();
-        }
-        if (key == null || !key.startsWith(DOWNLOADABLE_PREFIX) || key.contains("..")) {
-            throw new BusinessException("FORBIDDEN_KEY", "That file cannot be downloaded here");
-        }
-        String url = storage.presignDownload(key);
-        return new PresignDownloadResponse(key, url, props.presignTtlSeconds());
+        throw new BusinessException("FORBIDDEN_KEY", "That file cannot be downloaded here");
     }
 
     /**

@@ -167,7 +167,7 @@ public class TransactionService {
 
     /** Resolve a stored S3 key to a short-lived presigned GET; null in, null out. */
     private String presignedProof(String key) {
-        return key == null || key.isBlank() ? null : storage.presignDownload(key);
+        return RepaymentService.isProofKey(key) ? storage.presignDownload(key) : null;
     }
 
     /** {@code t} with every field the same except {@code proofUrl}, replaced by {@code presignedUrl}. */

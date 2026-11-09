@@ -120,7 +120,14 @@ public class ApplicationController {
             @RequestParam(required = false) String q,
             @RequestParam(required = false) Boolean mine) {
         requireStaff();
-        return ApiResponse.ok(enrich(scopeToActor(flow.byStatus(status, from, to, q), Boolean.TRUE.equals(mine))));
+        if ("TELECALLER".equals(ActorContext.get().role())) {
+            throw new BusinessException("FORBIDDEN_ROLE", "Staff role required");
+        }
+        List<LoanApplication> scoped = scopeToActor(flow.byStatus(status, from, to, q), Boolean.TRUE.equals(mine));
+        // Same customer book as /api/customers: drop rows whose customer is outside the caller's book.
+        java.util.Set<Long> visible = customerService.visibleAmong(
+                scoped.stream().map(LoanApplication::getCustomerId).filter(java.util.Objects::nonNull).toList());
+        return ApiResponse.ok(enrich(scoped.stream().filter(a -> visible.contains(a.getCustomerId())).toList()));
     }
 
     /**
@@ -327,6 +334,8 @@ public class ApplicationController {
     /** Staff nudges the borrower with their pending verification steps (Phase 3.4). KYC approver / admin. */
     @PostMapping("/{id}/send-reminder")
     public ApiResponse<ApplicationVerificationService.ReminderResult> sendReminder(@PathVariable Long id) {
+        requireStaff();
+        customerService.assertVisible(flow.customerIdOf(id));
         return ApiResponse.ok(verification.sendKycReminder(id));
     }
 
@@ -516,6 +525,7 @@ public class ApplicationController {
             throw new BusinessException("FORBIDDEN_ROLE",
                     "This action requires role COLLECTION_HEAD, COLLECTION_EXECUTIVE, DISBURSEMENT_HEAD or ADMIN");
         }
+        assertMandateVisible(id);
         return ApiResponse.ok(java.util.Map.of("link", mandateService.invite(id)));
     }
 
@@ -526,6 +536,7 @@ public class ApplicationController {
     public ApiResponse<java.util.List<com.navix.loan.service.MandateService.MandateAttempt>> mandateHistory(
             @PathVariable Long id) {
         requireStaff();
+        assertMandateVisible(id);
         return ApiResponse.ok(mandateService.history(id));
     }
 
@@ -542,6 +553,7 @@ public class ApplicationController {
             throw new BusinessException("FORBIDDEN_ROLE",
                     "This action requires role COLLECTION_HEAD, COLLECTION_EXECUTIVE, DISBURSEMENT_HEAD or ADMIN");
         }
+        assertMandateVisible(id);
         return ApiResponse.ok(mandateService.refresh(id));
     }
 
@@ -558,6 +570,7 @@ public class ApplicationController {
             throw new BusinessException("FORBIDDEN_ROLE",
                     "This action requires role COLLECTION_HEAD, DISBURSEMENT_HEAD or ADMIN");
         }
+        assertMandateVisible(id);
         return ApiResponse.ok(mandateService.cancel(id, mandateId,
                 req != null && Boolean.TRUE.equals(req.withdrawLocally())));
     }
@@ -574,6 +587,7 @@ public class ApplicationController {
             throw new BusinessException("FORBIDDEN_ROLE",
                     "This action requires role COLLECTION_HEAD, DISBURSEMENT_HEAD or ADMIN");
         }
+        assertMandateVisible(id);
         com.navix.loan.service.MandateService.CancelReason reason;
         try {
             reason = req == null || req.reason() == null ? null
@@ -597,8 +611,14 @@ public class ApplicationController {
             throw new BusinessException("FORBIDDEN_ROLE",
                     "This action requires role COLLECTION_HEAD, DISBURSEMENT_HEAD or ADMIN");
         }
+        assertMandateVisible(id);
         return ApiResponse.ok(mandateService.changeAccount(id, req == null ? null : req.accountNumber(),
                 req == null ? null : req.ifsc(), req == null ? null : req.notes()));
+    }
+
+    /** 404 when the application's customer is outside the caller's customer book. */
+    private void assertMandateVisible(Long id) {
+        customerService.assertVisible(flow.customerIdOf(id));
     }
 
     public record ChangeMandateAccountRequest(String accountNumber, String ifsc, String notes) {
@@ -608,6 +628,7 @@ public class ApplicationController {
     @GetMapping("/{id}/mandate/ceiling")
     public ApiResponse<com.navix.loan.service.MandateService.MandateCeilingView> mandateCeiling(@PathVariable Long id) {
         requireStaff();
+        assertMandateVisible(id);
         return ApiResponse.ok(mandateService.ceilingView(id));
     }
 

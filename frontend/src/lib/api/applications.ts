@@ -2592,10 +2592,11 @@ export interface AnalyzerGroup {
   loans: number;
   customers: number;
   bad: number;
-  principalPaise: number;
-  badPrincipalPaise: number;
-  paidOutPaise: number;
-  collectedPaise: number;
+  /** The four rupee fields are null for roles without the book-wide money view (counts stay). */
+  principalPaise: number | null;
+  badPrincipalPaise: number | null;
+  paidOutPaise: number | null;
+  collectedPaise: number | null;
   zeroPaidBad: number;
 }
 export interface AnalyzerBenchmarks {
@@ -3070,11 +3071,10 @@ export interface ImportJobView {
   issueCount: number;
   issues: ImportIssue[];
   /**
-   * S3 key of the uploaded file, kept whatever happens to the import — a list that failed to parse
-   * is still in the bucket and can be fetched back through `storageApi.presignDownload`. Null for
-   * roles without `customer:view` (DSA), since the file is raw contact data.
+   * Whether the uploaded file can be fetched back (`leadsApi.importDownload`). False for roles
+   * without `customer:view` (DSA), since the file is raw contact data. The key is never sent.
    */
-  s3Key: string | null;
+  downloadable: boolean;
   errorMessage: string | null;
   startedAt: string | null;
   finishedAt: string | null;
@@ -3156,6 +3156,10 @@ export const leadsApi = {
   importJob: (id: number) => bff<ImportJobView>(`${LEADS_BASE}/import/jobs/${id}`, "GET"),
 
   importJobs: () => bff<ImportJobView[]>(`${LEADS_BASE}/import/jobs`, "GET"),
+
+  /** Presigned link to the job's original file (uploader or ADMIN only). */
+  importDownload: (id: number) =>
+    bff<{ url: string }>(`${LEADS_BASE}/import/jobs/${id}/download`, "GET"),
 };
 
 // ---------------------------------------------------------------------------

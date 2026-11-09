@@ -207,4 +207,24 @@ class BorrowerAnalyzerServiceTest {
         assertEquals("NO_DATA", none.mode());
         assertNull(none.band());
     }
+
+    @Test
+    void bookMoneyIsNullForRolesWithoutTheMoneyView() {
+        List<LoanRow> rows = List.of(loan(1, "2026-09-10", "2026-10-01", "2026-10-01", TOTAL));
+        Inputs in = new Inputs(false, null, null, null,
+                new CustomerFacts(null, null, null, null, null, null, null));
+        AnalyzerView full = BorrowerAnalyzerService.view(rows, in, 1, TODAY);
+
+        AnalyzerView admin = BorrowerAnalyzerService.forRole(full, "ADMIN");
+        assertTrue(admin.benchmarks().all().principalPaise() != null && admin.benchmarks().all().principalPaise() > 0);
+
+        AnalyzerView tele = BorrowerAnalyzerService.forRole(full, "TELECALLER");
+        var b = tele.benchmarks();
+        assertNull(b.all().principalPaise());
+        assertNull(b.all().badPrincipalPaise());
+        assertNull(b.repeat().paidOutPaise());
+        assertNull(b.earlyFirst().collectedPaise());
+        assertNull(b.breakEvenBps());
+        assertEquals(full.benchmarks().all().loans(), b.all().loans());
+    }
 }

@@ -80,4 +80,25 @@ describe("AI Analyzer tab", () => {
     expect(screen.getByText("Nothing to compare")).toBeInTheDocument();
     expect(screen.getByText(/never approves, rejects or blocks a loan/)).toBeInTheDocument();
   });
+
+  it("hides every book-wide money figure when the server sends null rupee fields", async () => {
+    const noMoney = (g: AnalyzerGroup): AnalyzerGroup => ({
+      ...g, principalPaise: null, badPrincipalPaise: null, paidOutPaise: null, collectedPaise: null,
+    });
+    const base = response({}).benchmarks;
+    renderTab(response({
+      benchmarks: {
+        ...base, all: noMoney(base.all), earlyFirst: noMoney(base.earlyFirst),
+        recentFirst: noMoney(base.recentFirst), repeat: noMoney(base.repeat), breakEvenBps: null,
+      },
+    }));
+    expect(await screen.findByText("Loans with a known result")).toBeInTheDocument();
+    expect(screen.getByText("Went bad")).toBeInTheDocument();
+    expect(screen.queryByText("Money that went bad")).not.toBeInTheDocument();
+    expect(screen.queryByText("Collected vs paid out")).not.toBeInTheDocument();
+    expect(screen.queryByText("Share of money")).not.toBeInTheDocument();
+    expect(screen.queryByText("Collected")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Break-even/)).not.toBeInTheDocument();
+  });
 });
+
