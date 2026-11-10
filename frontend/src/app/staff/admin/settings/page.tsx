@@ -9,9 +9,10 @@ import { errMessage, useStaffMe, useCan, NoAccessNotice } from "@/components/sta
 import { PaymentSettingsForm } from "@/components/staff/payment-settings-form";
 import { adminApi } from "@/lib/api/applications";
 import { intakeSwitchApi } from "@/lib/api/intake-switch";
+import { paymentGatewayApi } from "@/lib/api/payment-gateway";
 import { formatDateTime } from "@/lib/utils";
 
-/** Admin · Settings — the onboarding switch and the company payment block. ADMIN only. */
+/** Admin · Settings — the onboarding/application switches, the payment-gateway switch and the company payment block. ADMIN only. */
 export default function AdminSettingsPage() {
   const myRole = useStaffMe().data?.role;
   const can = useCan();
@@ -37,6 +38,17 @@ export default function AdminSettingsPage() {
       setConfirmClose(false);
       qc.setQueryData(["intake-switch"], s);
       toast.success(s.closed ? "New applications and reloans closed" : "Applications reopened");
+    },
+  });
+
+  const gateway = useQuery({ queryKey: ["payment-gateway"], queryFn: paymentGatewayApi.status });
+  const [confirmGatewayOff, setConfirmGatewayOff] = React.useState(false);
+  const setGateway = useMutation({
+    mutationFn: (enabled: boolean) => paymentGatewayApi.setEnabled(enabled),
+    onSuccess: (s) => {
+      setConfirmGatewayOff(false);
+      qc.setQueryData(["payment-gateway"], s);
+      toast.success(s.enabled ? "Payment gateway turned on" : "Payment gateway turned off — borrowers pay manually");
     },
   });
 
@@ -137,6 +149,59 @@ export default function AdminSettingsPage() {
             {intake.data.updatedBy && intake.data.updatedAt && (
               <p className="mt-3 text-xs text-muted">
                 Last changed by {intake.data.updatedBy} · {formatDateTime(intake.data.updatedAt)}
+              </p>
+            )}
+          </>
+        ) : null}
+      </section>
+
+      <section className="mb-8 max-w-2xl rounded border border-line bg-white p-5 shadow-sm">
+        <div className="mb-1 text-sm font-semibold text-navy">Payment gateway</div>
+        <p className="mb-3 text-xs text-muted">
+          On, borrowers repay online through the PayU checkout. Off, the repay screen goes back to direct payment:
+          the UPI QR / bank details below plus a payment screenshot, verified by the accounts team.
+        </p>
+        {gateway.isLoading ? (
+          <Skeleton variant="line" rows={2} />
+        ) : gateway.error ? (
+          <ErrorState error={gateway.error} onRetry={() => void gateway.refetch()} />
+        ) : gateway.data ? (
+          <>
+            <ToggleRow
+              label="Enable payment gateway"
+              description={
+                gateway.data.enabled
+                  ? "On. Borrowers pay online through PayU."
+                  : gateway.data.configured
+                    ? "Off. Borrowers pay directly by UPI or bank transfer and upload a screenshot."
+                    : "Off. The gateway's merchant credentials are not set up on this server, so it cannot be turned on."
+              }
+              on={gateway.data.enabled}
+              disabled={setGateway.isPending || (!gateway.data.enabled && !gateway.data.configured)}
+              onChange={(on) => (on ? setGateway.mutate(true) : setConfirmGatewayOff(true))}
+            />
+            {confirmGatewayOff && (
+              <div role="alertdialog" aria-label="Turn off payment gateway" className="mt-3 rounded border border-warning-500 bg-warning-50 p-3 text-sm">
+                <p className="font-semibold text-ink">Turn off the payment gateway?</p>
+                <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-muted">
+                  <li>Borrowers will see the direct payment option (UPI / bank details + screenshot) instead of online checkout.</li>
+                  <li>Payments already started at PayU are still confirmed and credited.</li>
+                  <li>Manual payments need the accounts team to verify them.</li>
+                </ul>
+                <div className="mt-3 flex gap-2">
+                  <button className="btn btn-navy" disabled={setGateway.isPending} onClick={() => setGateway.mutate(false)}>
+                    Yes, turn off
+                  </button>
+                  <button className="btn" disabled={setGateway.isPending} onClick={() => setConfirmGatewayOff(false)}>
+                    Keep on
+                  </button>
+                </div>
+              </div>
+            )}
+            {setGateway.error && <p className="mt-2 text-sm text-error-700">{errMessage(setGateway.error)}</p>}
+            {gateway.data.updatedBy && gateway.data.updatedAt && (
+              <p className="mt-3 text-xs text-muted">
+                Last changed by {gateway.data.updatedBy} · {formatDateTime(gateway.data.updatedAt)}
               </p>
             )}
           </>

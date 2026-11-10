@@ -703,8 +703,11 @@ What holds across all of it, and does not belong in that file:
   settlement, repayment verification), the counter-action **reject** exists too, SoD-checked
   (proposer ≠ rejecter) and audited; don't add an approve-only flow.
 - **Feature flags are dev-only & read-only, with one exception.** The `feature_flag` table is changed **only by SQL** —
-  there is no general write API or admin UI. The one flag ADMIN may flip is `onboarding-paused`, from Staff → Settings
-  (`PUT /api/staff/onboarding-waitlist/paused`). Code reads `FeatureFlagService.isEnabled(key)`
+  there is no general write API or admin UI. The flags ADMIN may flip, from Staff → Settings, are `onboarding-paused`
+  (`PUT /api/staff/onboarding-waitlist/paused`), `applications-closed` (`PUT /api/staff/applications-closed`) and
+  `payu-repayment` — the payment-gateway toggle (`PUT /api/staff/payment-gateway`; off = the manual UPI/bank +
+  screenshot repay screen; turning it on is refused `PAYU_NOT_CONFIGURED` without PayU credentials, since
+  `ProductionConfigGuard` would then refuse the next boot). Code reads `FeatureFlagService.isEnabled(key)`
   (navix-common, no cache → instant, no redeploy); gate a feature by adding a row + the check. Live
   flags: `referral` (kill switch), `fintrix-bureau` (bureau primary; off falls back to Digitap),
   `bureau-auto-reject` (**suspended in V64**, read with `defaultWhenMissing = FALSE` so deleting the
