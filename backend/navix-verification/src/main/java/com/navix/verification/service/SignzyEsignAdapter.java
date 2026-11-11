@@ -119,7 +119,7 @@ public class SignzyEsignAdapter implements EsignPort {
     public ContractSession initiateContract(ContractRequest request) {
         List<ContractSigner> signers = request.signers().stream()
                 .map(sp -> new ContractSigner(sp.name(), SIGNATURE_TYPE, null, null, null,
-                        List.of(new ContractSignaturePlacement(pageNumbers(sp.pages()), List.of(sp.position())))))
+                        sp.boxes().stream().map(this::placement).toList()))
                 .toList();
         // Name-match only (no YOB/gender): the trio is omitted wholesale, see class doc.
         ContractInitiateDetail d = client.initiateMulti(new ContractInitiateRequest(
@@ -135,6 +135,21 @@ public class SignzyEsignAdapter implements EsignPort {
         log.info("Signzy eSign contract {} opened with {} signers", d.contractId(), signers.size());
         return new ContractSession(d.contractId(), d.signers().stream()
                 .map(s -> new ContractSignerLink(s.signerId(), s.esignUrl())).toList());
+    }
+
+    /**
+     * One CUSTOMIZE placement per box. Signzy documents the coordinates but not their origin or unit.
+     * ponytail: bottom-left origin (PDF-native) is assumed and UNVERIFIED until a live contract confirms
+     * it, hence {@code navix.esign.coordinate-origin}; rotated pages are not specially handled.
+     */
+    private ContractSignaturePlacement placement(ContractBox b) {
+        int x = (int) Math.round(b.x());
+        int w = (int) Math.round(b.width());
+        int h = (int) Math.round(b.height());
+        boolean topLeft = "top-left".equalsIgnoreCase(props.coordinateOrigin());
+        int y = (int) Math.round(topLeft ? b.y() : b.pageHeight() - b.y() - b.height());
+        return new ContractSignaturePlacement(List.<Object>of(b.page()), List.of("CUSTOMIZE"),
+                List.of(x), List.of(y), h, w);
     }
 
     @Override
@@ -264,12 +279,6 @@ public class SignzyEsignAdapter implements EsignPort {
             log.debug("Unparseable contract completion time {} — using now()", value);
             return Instant.now();
         }
-    }
-
-    /** "All" stays a string; "12" becomes the number 12 (Signzy rejects quoted page numbers). */
-    static List<Object> pageNumbers(List<String> pages) {
-        return pages.stream().<Object>map(p -> p.chars().allMatch(Character::isDigit) && !p.isEmpty()
-                ? (Object) Integer.valueOf(p) : p).toList();
     }
 
     private static boolean hasText(String s) {

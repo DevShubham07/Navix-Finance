@@ -49,11 +49,17 @@ public interface EsignPort {
     }
 
     /**
-     * @param pages    {@code ["All"]} or explicit 1-based page numbers as strings
-     * @param position one of TopLeft, TopCenter, TopRight, MiddleLeft, MiddleCenter, MiddleRight,
-     *                 BottomLeft, BottomCenter, BottomRight
+     * @param boxes where this signer's signature goes; one or more, each independent
      */
-    record ContractSignerSpec(String name, List<String> pages, String position) {
+    record ContractSignerSpec(String name, List<ContractBox> boxes) {
+    }
+
+    /**
+     * One signature box. {@code page} is 1-based; x/y/width/height are PDF points with the origin at the
+     * TOP-LEFT of the page as displayed; {@code pageHeight} (points) lets an adapter convert to the
+     * provider's origin.
+     */
+    record ContractBox(int page, double x, double y, double width, double height, double pageHeight) {
     }
 
     record ContractSession(String contractId, List<ContractSignerLink> signers) {

@@ -25,6 +25,7 @@ import com.navix.common.verification.EsignPort.ContractSession;
 import com.navix.common.verification.EsignPort.ContractSignerLink;
 import com.navix.common.verification.EsignPort.ContractSignerStatus;
 import com.navix.common.verification.EsignPort.ContractStatus;
+import com.navix.loan.esigndoc.EsignDocumentDtos.Box;
 import com.navix.loan.esigndoc.EsignDocumentDtos.CreateRequest;
 import com.navix.loan.esigndoc.EsignDocumentDtos.Detail;
 import com.navix.loan.esigndoc.EsignDocumentDtos.SignerInput;
@@ -103,12 +104,22 @@ class EsignDocumentServiceTest {
         return new CreateRequest("Vendor MSA", KEY, "agreement.pdf", sendEmail, List.of(s));
     }
 
-    private static SignerInput external(String name, String email, String pages) {
-        return new SignerInput(name, email, false, pages, "BottomLeft");
+    private static Box box(int page) {
+        return new Box(page, 50, 100, 160, 70);
+    }
+
+    private static SignerInput external(String name, String email, Box... boxes) {
+        return new SignerInput(name, email, false, List.of(boxes));
     }
 
     private static SignerInput self(String name) {
-        return new SignerInput(name, null, true, "Last", "TopRight");
+        return new SignerInput(name, null, true, List.of(box(1)));
+    }
+
+    private static String invalidMessage(Runnable r) {
+        BusinessException e = refused(r);
+        assertThat(e.getCode()).isEqualTo("ESIGN_DOC_INVALID");
+        return e.getMessage();
     }
 
     private static BusinessException refused(Runnable r) {
@@ -134,7 +145,7 @@ class EsignDocumentServiceTest {
     @Test
     void pageBeyondCountIsRefusedBeforeAnyContractIsMinted() throws Exception {
         when(storage.fetch(KEY)).thenReturn(pdf(2));
-        BusinessException e = refused(() -> service.create(request(false, external("Ravi", null, "1,3"))));
+        BusinessException e = refused(() -> service.create(request(false, external("Ravi", null, box(1), box(3)))));
         assertThat(e.getCode()).isEqualTo("ESIGN_DOC_INVALID");
         assertThat(e.getMessage()).contains("2 page");
         verify(esign, never()).initiateContract(any());
@@ -150,12 +161,36 @@ class EsignDocumentServiceTest {
 
     @Test
     void emailRequiredForExternalSignerWhenSendingButNeverForSelf() {
-        assertThat(refused(() -> service.create(request(true, external("Ravi", " ", "All")))))
+        assertThat(refused(() -> service.create(request(true, external("Ravi", " ", box(1))))))
                 .hasFieldOrPropertyWithValue("code", "ESIGN_DOC_INVALID");
     }
 
     @Test
-    void successPersistsSignersResolvesPagesAndEmailsOnlyExternalSigners() throws Exception {
+    void boxValidationRefusesEmptyOutOfPageTooSmallAndTooMany() throws Exception {
+        when(storage.fetch(KEY)).thenReturn(pdf(1)); // A4: 595 x 842 points
+        assertThat(invalidMessage(() -> service.create(request(false, external("Ravi", null)))))
+                .contains("at least one signature box");
+        assertThat(invalidMessage(() -> service.create(request(false,
+                external("Ravi", null, new Box(1, 500, 100, 160, 70)))))).contains("outside the page");
+        assertThat(invalidMessage(() -> service.create(request(false,
+                external("Ravi", null, new Box(1, 50, 800, 160, 70)))))).contains("outside the page");
+        assertThat(invalidMessage(() -> service.create(request(false,
+                external("Ravi", null, new Box(1, -10, 100, 160, 70)))))).contains("outside the page");
+        assertThat(invalidMessage(() -> service.create(request(false,
+                external("Ravi", null, new Box(1, 50, 100, 129, 70)))))).contains("too small");
+        assertThat(invalidMessage(() -> service.create(request(false,
+                external("Ravi", null, new Box(1, 50, 100, 160, 69)))))).contains("too small");
+        assertThat(invalidMessage(() -> service.create(request(false,
+                external("Ravi", null, new Box(0, 50, 100, 160, 70)))))).contains("does not exist");
+        Box[] many = new Box[51];
+        java.util.Arrays.fill(many, box(1));
+        assertThat(invalidMessage(() -> service.create(request(false, external("Ravi", null, many)))))
+                .contains("At most 50");
+        verify(esign, never()).initiateContract(any());
+    }
+
+    @Test
+    void successPersistsBoxesSendsThemWithPageHeightAndEmailsOnlyExternalSigners() throws Exception {
         when(storage.fetch(KEY)).thenReturn(pdf(4));
         when(esign.initiateContract(any())).thenReturn(new ContractSession("c-1", List.of(
                 new ContractSignerLink("s-1", "https://sign/1"),
@@ -163,19 +198,24 @@ class EsignDocumentServiceTest {
                 new ContractSignerLink("s-3", "https://sign/3"))));
 
         Detail d = service.create(request(true,
-                self("Admin Name"), external("Ravi", "ravi@x.com", "Last"), external("Asha", "asha@x.com", "1,3")));
+                self("Admin Name"), external("Ravi", "ravi@x.com", box(4)),
+                external("Asha", "asha@x.com", box(1), box(3))));
 
         assertThat(d.status()).isEqualTo("SENT");
         assertThat(d.pageCount()).isEqualTo(4);
         assertThat(d.contractId()).isEqualTo("c-1");
-        assertThat(d.signers()).extracting("pages").containsExactly("Last", "Last", "1,3");
+        assertThat(d.signers().get(2).boxes()).extracting(Box::page).containsExactly(1, 3);
+        assertThat(d.signers().get(2).pages()).isNull();
         assertThat(d.signers().get(0).email()).isNull();
         assertThat(d.signers().get(1).signUrl()).isEqualTo("https://sign/2");
 
         ArgumentCaptor<ContractRequest> sent = ArgumentCaptor.forClass(ContractRequest.class);
         verify(esign).initiateContract(sent.capture());
-        assertThat(sent.getValue().signers().get(1).pages()).containsExactly("4");
-        assertThat(sent.getValue().signers().get(2).pages()).containsExactly("1", "3");
+        assertThat(sent.getValue().signers().get(1).boxes()).hasSize(1);
+        var b = sent.getValue().signers().get(2).boxes();
+        assertThat(b).extracting("page").containsExactly(1, 3);
+        assertThat(b.get(0).x()).isEqualTo(50.0);
+        assertThat(b.get(0).pageHeight()).isEqualTo(842.0);
         assertThat(sent.getValue().successRedirectUrl()).isEqualTo("https://app.test/esign/done?status=ok");
         assertThat(sent.getValue().failureRedirectUrl()).isEqualTo("https://app.test/esign/done?status=failed");
 
@@ -189,7 +229,7 @@ class EsignDocumentServiceTest {
         when(storage.fetch(KEY)).thenReturn(pdf(1));
         when(esign.initiateContract(any())).thenThrow(new RuntimeException("boom"));
 
-        Detail d = service.create(request(true, external("Ravi", "ravi@x.com", "All")));
+        Detail d = service.create(request(true, external("Ravi", "ravi@x.com", box(1))));
 
         assertThat(d.status()).isEqualTo("FAILED");
         assertThat(d.errorMessage()).contains("boom");
@@ -212,7 +252,7 @@ class EsignDocumentServiceTest {
         s.setSignerOrder(1);
         s.setName("Ravi");
         s.setPages("All");
-        s.setPosition("BottomLeft");
+        s.setPosition("BottomLeft"); // a legacy V101 row
         s.setSignerId("s-1");
         when(signers.findByDocumentIdOrderBySignerOrder(7L)).thenReturn(List.of(s));
         return doc;

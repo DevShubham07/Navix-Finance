@@ -302,7 +302,17 @@ public final class SignzyDtos {
     public record ContractSignaturePlacement(
             // Signzy wants page numbers as JSON numbers ([12]); only "All" is a string. ["12"] is a 400.
             @JsonProperty("pageNo") List<Object> pageNo,
-            @JsonProperty("signaturePosition") List<String> signaturePosition) {
+            @JsonProperty("signaturePosition") List<String> signaturePosition,
+            // CUSTOMIZE placement only; NON_NULL keeps the borrower's "All"/"BottomLeft" body unchanged.
+            @JsonProperty("xCoordinate") @JsonInclude(JsonInclude.Include.NON_NULL) List<Integer> xCoordinate,
+            @JsonProperty("yCoordinate") @JsonInclude(JsonInclude.Include.NON_NULL) List<Integer> yCoordinate,
+            @JsonProperty("height") @JsonInclude(JsonInclude.Include.NON_NULL) Integer height,
+            @JsonProperty("width") @JsonInclude(JsonInclude.Include.NON_NULL) Integer width) {
+
+        /** The preset form ("All" + "BottomLeft"); no coordinates. */
+        public ContractSignaturePlacement(List<Object> pageNo, List<String> signaturePosition) {
+            this(pageNo, signaturePosition, null, null, null, null);
+        }
     }
 
     /** Flat response — the contract endpoints have no {@code result} wrapper. */

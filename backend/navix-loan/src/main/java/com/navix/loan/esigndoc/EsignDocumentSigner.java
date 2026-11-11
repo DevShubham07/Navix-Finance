@@ -7,6 +7,8 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -38,12 +40,18 @@ public class EsignDocumentSigner {
     @Column(name = "is_self", nullable = false)
     private boolean self;
 
-    /** The original choice made by the admin: All | First | Last | a list such as 1,3. */
-    @Column(nullable = false, length = 100)
+    /** Legacy (V101 rows only): All | First | Last | a list such as 1,3. Null for box-placed signers. */
+    @Column(length = 100)
     private String pages;
 
-    @Column(nullable = false, length = 20)
+    /** Legacy (V101 rows only): one of nine presets. Null for box-placed signers. */
+    @Column(length = 20)
     private String position;
+
+    /** JSON array of {page,x,y,width,height}, PDF points, top-left origin. */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "boxes", columnDefinition = "jsonb")
+    private String boxes;
 
     @Column(name = "signer_id", length = 100)
     private String signerId;

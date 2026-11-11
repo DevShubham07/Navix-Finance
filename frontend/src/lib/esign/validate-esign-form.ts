@@ -1,33 +1,15 @@
-/** Pure validation + payload building for the admin "New eSign document" form. */
+/** Pure validation for the admin "New eSign document" form. */
+import { MAX_BOXES_PER_SIGNER, MIN_BOX_HEIGHT, MIN_BOX_WIDTH, type Box } from "./placement";
 
 export const MAX_SIGNERS = 5;
 export const MAX_PDF_BYTES = 10 * 1024 * 1024;
-
-export const POSITIONS = [
-  { value: "TopLeft", label: "Top left" },
-  { value: "TopCenter", label: "Top center" },
-  { value: "TopRight", label: "Top right" },
-  { value: "MiddleLeft", label: "Middle left" },
-  { value: "MiddleCenter", label: "Middle center" },
-  { value: "MiddleRight", label: "Middle right" },
-  { value: "BottomLeft", label: "Bottom left" },
-  { value: "BottomCenter", label: "Bottom center" },
-  { value: "BottomRight", label: "Bottom right" },
-] as const;
-
-/** Staggered defaults so signature boxes of successive signers don't overlap. */
-export const DEFAULT_POSITIONS = ["BottomLeft", "BottomRight", "BottomCenter", "TopLeft", "TopRight"];
-
-export type PagesMode = "All" | "First" | "Last" | "Custom";
 
 export interface SignerForm {
   name: string;
   email: string;
   self: boolean;
-  pagesMode: PagesMode;
-  /** Comma list of page numbers, used when `pagesMode` is "Custom". */
-  pagesCustom: string;
-  position: string;
+  /** Signature boxes in PDF points, top-left origin (see placement.ts). */
+  boxes: Box[];
 }
 
 export interface EsignFormState {
@@ -37,26 +19,8 @@ export interface EsignFormState {
   signers: SignerForm[];
 }
 
-export function newSigner(index: number, self = false, name = ""): SignerForm {
-  return {
-    name,
-    email: "",
-    self,
-    pagesMode: "All",
-    pagesCustom: "",
-    position: DEFAULT_POSITIONS[index % DEFAULT_POSITIONS.length],
-  };
-}
-
-/** "1", "1,3", "2, 5" — positive integers, no duplicates. */
-export function isValidPageList(s: string): boolean {
-  const parts = s.split(",").map((p) => p.trim());
-  if (parts.some((p) => !/^[1-9]\d{0,3}$/.test(p))) return false;
-  return new Set(parts).size === parts.length;
-}
-
-export function pagesValue(s: SignerForm): string {
-  return s.pagesMode === "Custom" ? s.pagesCustom.split(",").map((p) => p.trim()).join(",") : s.pagesMode;
+export function newSigner(_index = 0, self = false, name = ""): SignerForm {
+  return { name, email: "", self, boxes: [] };
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -71,8 +35,10 @@ export function validateEsignForm(f: EsignFormState): string[] {
   f.signers.forEach((s, i) => {
     const who = `Signer ${i + 1}`;
     if (!s.name.trim()) errs.push(`${who}: enter the name exactly as on Aadhaar.`);
-    if (s.pagesMode === "Custom" && !isValidPageList(s.pagesCustom)) {
-      errs.push(`${who}: pages must be numbers separated by commas, e.g. 1,3.`);
+    if (s.boxes.length === 0) errs.push(`${who}: each signer needs at least one signature box.`);
+    if (s.boxes.length > MAX_BOXES_PER_SIGNER) errs.push(`${who}: at most ${MAX_BOXES_PER_SIGNER} signature boxes.`);
+    if (s.boxes.some((b) => b.width < MIN_BOX_WIDTH || b.height < MIN_BOX_HEIGHT)) {
+      errs.push(`${who}: a signature box is smaller than ${MIN_BOX_WIDTH} x ${MIN_BOX_HEIGHT} points.`);
     }
     const email = s.email.trim();
     if (!s.self && f.sendEmail && !email) errs.push(`${who}: email is required to send the signing link.`);

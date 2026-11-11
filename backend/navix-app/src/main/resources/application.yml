@@ -100,6 +100,9 @@ navix:
     header-colour: ${NAVIX_ESIGN_HEADER_COLOUR:#0C2540}
     button-colour: ${NAVIX_ESIGN_BUTTON_COLOUR:#E9B53A}
     executer-name: ${NAVIX_ESIGN_EXECUTER_NAME:NAVIX Finance Private Limited}
+    # Origin of Signzy's CUSTOMIZE signature coordinates (admin eSign documents): bottom-left | top-left.
+    # Undocumented by Signzy; flip this if a live contract lands the box mirrored vertically.
+    coordinate-origin: ${NAVIX_ESIGN_COORDINATE_ORIGIN:bottom-left}
   digio:
     # Digio NACH eMandate (MandatePort). `mock` answers inline without calling anyone and is the default
     # until the real credentials are in SSM; `digio` files REAL, legally binding NPCI mandate requests.

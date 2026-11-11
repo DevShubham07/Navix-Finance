@@ -1,5 +1,8 @@
 package com.navix.loan.esigndoc;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lowagie.text.Rectangle;
 import com.lowagie.text.pdf.PdfReader;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.exception.ResourceNotFoundException;
@@ -9,10 +12,12 @@ import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
 import com.navix.common.storage.DocumentStoragePort;
 import com.navix.common.verification.EsignPort;
+import com.navix.common.verification.EsignPort.ContractBox;
 import com.navix.common.verification.EsignPort.ContractRequest;
 import com.navix.common.verification.EsignPort.ContractSession;
 import com.navix.common.verification.EsignPort.ContractSignerSpec;
 import com.navix.common.verification.EsignPort.ContractStatus;
+import com.navix.loan.esigndoc.EsignDocumentDtos.Box;
 import com.navix.loan.esigndoc.EsignDocumentDtos.CreateRequest;
 import com.navix.loan.esigndoc.EsignDocumentDtos.Detail;
 import com.navix.loan.esigndoc.EsignDocumentDtos.SignerInput;
@@ -20,10 +25,8 @@ import com.navix.loan.esigndoc.EsignDocumentDtos.SignerView;
 import com.navix.loan.esigndoc.EsignDocumentDtos.Summary;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -50,8 +53,11 @@ public class EsignDocumentService {
     static final String KEY_PREFIX = "esign-documents/";
     private static final int MAX_BYTES = 10 * 1024 * 1024;
     private static final int MAX_SIGNERS = 5;
-    private static final Set<String> POSITIONS = Set.of("TopLeft", "TopCenter", "TopRight", "MiddleLeft",
-            "MiddleCenter", "MiddleRight", "BottomLeft", "BottomCenter", "BottomRight");
+    private static final int MAX_BOXES = 50;
+    /** Signzy's documented minimum for its document signer; our floor too (PDF points). */
+    static final double MIN_WIDTH = 130;
+    static final double MIN_HEIGHT = 70;
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     private final EsignDocumentRepository documents;
     private final EsignDocumentSignerRepository signers;
@@ -106,11 +112,10 @@ public class EsignDocumentService {
         if (bytes.length > MAX_BYTES) {
             throw invalid("The PDF is larger than 10 MB.");
         }
-        int pageCount = pageCount(bytes);
-
-        List<List<String>> resolved = new ArrayList<>();
+        List<Rectangle> pageSizes = pageSizes(bytes);
+        int pageCount = pageSizes.size();
         for (SignerInput s : req.signers()) {
-            resolved.add(resolvePages(s.pages(), pageCount, s.name()));
+            validateBoxes(s, pageSizes);
         }
 
         EsignDocument doc = new EsignDocument();
@@ -129,8 +134,7 @@ public class EsignDocumentService {
             row.setName(in.name().trim());
             row.setSelf(in.self());
             row.setEmail(in.self() ? null : blankToNull(in.email()));
-            row.setPages(in.pages().trim());
-            row.setPosition(in.position());
+            row.setBoxes(toJson(in.boxes()));
             rows.add(row);
         }
 
@@ -141,8 +145,11 @@ public class EsignDocumentService {
                     storage.presignDownload(req.objectKey()), doc.getTitle(), null,
                     base + "/esign/done?status=ok", base + "/esign/done?status=failed",
                     java.util.stream.IntStream.range(0, rows.size())
-                            .mapToObj(i -> new ContractSignerSpec(rows.get(i).getName(), resolved.get(i),
-                                    rows.get(i).getPosition()))
+                            .mapToObj(i -> new ContractSignerSpec(rows.get(i).getName(),
+                                    req.signers().get(i).boxes().stream()
+                                            .map(b -> new ContractBox(b.page(), b.x(), b.y(), b.width(), b.height(),
+                                                    pageSizes.get(b.page() - 1).getHeight()))
+                                            .toList()))
                             .toList()));
             doc.setContractId(session.contractId());
         } catch (RuntimeException e) {
@@ -282,7 +289,7 @@ public class EsignDocumentService {
     private Detail toDetail(EsignDocument d) {
         List<SignerView> views = signers.findByDocumentIdOrderBySignerOrder(d.getId()).stream()
                 .map(s -> new SignerView(s.getId(), s.getSignerOrder(), s.getName(), s.getEmail(), s.isSelf(),
-                        s.getPages(), s.getPosition(), s.getStatus(), s.getSignUrl(), s.getErrorMessage(),
+                        fromJson(s.getBoxes()), s.getPages(), s.getPosition(), s.getStatus(), s.getSignUrl(), s.getErrorMessage(),
                         s.getSignedAt(), s.getEmailStatus(), s.getEmailSentAt()))
                 .toList();
         return new Detail(d.getId(), d.getTitle(), d.getFileName(), d.getPageCount(), d.getStatus(),
@@ -315,47 +322,67 @@ public class EsignDocumentService {
             if (isBlank(s.name())) {
                 throw invalid("Every signer needs a name (as on their Aadhaar).");
             }
-            if (isBlank(s.pages())) {
-                throw invalid("Choose the pages for " + s.name() + ".");
-            }
-            if (s.position() == null || !POSITIONS.contains(s.position())) {
-                throw invalid("Choose a valid signature position for " + s.name() + ".");
-            }
             if (req.sendEmail() && !s.self() && (isBlank(s.email()) || !s.email().contains("@"))) {
                 throw invalid("A valid email is required for " + s.name() + " to send the signing link.");
             }
         }
     }
 
-    /** All | First | Last | "1,3"  ->  the page list Signzy wants (["All"] or explicit numbers). */
-    static List<String> resolvePages(String raw, int pageCount, String who) {
-        String p = raw.trim();
-        if (p.equalsIgnoreCase("All")) {
-            return List.of("All");
+    /** Every box: a real page, fully inside it, at least the provider's minimum size. */
+    private static void validateBoxes(SignerInput s, List<Rectangle> pages) {
+        List<Box> boxes = s.boxes();
+        if (boxes == null || boxes.isEmpty()) {
+            throw invalid("Place at least one signature box for " + s.name() + ".");
         }
-        if (p.equalsIgnoreCase("First")) {
-            return List.of("1");
+        if (boxes.size() > MAX_BOXES) {
+            throw invalid("At most " + MAX_BOXES + " signature boxes per signer (" + s.name() + ").");
         }
-        if (p.equalsIgnoreCase("Last")) {
-            return List.of(String.valueOf(pageCount));
-        }
-        Set<String> out = new LinkedHashSet<>();
-        for (String part : p.split(",")) {
-            int n;
-            try {
-                n = Integer.parseInt(part.trim());
-            } catch (NumberFormatException e) {
-                throw invalid("Pages for " + who + " must be All, First, Last or numbers like 1,3.");
+        for (Box b : boxes) {
+            if (b == null || b.page() < 1 || b.page() > pages.size()) {
+                throw invalid("Page " + (b == null ? 0 : b.page()) + " does not exist: the document has "
+                        + pages.size() + " page(s).");
             }
-            if (n < 1 || n > pageCount) {
-                throw invalid("Page " + n + " does not exist: the document has " + pageCount + " page(s).");
+            if (!Double.isFinite(b.x()) || !Double.isFinite(b.y()) || !Double.isFinite(b.width())
+                    || !Double.isFinite(b.height())) {
+                throw invalid("A signature box for " + s.name() + " has invalid coordinates.");
             }
-            out.add(String.valueOf(n));
+            if (b.width() < MIN_WIDTH || b.height() < MIN_HEIGHT) {
+                throw invalid("A signature box for " + s.name() + " is too small (minimum "
+                        + (int) MIN_WIDTH + " x " + (int) MIN_HEIGHT + " points).");
+            }
+            Rectangle pg = pages.get(b.page() - 1);
+            // Tolerate sub-point rounding from the browser's float math.
+            double eps = 0.5;
+            if (b.x() < -eps || b.y() < -eps || b.x() + b.width() > pg.getWidth() + eps
+                    || b.y() + b.height() > pg.getHeight() + eps) {
+                throw invalid("A signature box for " + s.name() + " on page " + b.page()
+                        + " extends outside the page.");
+            }
         }
-        return List.copyOf(out);
     }
 
-    private static int pageCount(byte[] bytes) {
+    private static String toJson(List<Box> boxes) {
+        try {
+            return JSON.writeValueAsString(boxes);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static List<Box> fromJson(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return JSON.readValue(json, new TypeReference<List<Box>>() { });
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            log.warn("Unreadable esign boxes json: {}", e.toString());
+            return null;
+        }
+    }
+
+    /** Display size per page (rotation applied), in points. */
+    private static List<Rectangle> pageSizes(byte[] bytes) {
         if (bytes.length < 5 || bytes[0] != '%' || bytes[1] != 'P' || bytes[2] != 'D' || bytes[3] != 'F') {
             throw invalid("The file is not a PDF.");
         }
@@ -366,7 +393,11 @@ public class EsignDocumentService {
                 if (n < 1) {
                     throw invalid("The PDF has no pages.");
                 }
-                return n;
+                List<Rectangle> sizes = new ArrayList<>();
+                for (int i = 1; i <= n; i++) {
+                    sizes.add(reader.getPageSizeWithRotation(i));
+                }
+                return sizes;
             } finally {
                 reader.close();
             }

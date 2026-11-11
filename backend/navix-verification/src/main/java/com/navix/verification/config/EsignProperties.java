@@ -24,6 +24,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param headerColour       brand colour for eMudhra's page header.
  * @param buttonColour       brand colour for eMudhra's page buttons.
  * @param executerName       the legal entity initiating the signing, shown to the signer.
+ * @param coordinateOrigin   origin of Signzy's CUSTOMIZE signature coordinates: {@code bottom-left}
+ *                           (default, PDF-native) or {@code top-left}. Signzy does not document it, so
+ *                           this is a calibration knob until a live contract confirms it.
  */
 @ConfigurationProperties(prefix = "navix.esign")
 public record EsignProperties(
@@ -34,6 +37,7 @@ public record EsignProperties(
         String logoUrl,
         String headerColour,
         String buttonColour,
-        String executerName
+        String executerName,
+        String coordinateOrigin
 ) {
 }

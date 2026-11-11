@@ -1,18 +1,13 @@
 import { describe, expect, it } from "vitest";
-import {
-  MAX_SIGNERS,
-  isValidPageList,
-  newSigner,
-  pagesValue,
-  validateEsignForm,
-  type EsignFormState,
-} from "./validate-esign-form";
+import { MAX_SIGNERS, newSigner, validateEsignForm, type EsignFormState } from "./validate-esign-form";
+
+const BOX = { page: 1, x: 10, y: 10, width: 160, height: 70 };
 
 const ok = (over: Partial<EsignFormState> = {}): EsignFormState => ({
   title: "Vendor agreement",
   hasFile: true,
   sendEmail: true,
-  signers: [{ ...newSigner(0), name: "Asha Rao", email: "asha@example.com" }],
+  signers: [{ ...newSigner(0), name: "Asha Rao", email: "asha@example.com", boxes: [BOX] }],
   ...over,
 });
 
@@ -29,11 +24,26 @@ describe("validateEsignForm", () => {
     expect(validateEsignForm(f)).toHaveLength(1);
   });
 
+  it("requires at least one signature box per signer", () => {
+    const f = ok();
+    f.signers[0].boxes = [];
+    expect(validateEsignForm(f).join()).toContain("at least one signature box");
+  });
+
+  it("rejects a box under the minimum size and more than 50 boxes", () => {
+    const f = ok();
+    f.signers[0].boxes = [{ ...BOX, width: 100 }];
+    expect(validateEsignForm(f).join()).toContain("smaller than");
+    f.signers[0].boxes = Array.from({ length: 51 }, () => BOX);
+    expect(validateEsignForm(f).join()).toContain("at most 50");
+  });
+
   it("caps signers at the maximum", () => {
     const signers = Array.from({ length: MAX_SIGNERS + 1 }, (_, i) => ({
       ...newSigner(i),
       name: "N",
       email: "a@b.co",
+      boxes: [BOX],
     }));
     expect(validateEsignForm(ok({ signers })).join()).toContain("At most");
   });
@@ -51,23 +61,5 @@ describe("validateEsignForm", () => {
     const f = ok();
     f.signers[0].email = "nope";
     expect(validateEsignForm(f)).toHaveLength(1);
-  });
-
-  it("validates custom page lists", () => {
-    expect(isValidPageList("1,3")).toBe(true);
-    expect(isValidPageList("2, 5")).toBe(true);
-    for (const bad of ["", "0", "a", "1,,2", "1,1", "-1", "1;2"]) expect(isValidPageList(bad)).toBe(false);
-    const f = ok();
-    f.signers[0].pagesMode = "Custom";
-    f.signers[0].pagesCustom = "x";
-    expect(validateEsignForm(f)).toHaveLength(1);
-  });
-
-  it("builds the pages value and staggers positions", () => {
-    const s = { ...newSigner(1), pagesMode: "Custom" as const, pagesCustom: "1, 3" };
-    expect(pagesValue(s)).toBe("1,3");
-    expect(pagesValue(newSigner(0))).toBe("All");
-    expect(newSigner(0).position).toBe("BottomLeft");
-    expect(newSigner(1).position).toBe("BottomRight");
   });
 });

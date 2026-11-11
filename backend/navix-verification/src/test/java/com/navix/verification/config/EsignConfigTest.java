@@ -28,7 +28,7 @@ class EsignConfigTest {
 
     private static EsignProperties props(String callbackUrl, String callbackSecret) {
         return new EsignProperties("signzy", callbackUrl, callbackSecret,
-                "0.90", null, "#0C2540", "#E9B53A", "NAVIX Finance Private Limited");
+                "0.90", null, "#0C2540", "#E9B53A", "NAVIX Finance Private Limited", "bottom-left");
     }
 
     @Test

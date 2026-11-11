@@ -4287,14 +4287,26 @@ export interface EsignDocSummary {
   createdAt: string;
 }
 
+/** A signature box: 1-based page; PDF points, origin top-left of the page as displayed. */
+export interface EsignBox {
+  page: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface EsignSignerView {
   id: number;
   order: number;
   name: string;
   email: string | null;
   self: boolean;
-  pages: string;
-  position: string;
+  /** Null only for documents created before signature boxes existed. */
+  boxes: EsignBox[] | null;
+  /** Legacy (pre-box documents only). */
+  pages: string | null;
+  position: string | null;
   status: EsignSignerStatus;
   signUrl: string | null;
   errorMessage: string | null;
@@ -4324,7 +4336,7 @@ export interface EsignCreateRequest {
   objectKey: string;
   fileName: string;
   sendEmail: boolean;
-  signers: Array<{ name: string; email: string | null; self: boolean; pages: string; position: string }>;
+  signers: Array<{ name: string; email: string | null; self: boolean; boxes: EsignBox[] }>;
 }
 
 const ADMIN_ESIGN_BASE = "/api/admin/esign-documents";

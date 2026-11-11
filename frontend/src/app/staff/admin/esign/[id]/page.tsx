@@ -8,12 +8,20 @@ import { ArrowLeft, Copy, Download, ExternalLink, Loader2, Mail, PenLine, Refres
 import { Badge, ErrorState, Skeleton, toast } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { useStaffMe, useCan, NoAccessNotice } from "@/components/staff/live-pipeline";
-import { esignDocsApi, type EsignDocDetail } from "@/lib/api/applications";
+import { esignDocsApi, type EsignBox, type EsignDocDetail } from "@/lib/api/applications";
 import { DOC_STATUS_VARIANT, esignErrMessage } from "@/lib/esign/esign-ui";
-import { POSITIONS } from "@/lib/esign/validate-esign-form";
+import { pagesOf } from "@/lib/esign/placement";
 
 const POLL_MS = 10_000;
-const positionLabel = (v: string) => POSITIONS.find((p) => p.value === v)?.label ?? v;
+
+/** "2 boxes on pages 1, 3"; legacy rows (no boxes) fall back to their old pages/position. */
+function placementLabel(s: { boxes: EsignBox[] | null; pages: string | null; position: string | null }): string {
+  if (s.boxes && s.boxes.length > 0) {
+    const pages = pagesOf(s.boxes);
+    return `${s.boxes.length} box${s.boxes.length === 1 ? "" : "es"} on page${pages.length === 1 ? "" : "s"} ${pages.join(", ")}`;
+  }
+  return [s.pages && `Pages: ${s.pages}`, s.position].filter(Boolean).join(" · ") || "—";
+}
 
 function fmt(iso: string | null): string {
   return iso ? new Date(iso).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "—";
@@ -119,8 +127,7 @@ export default function EsignDetailPage() {
                         {s.email && <div className="text-xs text-muted">{s.email}</div>}
                       </td>
                       <td className="text-muted">
-                        <div>Pages: {s.pages}</div>
-                        <div className="text-xs">{positionLabel(s.position)}</div>
+                        {placementLabel(s)}
                       </td>
                       <td>
                         <Badge variant={DOC_STATUS_VARIANT[s.status] ?? "neutral"}>{s.status}</Badge>

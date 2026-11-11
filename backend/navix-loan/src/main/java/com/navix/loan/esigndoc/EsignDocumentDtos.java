@@ -9,8 +9,11 @@ public final class EsignDocumentDtos {
     private EsignDocumentDtos() {
     }
 
-    /** pages: All | First | Last | comma list such as "1,3"; position: TopLeft ... BottomRight. */
-    public record SignerInput(String name, String email, boolean self, String pages, String position) {
+    /** A signature box: 1-based page; x/y/width/height in PDF points, origin top-left of the page as displayed. */
+    public record Box(int page, double x, double y, double width, double height) {
+    }
+
+    public record SignerInput(String name, String email, boolean self, List<Box> boxes) {
     }
 
     public record CreateRequest(String title, String objectKey, String fileName, boolean sendEmail,
@@ -21,8 +24,8 @@ public final class EsignDocumentDtos {
                           Instant createdAt) {
     }
 
-    public record SignerView(Long id, int order, String name, String email, boolean self, String pages,
-                             String position, String status, String signUrl, String errorMessage,
+    public record SignerView(Long id, int order, String name, String email, boolean self, List<Box> boxes,
+                             String pages, String position, String status, String signUrl, String errorMessage,
                              Instant signedAt, String emailStatus, Instant emailSentAt) {
     }
 

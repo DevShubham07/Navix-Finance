@@ -9,8 +9,8 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import com.navix.common.verification.EsignPort.ContractBox;
 import com.navix.common.verification.EsignPort.ContractRequest;
-import com.navix.common.verification.EsignPort.ContractSession;
 import com.navix.common.verification.EsignPort.ContractSignerSpec;
 import com.navix.common.verification.EsignPort.ContractStatus;
 import com.navix.verification.client.SignzyContractClient;
@@ -33,36 +33,55 @@ import org.springframework.web.client.RestClient;
 class SignzyEsignMultiSignerTest {
 
     private static final EsignProperties PROPS = new EsignProperties("signzy", "https://api.test/hook",
-            "secret", "0.90", null, "#000000", "#111111", "NAVIX Finance");
+            "secret", "0.90", null, "#000000", "#111111", "NAVIX Finance", "bottom-left");
 
-    @Test
-    void initiateContractSendsOneSignerPerSpecWithOwnPagesAndPosition() {
+    private static ContractInitiateRequest sentFor(EsignProperties props, ContractBox... boxes) {
         SignzyContractClient client = mock(SignzyContractClient.class);
         when(client.initiateMulti(any())).thenReturn(new ContractInitiateDetail("c-1", List.of(
-                new ContractSignerLink("s-1", "https://sign/1"), new ContractSignerLink("s-2", "https://sign/2"))));
-
-        ContractSession session = new SignzyEsignAdapter(client, PROPS).initiateContract(new ContractRequest(
-                "https://s3/doc.pdf", "Vendor MSA", null, "https://app/ok", "https://app/no", List.of(
-                        new ContractSignerSpec("Asha Rao", List.of("All"), "BottomLeft"),
-                        new ContractSignerSpec("Ravi Kumar", List.of("1", "3"), "TopRight"))));
-
+                new ContractSignerLink("s-1", "https://sign/1"))));
+        new SignzyEsignAdapter(client, props).initiateContract(new ContractRequest(
+                "https://s3/doc.pdf", "Vendor MSA", null, "https://app/ok", "https://app/no",
+                List.of(new ContractSignerSpec("Asha Rao", List.of(boxes)))));
         ArgumentCaptor<ContractInitiateRequest> sent = ArgumentCaptor.forClass(ContractInitiateRequest.class);
         org.mockito.Mockito.verify(client).initiateMulti(sent.capture());
-        ContractInitiateRequest r = sent.getValue();
+        return sent.getValue();
+    }
+
+    @Test
+    void initiateContractSendsOneCustomizePlacementPerBoxWithNumericPages() {
+        ContractInitiateRequest r = sentFor(PROPS,
+                new ContractBox(1, 50.4, 100, 160, 70, 842), new ContractBox(3, 10, 20, 130.6, 70, 842));
         assertThat(r.pdf()).isEqualTo("https://s3/doc.pdf");
-        assertThat(r.contractExecuterName()).isEqualTo("NAVIX Finance");
         assertThat(r.nameMatchThreshold()).isEqualTo("0.90");
         assertThat(r.allowSignerYobMatch()).isNull();
-        assertThat(r.allowSignerGenderMatch()).isNull();
-        assertThat(r.signerdetail()).hasSize(2);
-        assertThat(r.signerdetail().get(0).signerName()).isEqualTo("Asha Rao");
-        assertThat(r.signerdetail().get(0).signatures().get(0).pageNo()).containsExactly("All");
-        assertThat(r.signerdetail().get(0).signatures().get(0).signaturePosition()).containsExactly("BottomLeft");
-        assertThat(r.signerdetail().get(1).signatures().get(0).pageNo()).containsExactly(1, 3);
-        assertThat(r.signerdetail().get(1).signatures().get(0).signaturePosition()).containsExactly("TopRight");
+        var sigs = r.signerdetail().get(0).signatures();
+        assertThat(sigs).hasSize(2);
+        assertThat(sigs.get(0).pageNo()).containsExactly(1);
+        assertThat(sigs.get(0).signaturePosition()).containsExactly("CUSTOMIZE");
+        assertThat(sigs.get(0).xCoordinate()).containsExactly(50);
+        // bottom-left origin: 842 - 100 - 70
+        assertThat(sigs.get(0).yCoordinate()).containsExactly(672);
+        assertThat(sigs.get(0).height()).isEqualTo(70);
+        assertThat(sigs.get(0).width()).isEqualTo(160);
+        assertThat(sigs.get(1).pageNo()).containsExactly(3);
+        assertThat(sigs.get(1).width()).isEqualTo(131);
+        assertThat(sigs.get(1).yCoordinate()).containsExactly(752);
+    }
 
-        assertThat(session.contractId()).isEqualTo("c-1");
-        assertThat(session.signers()).extracting("signUrl").containsExactly("https://sign/1", "https://sign/2");
+    @Test
+    void topLeftOriginPassesYThrough() {
+        EsignProperties top = new EsignProperties("signzy", "https://api.test/hook", "secret", "0.90", null,
+                "#000000", "#111111", "NAVIX Finance", "top-left");
+        var sig = sentFor(top, new ContractBox(1, 50, 100, 160, 70, 842)).signerdetail().get(0).signatures().get(0);
+        assertThat(sig.yCoordinate()).containsExactly(100);
+    }
+
+    @Test
+    void borrowerPlacementJsonCarriesNoCoordinateKeys() throws Exception {
+        String json = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(
+                new com.navix.verification.dto.SignzyDtos.ContractSignaturePlacement(
+                        List.<Object>of("All"), List.of("BottomLeft")));
+        assertThat(json).isEqualTo("{\"pageNo\":[\"All\"],\"signaturePosition\":[\"BottomLeft\"]}");
     }
 
     @Test

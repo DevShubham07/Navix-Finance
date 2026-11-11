@@ -15,7 +15,6 @@ import {
   EmptyState,
   ErrorState,
   Input,
-  Select,
   Skeleton,
   toast,
 } from "@/components/ui";
@@ -27,20 +26,11 @@ import { DOC_STATUS_VARIANT, esignErrMessage } from "@/lib/esign/esign-ui";
 import {
   MAX_PDF_BYTES,
   MAX_SIGNERS,
-  POSITIONS,
   newSigner,
-  pagesValue,
   validateEsignForm,
-  type PagesMode,
   type SignerForm,
 } from "@/lib/esign/validate-esign-form";
-
-const PAGES_OPTIONS: Array<{ value: PagesMode; label: string }> = [
-  { value: "All", label: "All pages" },
-  { value: "First", label: "First page" },
-  { value: "Last", label: "Last page" },
-  { value: "Custom", label: "Custom pages…" },
-];
+import { SignaturePlacer } from "@/components/staff/esign/signature-placer";
 
 function fmt(iso: string): string {
   return new Date(iso).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
@@ -161,8 +151,7 @@ function NewDocumentDialog({ defaultName, onClose }: { defaultName: string; onCl
           name: s.name.trim(),
           email: s.self ? null : s.email.trim() || null,
           self: s.self,
-          pages: pagesValue(s),
-          position: s.position,
+          boxes: s.boxes,
         })),
       });
     },
@@ -244,31 +233,17 @@ function NewDocumentDialog({ defaultName, onClose }: { defaultName: string; onCl
                     onChange={(e) => patch(i, { email: e.target.value })}
                   />
                 )}
-                <Select
-                  label="Pages"
-                  value={s.pagesMode}
-                  onChange={(e) => patch(i, { pagesMode: e.target.value as PagesMode })}
-                  options={PAGES_OPTIONS}
-                />
-                {s.pagesMode === "Custom" ? (
-                  <Input
-                    label="Page numbers"
-                    value={s.pagesCustom}
-                    onChange={(e) => patch(i, { pagesCustom: e.target.value })}
-                    placeholder="1,3"
-                  />
-                ) : (
-                  <div className="hidden sm:block" />
-                )}
-                <Select
-                  label="Signature position"
-                  value={s.position}
-                  onChange={(e) => patch(i, { position: e.target.value })}
-                  options={POSITIONS.map((p) => ({ value: p.value, label: p.label }))}
-                />
               </div>
             </div>
           ))}
+
+          {file && (
+            <SignaturePlacer
+              file={file}
+              signers={signers}
+              onBoxesChange={(i, boxes) => patch(i, { boxes })}
+            />
+          )}
 
           <div className="flex flex-wrap items-center gap-3">
             <button
