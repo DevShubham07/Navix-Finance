@@ -58,7 +58,7 @@ class SignzyEsignMultiSignerTest {
         assertThat(r.signerdetail().get(0).signerName()).isEqualTo("Asha Rao");
         assertThat(r.signerdetail().get(0).signatures().get(0).pageNo()).containsExactly("All");
         assertThat(r.signerdetail().get(0).signatures().get(0).signaturePosition()).containsExactly("BottomLeft");
-        assertThat(r.signerdetail().get(1).signatures().get(0).pageNo()).containsExactly("1", "3");
+        assertThat(r.signerdetail().get(1).signatures().get(0).pageNo()).containsExactly(1, 3);
         assertThat(r.signerdetail().get(1).signatures().get(0).signaturePosition()).containsExactly("TopRight");
 
         assertThat(session.contractId()).isEqualTo("c-1");

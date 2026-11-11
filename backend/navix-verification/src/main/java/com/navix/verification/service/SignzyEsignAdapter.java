@@ -119,7 +119,7 @@ public class SignzyEsignAdapter implements EsignPort {
     public ContractSession initiateContract(ContractRequest request) {
         List<ContractSigner> signers = request.signers().stream()
                 .map(sp -> new ContractSigner(sp.name(), SIGNATURE_TYPE, null, null, null,
-                        List.of(new ContractSignaturePlacement(sp.pages(), List.of(sp.position())))))
+                        List.of(new ContractSignaturePlacement(pageNumbers(sp.pages()), List.of(sp.position())))))
                 .toList();
         // Name-match only (no YOB/gender): the trio is omitted wholesale, see class doc.
         ContractInitiateDetail d = client.initiateMulti(new ContractInitiateRequest(
@@ -264,6 +264,12 @@ public class SignzyEsignAdapter implements EsignPort {
             log.debug("Unparseable contract completion time {} — using now()", value);
             return Instant.now();
         }
+    }
+
+    /** "All" stays a string; "12" becomes the number 12 (Signzy rejects quoted page numbers). */
+    static List<Object> pageNumbers(List<String> pages) {
+        return pages.stream().<Object>map(p -> p.chars().allMatch(Character::isDigit) && !p.isEmpty()
+                ? (Object) Integer.valueOf(p) : p).toList();
     }
 
     private static boolean hasText(String s) {

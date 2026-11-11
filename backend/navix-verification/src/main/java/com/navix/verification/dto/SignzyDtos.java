@@ -300,7 +300,8 @@ public final class SignzyDtos {
     }
 
     public record ContractSignaturePlacement(
-            @JsonProperty("pageNo") List<String> pageNo,
+            // Signzy wants page numbers as JSON numbers ([12]); only "All" is a string. ["12"] is a 400.
+            @JsonProperty("pageNo") List<Object> pageNo,
             @JsonProperty("signaturePosition") List<String> signaturePosition) {
     }
 
