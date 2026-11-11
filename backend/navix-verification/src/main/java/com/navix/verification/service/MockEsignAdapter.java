@@ -45,4 +45,32 @@ public class MockEsignAdapter implements EsignPort {
         return new EsignResult(true, true, openedAt != null ? openedAt : Instant.now(),
                 null, sessionId, PROVIDER, null);
     }
+
+    /** contractId to signer count, so {@link #fetchContract} can report every signer signed. */
+    private final Map<String, Integer> contracts = new ConcurrentHashMap<>();
+
+    @Override
+    public ContractSession initiateContract(ContractRequest request) {
+        String contractId = "mock-contract-" + Long.toHexString(System.nanoTime());
+        contracts.put(contractId, request.signers().size());
+        var links = new java.util.ArrayList<ContractSignerLink>();
+        for (int i = 0; i < request.signers().size(); i++) {
+            links.add(new ContractSignerLink(contractId + "-s" + i, null)); // no hosted URL in the mock
+        }
+        log.info("Mock eSign contract {} opened with {} signers", contractId, links.size());
+        return new ContractSession(contractId, links);
+    }
+
+    @Override
+    public ContractStatus fetchContract(String contractId) {
+        Integer n = contracts.get(contractId);
+        if (n == null) {
+            return new ContractStatus(true, false, java.util.List.of(), null, null);
+        }
+        var signers = new java.util.ArrayList<ContractSignerStatus>();
+        for (int i = 0; i < n; i++) {
+            signers.add(new ContractSignerStatus(contractId + "-s" + i, "SIGNED", null, null));
+        }
+        return new ContractStatus(false, true, signers, null, null);
+    }
 }

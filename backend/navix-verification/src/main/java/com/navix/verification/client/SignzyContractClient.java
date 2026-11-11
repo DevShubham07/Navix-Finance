@@ -12,6 +12,12 @@ import com.navix.verification.dto.SignzyDtos.ContractInitiateRequest;
 import com.navix.verification.dto.SignzyDtos.ContractInitiateResponse;
 import com.navix.verification.dto.SignzyDtos.ContractPullRequest;
 import com.navix.verification.dto.SignzyDtos.ContractPullResponse;
+import com.navix.verification.dto.SignzyDtos.ContractInitiateDetail;
+import com.navix.verification.dto.SignzyDtos.ContractPullDetail;
+import com.navix.verification.dto.SignzyDtos.ContractSignerLink;
+import com.navix.verification.dto.SignzyDtos.ContractSignerPull;
+import java.util.ArrayList;
+import java.util.List;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -81,5 +87,31 @@ public class SignzyContractClient {
                 // The published docs call this matchScoreResult and type it as an object; the live API
                 // returns nameMatchResult as a string.
                 text(signer.path("nameMatchResult")));
+    }
+
+    /** Multi-signer initiate: same endpoint, but every {@code signerdetail[]} entry is read. */
+    public ContractInitiateDetail initiateMulti(ContractInitiateRequest request) {
+        JsonNode root = post(signzy, INITIATE, request);
+        List<ContractSignerLink> signers = new ArrayList<>();
+        for (JsonNode s : root.path("signerdetail")) {
+            signers.add(new ContractSignerLink(text(s.path("signerId")), text(s.path("esignUrl"))));
+        }
+        return new ContractInitiateDetail(text(root.path("contractId")), signers);
+    }
+
+    /** Multi-signer pullData: every {@code signerdetail[]} entry is read; 404 = lapsed ({@code found=false}). */
+    public ContractPullDetail pullDetail(String contractId) {
+        JsonNode root = postTolerating(signzy, PULL_DATA, new ContractPullRequest(contractId), 404);
+        if (root == null) {
+            return new ContractPullDetail(false, false, null, null, null, List.of());
+        }
+        List<ContractSignerPull> signers = new ArrayList<>();
+        for (JsonNode s : root.path("signerdetail")) {
+            signers.add(new ContractSignerPull(text(s.path("signerId")), text(s.path("status")),
+                    text(s.path("errorMessage")), text(s.path("nameMatchResult"))));
+        }
+        return new ContractPullDetail(true, Boolean.TRUE.equals(bool(root.path("isCompleted"))),
+                integer(root.path("signedSignerCount")), text(root.path("finalSignedContract")),
+                text(root.path("auditCertificateUrl")), signers);
     }
 }

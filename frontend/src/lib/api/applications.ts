@@ -4273,6 +4273,71 @@ export interface PresignUpload {
   expiresInSeconds: number;
 }
 
+// --- Admin eSign documents (Signzy multi-signer contract) ---
+export type EsignDocStatus = "SENT" | "COMPLETED" | "FAILED" | "EXPIRED";
+export type EsignSignerStatus = "PENDING" | "SIGNED" | "FAILED";
+export type EsignEmailStatus = "NOT_SENT" | "SENT" | "FAILED" | "SKIPPED";
+
+export interface EsignDocSummary {
+  id: number;
+  title: string;
+  status: EsignDocStatus;
+  signerCount: number;
+  signedCount: number;
+  createdAt: string;
+}
+
+export interface EsignSignerView {
+  id: number;
+  order: number;
+  name: string;
+  email: string | null;
+  self: boolean;
+  pages: string;
+  position: string;
+  status: EsignSignerStatus;
+  signUrl: string | null;
+  errorMessage: string | null;
+  signedAt: string | null;
+  emailStatus: EsignEmailStatus;
+  emailSentAt: string | null;
+}
+
+export interface EsignDocDetail {
+  id: number;
+  title: string;
+  fileName: string;
+  pageCount: number;
+  status: EsignDocStatus;
+  contractId: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+  completedAt: string | null;
+  originalUrl: string;
+  signedUrl: string | null;
+  auditCertificateUrl: string | null;
+  signers: EsignSignerView[];
+}
+
+export interface EsignCreateRequest {
+  title: string;
+  objectKey: string;
+  fileName: string;
+  sendEmail: boolean;
+  signers: Array<{ name: string; email: string | null; self: boolean; pages: string; position: string }>;
+}
+
+const ADMIN_ESIGN_BASE = "/api/admin/esign-documents";
+
+export const esignDocsApi = {
+  list: () => bff<EsignDocSummary[]>(ADMIN_ESIGN_BASE, "GET"),
+  get: (id: number) => bff<EsignDocDetail>(`${ADMIN_ESIGN_BASE}/${id}`, "GET"),
+  create: (body: EsignCreateRequest) => bff<EsignDocDetail>(ADMIN_ESIGN_BASE, "POST", body),
+  refresh: (id: number) => bff<EsignDocDetail>(`${ADMIN_ESIGN_BASE}/${id}/refresh`, "POST"),
+  resend: (id: number, signerId: number) =>
+    bff<EsignDocDetail>(`${ADMIN_ESIGN_BASE}/${id}/signers/${signerId}/resend`, "POST"),
+};
+
 export const storageApi = {
   /** Ask the backend for a presigned PUT URL for a categorised upload. */
   presignUpload: async (body: {

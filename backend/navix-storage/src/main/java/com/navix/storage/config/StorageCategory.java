@@ -27,7 +27,9 @@ public enum StorageCategory {
      * Uploaded lead list (.csv/.xlsx) awaiting bulk import. Raw contact PII: the objects here are
      * read once by the import job and are candidates for a bucket lifecycle expiry.
      */
-    LEAD_IMPORT("leads/import");
+    LEAD_IMPORT("leads/import"),
+    /** PDF an admin uploads to be Aadhaar-eSigned (admin eSign documents). ADMIN-only upload by the default rule. */
+    ESIGN_DOCUMENT("esign-documents");
 
     private final String prefix;
 

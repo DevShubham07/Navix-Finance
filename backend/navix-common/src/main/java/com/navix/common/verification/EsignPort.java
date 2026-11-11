@@ -1,6 +1,7 @@
 package com.navix.common.verification;
 
 import java.time.Instant;
+import java.util.List;
 
 /**
  * Port for electronic signature of the sanction letter / Key Fact Statement (Phase 3).
@@ -28,6 +29,52 @@ public interface EsignPort {
 
     /** Resolve a session. {@code completed=false} while the signer is still with the provider. */
     EsignResult fetch(String sessionId);
+
+    /**
+     * Admin "eSign documents": open ONE contract with several signers, each with their own pages and
+     * position. Separate from {@link #initiate} (the live borrower path, one signer, all pages,
+     * bottom-left). Every call is a real, billable, legally binding contract.
+     */
+    ContractSession initiateContract(ContractRequest request);
+
+    /** Resolve a multi-signer contract. Never throws for an expired contract, see {@link ContractStatus#expired}. */
+    ContractStatus fetchContract(String contractId);
+
+    /**
+     * @param signers one entry per signatory; the returned {@link ContractSession#signers} is in the same order
+     */
+    record ContractRequest(String documentUrl, String contractName, String executerName,
+                           String successRedirectUrl, String failureRedirectUrl,
+                           List<ContractSignerSpec> signers) {
+    }
+
+    /**
+     * @param pages    {@code ["All"]} or explicit 1-based page numbers as strings
+     * @param position one of TopLeft, TopCenter, TopRight, MiddleLeft, MiddleCenter, MiddleRight,
+     *                 BottomLeft, BottomCenter, BottomRight
+     */
+    record ContractSignerSpec(String name, List<String> pages, String position) {
+    }
+
+    record ContractSession(String contractId, List<ContractSignerLink> signers) {
+    }
+
+    record ContractSignerLink(String signerId, String signUrl) {
+    }
+
+    /**
+     * @param expired       the provider no longer knows the contract (lapsed unsigned)
+     * @param completed     every signer has signed and the final PDF exists
+     * @param signers       per-signer state in the provider's order
+     * @param signedPdf     the final signed bytes; only set when {@code completed}
+     */
+    record ContractStatus(boolean expired, boolean completed, List<ContractSignerStatus> signers,
+                          byte[] signedPdf, String auditCertificateUrl) {
+    }
+
+    /** @param status normalised: PENDING | SIGNED | FAILED */
+    record ContractSignerStatus(String signerId, String status, String error, String nameMatch) {
+    }
 
     /**
      * @param documentUrl        the document to sign, already stored (a presigned GET)

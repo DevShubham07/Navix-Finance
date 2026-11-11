@@ -2,6 +2,7 @@ package com.navix.loan.controller;
 
 import com.navix.common.web.ApiResponse;
 import com.navix.loan.entity.ApplicationVerification;
+import com.navix.loan.esigndoc.EsignDocumentService;
 import com.navix.loan.repository.ApplicationVerificationRepository;
 import com.navix.loan.service.ApplicationVerificationService;
 import com.navix.loan.service.OfferService;
@@ -39,6 +40,7 @@ public class SignzyContractWebhookController {
 
     private final OfferService offer;
     private final ApplicationVerificationRepository verificationRepo;
+    private final EsignDocumentService esignDocuments;
 
     @Value("${navix.esign.callback-secret:}")
     private String callbackSecret;
@@ -62,6 +64,10 @@ public class SignzyContractWebhookController {
                 .findByCheckTypeAndProviderTxnIdStartingWith(
                         ApplicationVerificationService.ESIGN, contractId);
         if (rows.isEmpty()) {
+            // Not a borrower sanction: it may be an admin eSign document (same callback URL + secret).
+            if (esignDocuments.onCallback(contractId)) {
+                return ApiResponse.ok(Map.of("accepted", true));
+            }
             log.info("Signzy contract callback for an unknown contract");
             return ApiResponse.ok(Map.of("accepted", false));
         }

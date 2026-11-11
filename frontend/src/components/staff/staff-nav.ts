@@ -25,6 +25,7 @@ import {
   FileBarChart,
   MessageSquare,
   FileText,
+  FileSignature,
 } from "lucide-react";
 import { can, type Permission, type StaffRole } from "@/lib/auth/rbac";
 import type { FeatureFlags } from "@/lib/api/applications";
@@ -221,6 +222,7 @@ export const NAV: NavGroup[] = [
       { label: "DSA", href: "/staff/admin/dsa", Icon: Briefcase, perm: "staff:manage" },
       { label: "Invites", href: "/staff/admin/invites", Icon: Mail, perm: "staff:manage" },
       { label: "Provider API dashboard", href: "/staff/admin/api-dashboard", Icon: ListChecks, perm: "verification:retry" },
+      { label: "eSign documents", href: "/staff/admin/esign", Icon: FileSignature, perm: "staff:manage", flag: "esign-documents" },
       { label: "Settings", href: "/staff/admin/settings", Icon: Settings, perm: "staff:manage" },
     ],
   },

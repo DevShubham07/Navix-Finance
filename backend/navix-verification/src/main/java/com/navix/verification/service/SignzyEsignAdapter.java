@@ -19,6 +19,9 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.Instant;
+import com.navix.verification.dto.SignzyDtos.ContractInitiateDetail;
+import com.navix.verification.dto.SignzyDtos.ContractPullDetail;
+import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -110,6 +113,56 @@ public class SignzyEsignAdapter implements EsignPort {
         }
         return new EsignResult(true, true, parseCompletionTime(c.contractCompletionTime()),
                 download(c.finalSignedContract()), contractId, PROVIDER, null);
+    }
+
+    @Override
+    public ContractSession initiateContract(ContractRequest request) {
+        List<ContractSigner> signers = request.signers().stream()
+                .map(sp -> new ContractSigner(sp.name(), SIGNATURE_TYPE, null, null, null,
+                        List.of(new ContractSignaturePlacement(sp.pages(), List.of(sp.position())))))
+                .toList();
+        // Name-match only (no YOB/gender): the trio is omitted wholesale, see class doc.
+        ContractInitiateDetail d = client.initiateMulti(new ContractInitiateRequest(
+                request.documentUrl(), request.contractName(),
+                request.executerName() != null ? request.executerName() : props.executerName(),
+                request.successRedirectUrl(), request.failureRedirectUrl(),
+                props.callbackUrl(), blankToNull(props.callbackSecret()), ESIGN_PROVIDER,
+                customization(), signers, props.nameMatchThreshold(), null, null));
+        if (!hasText(d.contractId()) || d.signers().size() != signers.size()
+                || d.signers().stream().anyMatch(s -> !hasText(s.esignUrl()))) {
+            throw new VerificationException("Signzy returned no contract id / signer URLs");
+        }
+        log.info("Signzy eSign contract {} opened with {} signers", d.contractId(), signers.size());
+        return new ContractSession(d.contractId(), d.signers().stream()
+                .map(s -> new ContractSignerLink(s.signerId(), s.esignUrl())).toList());
+    }
+
+    @Override
+    public ContractStatus fetchContract(String contractId) {
+        ContractPullDetail c = client.pullDetail(contractId);
+        if (!c.found()) {
+            return new ContractStatus(true, false, List.of(), null, null);
+        }
+        List<ContractSignerStatus> signers = new ArrayList<>();
+        for (var s : c.signers()) {
+            signers.add(new ContractSignerStatus(s.signerId(), normalise(s.status(), s.errorMessage()),
+                    blankToNull(s.errorMessage()), blankToNull(s.nameMatchResult())));
+        }
+        boolean done = c.completed() && hasText(c.finalSignedContract());
+        return new ContractStatus(false, done, signers,
+                done ? download(c.finalSignedContract()) : null, blankToNull(c.auditCertificateUrl()));
+    }
+
+    /** Signzy's per-signer vocabulary is only partly documented (DRAFT, PENDING seen); anything unknown stays PENDING. */
+    private static String normalise(String status, String error) {
+        String s = status == null ? "" : status.trim().toUpperCase();
+        if (s.equals("SIGNED") || s.equals("COMPLETED") || s.equals("COMPLETE")) {
+            return "SIGNED";
+        }
+        if (hasText(error) || s.equals("FAILED") || s.equals("REJECTED") || s.equals("CANCELLED")) {
+            return "FAILED";
+        }
+        return "PENDING";
     }
 
     // ---- helpers ----------------------------------------------------------------

@@ -312,6 +312,27 @@ public final class SignzyDtos {
             String initialContractHash) {
     }
 
+    /** Multi-signer initiate result: every signer's id + hosted URL, in request order. */
+    public record ContractInitiateDetail(String contractId, List<ContractSignerLink> signers) {
+    }
+
+    public record ContractSignerLink(String signerId, String esignUrl) {
+    }
+
+    /** Multi-signer pullData result. {@code found=false} when Signzy 404s (lapsed contract). */
+    public record ContractPullDetail(
+            boolean found,
+            boolean completed,
+            Integer signedSignerCount,
+            String finalSignedContract,
+            String auditCertificateUrl,
+            List<ContractSignerPull> signers) {
+    }
+
+    public record ContractSignerPull(String signerId, String status, String errorMessage,
+                                     String nameMatchResult) {
+    }
+
     public record ContractPullRequest(
             @JsonProperty("contractId") String contractId) {
     }
