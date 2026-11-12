@@ -92,7 +92,7 @@ All actions resolve the actor from the **JWT bearer** (`JwtAuthFilter` → `Acto
 |---|---|---|
 | `GET /api/staff/decisions` (+ `/summary`, `/inspectable`) | staff | decision history · per-employee performance totals · who the caller may inspect |
 | `GET /api/loans` | ADMIN / COLLECTION_HEAD | the Loans register (`loan:register`) |
-| `GET /api/dashboard/trends?days=` | staff | dashboard trend series |
+| `GET /api/dashboard/{snapshot,monthly,daily,preclosure-week,aum,collection-analysis,team,collections/team,calendar,geo,companies,collection-allocation,leaderboard,role-view,records,targets}` · `PUT /targets/{month}` | staff | staff dashboard tiles + monthly targets |
 | `GET /api/reports` · `GET /api/reports/{key}?from=&to=` | ADMIN (real role) | reports centre: the catalog, and one report as a typed table (columns + raw rows + headline figures) for an inclusive IST period (both omitted = all time). The frontend writes the CSV and the PDF from the same table. PAN is masked; no Aadhaar or bank account is included (the customer export on the next row is the one exception) |
 | `GET /api/reports/customer-export/fields` · `POST …/match` `{from,to,segment,dpd[],grain}` · `POST …/rows` `{grain,ids≤200,fields[],includeIdNumbers}` | ADMIN (real role) | the customer data export: the field allowlist, the matched ids (same segment / DPD / first-application-date logic as the Customers tab; capped at 50,000, `truncated` flag) and the chosen columns for one page of ids. **The one exception to the report rule above:** with `includeIdNumbers=true` it returns full Aadhaar, PAN, UAN and bank account numbers (without the flag any such field is a 400). Unknown field keys are a 400; `EXPORT_BUSY` (503) when two exports already run, the client retries. Each match, and each rows request that includes ID numbers, logs who and how many, never a value. Credentials, tokens, raw provider JSON, document bytes, S3 keys and similar are not reachable by any key |
 | `GET /api/admin/bureau-backfill/preview` · `POST /execute?cohort=` · `POST /reject-sub-floor?limit=` | ADMIN | bureau rescore backfill (V62): preview a cohort · run it · sweep the sub-floor backlog |
@@ -205,3 +205,13 @@ All routes are gated by the **`referral` feature flag** (off → `REFERRAL_DISAB
 | `GET/POST/DELETE /api/admin/expenses` (+`/{id}`) | ADMIN | company-expense ledger (+ receipt S3 keys) |
 | `GET /api/applications/all` | ADMIN | full register of every application (complete + incomplete) |
 | `GET /api/feature-flags` | any authed | dev-only flag states `{key: enabled}` for UI gating — **read-only, no write path** (flags change only via SQL, §12) |
+
+### Admin eSign documents (`/api/admin/esign-documents`) — flag `esign-documents` (off)
+
+| Method + path | Role | Purpose |
+|---|---|---|
+| `GET /` · `GET /{id}` | ADMIN | list · one document with its signers and status (SENT/COMPLETED/FAILED/EXPIRED) |
+| `POST /` | ADMIN | upload a PDF + up to 5 signers, each with drag-and-drop signature boxes → **one real, billable Signzy contract** |
+| `POST /{id}/refresh` · `POST /{id}/signers/{signerId}/resend` | ADMIN | re-read signing status · re-send a signer's invite |
+
+The Signzy callback shares `POST /api/webhooks/signzy/contract` (shared-secret header); a contract that is not a borrower sanction falls through to `EsignDocumentService.onCallback`. External signers land on the public `/esign/done` page.

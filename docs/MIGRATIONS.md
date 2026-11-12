@@ -81,3 +81,16 @@ They live in `backend/navix-app/src/main/resources/db/migration/` and Flyway app
 | `V98__whatsapp_template_seed.sql` | Lists all 50 SmartChat templates on the admin Templates page (WhatsApp tab), with the status read off the portal on 2026-11-09. Display and status only: each is sent by its own flow or the catalogue. |
 | `V97__admin_templates.sql` | ADMIN Templates library: `message_template` (SMS/WhatsApp/Email: wording, status, provider id, ordered variables, confirmation text, `system_managed`), `customer_message.email`, seeds the 10 DLT-approved SMS (Active) and the 12 repay-fee SMS (Submitted, system-managed). Gated by `admin-messaging` |
 | `V95__admin_messaging.sql` | ADMIN customer messaging + repay-now discount + allow re-application: `customer_message` (ledger, one row per channel, SENT/FAILED/SKIPPED), `repayment_discount_offer` (1..7% of the new loan principal off the processing fee; unlocked by full repayment by `repay_by`; one use), `reapply_allowance` (one-use ADMIN permission with required reason + document), `loan_application.{fee_discount_percent, fee_discount_offer_id}`, `loan.fee_discount_paise` (default 0), feature flag **`admin-messaging`** seeded **false** (`do nothing` on conflict) |
+
+### Not listed above (added 2026-11-13; the files run contiguously V1..V102)
+
+| Migration | What |
+|---|---|
+| `V79__monthly_target.sql` | `monthly_target` — admin-editable monthly disbursal/collection goals the staff dashboard measures against (read via JDBC, no entity) |
+| `V80__bureau_phone.sql` | `bureau_phone` — indexed 10-digit mobiles from bureau reports + reference mobiles, for the "is this number in another customer's report?" check |
+| `V86__mandate_debit_present_count.sql` | bounds how many times one `mandate_debit` row (FAILED_TECHNICAL recovery) may be re-presented with its original unique key |
+| `V87__mandate_authentication_url.sql` | stores the Digio authorisation URL on the mandate attempt, so returning to the screen resumes it instead of filing a new NPCI mandate |
+| `V92__blank_known_seed_passwords.sql` | nulls `password_hash` on seeded staff accounts still carrying the passwords published in the repo (restore offline with `scripts/restore-demo-logins.sql`) |
+| `V100__scrub_bsa_statement_passwords.sql` | removes statement PDF passwords Signzy echoed into `bank_statement_analysis.response_json` |
+| `V101__esign_documents.sql` | `esign_document` + `esign_document_signer` — ADMIN uploads any PDF and has named signers Aadhaar-eSign it via Signzy Contract; flag `esign-documents` seeded off |
+| `V102__esign_document_signature_boxes.sql` | drag-and-drop signature boxes (`jsonb` `{page,x,y,width,height}` in PDF points from top-left), sent as `signaturePosition CUSTOMIZE`; V101 page/position columns relaxed to nullable |
