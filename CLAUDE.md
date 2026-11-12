@@ -775,6 +775,8 @@ What holds across all of it, and does not belong in that file:
   `/network-blocked` (403), or a `NETWORK_BLOCKED` 403 envelope on `/api/*`. Fails open on vendor
   errors; a clean verdict is cached 30 min in the IP-bound signed `dbx_net_ok` cookie.
   `NETWORK_GUARD_ALLOWED_COUNTRIES` (default `IN`); `NETWORK_GUARD_DISABLED=true` is the kill switch.
+  Verified search crawlers (Google/Bing/Apple — the user-agent claim must match the engine's published
+  IP-range JSON, `lib/verified-crawlers.ts`; fails closed) are let through so the site stays indexed.
 
 ---
 

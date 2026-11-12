@@ -17,13 +17,23 @@
  * proxycheck is called once per visitor per {@link CLEAN_TTL_SECONDS}, not on every page and
  * every polled BFF call. Switching a VPN on afterwards changes the IP, which voids the cookie.
  *
+ * Verified search-engine crawlers (Google, Bing, Apple — user-agent claim confirmed against the
+ * engine's published IP ranges, see `verified-crawlers.ts`) are let through so the site stays indexed.
+ *
  * Kill switch: `NETWORK_GUARD_DISABLED=true`.
  */
 
+import { verifiedCrawler } from "./verified-crawlers";
+
 export type BlockReason = "country" | "vpn" | "proxy" | "tor";
 
-/** `unverified`: the lookup failed and we let the visitor through (fail-open) — never cached as clean. */
-export type GuardVerdict = { blocked: false; unverified?: boolean } | { blocked: true; reason: BlockReason; detail?: string };
+/**
+ * `unverified`: the lookup failed and we let the visitor through (fail-open) — never cached as clean.
+ * `crawler`: a verified search-engine bot, let through by engine name.
+ */
+export type GuardVerdict =
+  | { blocked: false; unverified?: boolean; crawler?: string }
+  | { blocked: true; reason: BlockReason; detail?: string };
 
 export const CLEAN_COOKIE = "dbx_net_ok";
 export const CLEAN_TTL_SECONDS = 30 * 60;
@@ -205,11 +215,14 @@ export async function evaluateRequest(
 ): Promise<GuardOutcome> {
   if (config.disabled) return { verdict: { blocked: false } };
 
+  const ip = clientIp(headers);
+  const crawler = await verifiedCrawler(headers.get("user-agent"), ip, fetchImpl);
+  if (crawler) return { verdict: { blocked: false, crawler } };
+
   const country = checkCountry(headers.get("x-vercel-ip-country"), config);
   if (country.blocked) return { verdict: country };
 
   const key = config.proxycheckKey;
-  const ip = clientIp(headers);
   if (!key || !ip || isPrivateIp(ip)) return { verdict: { blocked: false } };
 
   if (await verifyCleanToken(cleanCookie, ip, key)) return { verdict: { blocked: false } };
