@@ -303,8 +303,9 @@ Seam: `frontend/src/lib/api/live-journey.ts`. The borrower can only call borrowe
    sessions/24 h) → `references` (two; OTP-confirmed when `reference-otp` is on) → `summary` →
    `selfie` (Digitap Face Liveness v4, Signzy liveness fallback; never blocks) → `address` (geolocation
    reverse-geocode + typed fallback) → `sanction-letter` (KFS PDF + Aadhaar eSign redirect, drawn
-   signature fallback) → `sanctioned` 🎉 → `disbursal-account` (confirm salary account or penny-drop a
-   new one; 3 fails = 12 h lock; cancelled-cheque/passbook fallback) → `mandate` (Digio, only when
+   signature fallback) → `sanctioned` 🎉 → `disbursal-account` (confirm the salary account or enter a
+   new one — either way a ₹1 penny drop runs unless this account was already verified on the file;
+   3 fails, provider errors included, = 12 h lock; cancelled-cheque/passbook fallback) → `mandate` (Digio, only when
    `digio-mandate` is on and no usable UMRN).
 6. **Track** — `/loan/status` polls the status + audit trail.
 7. **Active loan** — `/dashboard` shows net disbursed, the salary-linked **due date**, total repayable.
@@ -328,11 +329,12 @@ Seam: `frontend/src/lib/api/live-journey.ts`. The borrower can only call borrowe
 | UI | `/login` → `/dashboard` | `/staff/login` → `/staff/dashboard` (DSA → `/staff/dsa/leads`) |
 
 - The BFF stores the JWT in its httpOnly cookie and forwards `Authorization: Bearer`; `JwtAuthFilter`
-  populates `ActorContext`; services call `requireRole(...)` and replay the event trail for SoD.
+  populates `ActorContext`; services call `requireRole(...)`; SoD is checked as described in §12.
 - **One live staff session per staffer** (`StaffSessionRegistry`): a second login without `force` →
   `SESSION_CONFLICT`; disabling a user or changing their role revokes the session.
 - Sign-in throttle: 3 wrong passwords per 15 min → 30 s cool-off (`TOO_MANY_ATTEMPTS`; successes
-  don't count). Passwords ≥ 8 chars. Turnstile on both password logins and both forgot-password forms.
+  don't count). Passwords: ≥ 8 chars, ≤ 72 bytes, with a letter, a digit and a special character
+  (`PasswordPolicy`; staff "create account" checks only the length). Turnstile on both password logins and both forgot-password forms.
 
 **Roles** (`StaffRole`, mirrored in `frontend/src/lib/auth/rbac.ts`):
 
@@ -384,11 +386,15 @@ sidebar and Cmd/Ctrl+K search):
   `/staff/customers/[id]`, 21 tabs: Customer, Loan, Disbursal, Repayment, Collections, Third-party
   logs, Banking, Credit report, BRE, AI Analyzer, Journey, References, Documents, Addresses, Dedupe,
   Communication, Activity, Sanction, Follow-ups, Mandate, Verifications), all applications,
-  rejections, onboarding waitlist, blocklist, customer messages, templates.
+  rejections, onboarding waitlist, blocklist, customer messages, templates. The **blocklist is a
+  register only** — `BlocklistService.isBlocked` has no caller, so an entry screens nothing; what
+  actually stops a customer is ADMIN "block customer" (a `BLOCKED_BY_STAFF` rejection row, which
+  also mirrors PHONE/PAN into the blocklist).
 - *Leads & sales:* leads, telecalling, leads dashboard, lead import (CSV/XLSX via S3, background
   job), referral payouts.
 - *Collections:* Loans register, DPD buckets worklist (Upcoming, 1–7, 8–30, 31–60, 61–90, 90+),
-  Mandates & debits, settlements (+ settlements dashboard), refunds owed (NACH overpayments).
+  Mandates & debits, settlements, refunds owed (NACH overpayments). (The `settlements/dashboard`
+  folder in the working tree is untracked and has no backend endpoint — not shipped.)
 - *Finance & reports:* transactions ledger, company expenses, **Reports** (43 reports in 10 groups,
   CSV + branded PDF from one server table; groups live in both `ReportService` and
   `lib/reports/categories.ts` — change together) + customer data export (field picker;
@@ -514,8 +520,10 @@ contiguous, applied on boot. Each file's header comment explains *why*; the inde
 
 - **Money = integer paise (`long`), HALF_UP.** Never floats.
 - **One aggregate.** Don't reintroduce fragmented per-stage entities.
-- **SoD is mandatory and server-side** (flow service via the event trail). Never collapse two
-  maker-checker steps onto one actor. **Every approve has a reject**, SoD-checked and audited.
+- **SoD is mandatory and server-side.** Settlements and collection payments check the actor
+  (proposer ≠ approver, `SOD_VIOLATION`). Credit vs disbursement separation is by **role** today —
+  the event-trail helper `ApplicationFlowService.actorOf` exists but is never called. Never collapse
+  two maker-checker steps onto one actor. **Every approve has a reject**, SoD-checked and audited.
 - **JWT identity** stays localized to `JwtAuthFilter`/`SecurityConfig`; authz lives in the services.
 - **Separate staff/borrower sessions** — never share a cookie or BFF namespace.
 - **Notifications are event-driven and non-blocking.** Domain code publishes a Spring event; the
@@ -523,7 +531,7 @@ contiguous, applied on boot. Each file's header comment explains *why*; the inde
   `NotificationType` + template + audience. Never make business logic depend on a delivery.
 - **Ports, not providers.** Identity/bureau/penny-drop/DigiLocker go through `VerificationPort`;
   eSign through `EsignPort`; mandates through `MandatePort`.
-- **Schedulers are single-instance** (no distributed lock): payment reminders 09:00, employment retry
+- **Schedulers are single-instance** (no distributed lock): payment reminders 09:00 **server time (UTC — 14:30 IST; the cron has no zone)**, employment retry
   hourly :30, provider health hourly :15, NACH debit sweep 10:00 IST, PayU reconcile every 5 min,
   provider-history purge 02:15.
 - **Feature flags** live in `feature_flag`, are changed **only by SQL**, and are read uncached via
@@ -623,6 +631,10 @@ Who does what, auth, hosts, live status and per-API gotchas →
 ## 14. Known gaps (go-live backlog)
 
 - Real bank **payout** (NEFT/IMPS) at disbursement — today the Disbursement Head transfers by hand.
+- **Known defects** (full list: `docs/PRD_REBUILD.md` Appendix G): the loan is booked on a due date
+  recomputed at disbursal, not the signed `approved_repayment_date`; the blocklist screens nothing;
+  referral codes can't be redeemed; the reminder cron runs on UTC; the bureau-question path never
+  submits KYC; ADMIN can record and verify the same repayment.
 - Bureau score floor recalibration (then re-enable `bureau-auto-reject`).
 - DB: FK constraints; drop the legacy `bytea` doc column; PII-at-rest encryption. The raw Aadhaar
   number (V75) and unredacted card images are a deliberate, product-approved exception to masking.

@@ -13,6 +13,21 @@
 > Sections: **Part 0** is the prompt to paste. **Part A** (§1–§16) is the product spec. **Part B**
 > (§17–§19) is the phased workflow build plan with acceptance gates. **Appendices** list enums, error
 > codes, reports, notifications and env vars.
+>
+> **The detail lives in the use-case catalog under [`docs/prd/`](prd/)** — screen by screen, every
+> field, validation message, button, permission and rule, extracted from the code:
+>
+> | File | Covers | Build phases |
+> |---|---|---|
+> | [`prd/01-borrower-onboarding.md`](prd/01-borrower-onboarding.md) | login, gates, waitlist, the 12-step `/signup/*` intake, consent-time checks, KBA question, fraud rules | W1, W3 |
+> | [`prd/02-borrower-offer-and-loan.md`](prd/02-borrower-offer-and-loan.md) | `/loan/*` offer journey, eSign, disbursal account, mandate, dashboard, repay (manual + PayU), reborrow, profile, settings | W4, W5, W6, W7 |
+> | [`prd/03-staff-credit-disbursement.md`](prd/03-staff-credit-disbursement.md) | the applications console per working role, credit decisions, disbursement, repayment verification, customer 360 (all 21 tabs), customers register, ADMIN corrections | W4, W5, W8 |
+> | [`prd/04-staff-collections-and-money.md`](prd/04-staff-collections-and-money.md) | loans register, DPD worklist, case work, settlements, mandates & NACH debits, refunds, ledger, reminders | W5, W6, W7 |
+> | [`prd/05-staff-growth-and-messaging.md`](prd/05-staff-growth-and-messaging.md) | leads, telecalling, import, DSA portal + admin + commission, referral, customer messaging, templates, discounts, reapply allowance | W7, W8 |
+> | [`prd/06-staff-admin-analytics.md`](prd/06-staff-admin-analytics.md) | dashboard metrics, performance, reports (per-report columns), customer export, global search, admin pages, Provider API dashboard, eSign documents | W9, W10 |
+> | [`prd/07-business-rules.md`](prd/07-business-rules.md) | every business rule with its exact condition, where it is enforced, the error code, and worked examples | all phases |
+>
+> Precedence when they differ: `07-business-rules.md` > the use-case files > this document.
 
 ---
 
@@ -20,9 +35,14 @@
 
 ```text
 You are building "DhanBoost", a salary-linked, single-repayment consumer-lending platform for India,
-from an empty repository. The attached file docs/PRD_REBUILD.md is the complete specification. It is
-the contract: when it states a rule, a number, an enum value, a route or an error code, reproduce it
-exactly. When it is silent, choose the simplest behaviour consistent with the rules in Part A.
+from an empty repository. The specification is docs/PRD_REBUILD.md (overview, architecture, build
+plan) plus the use-case catalog in docs/prd/01..07 (every screen, field, validation message, button,
+permission and business rule). Together they are the contract: when they state a rule, a number, an
+enum value, a route, a piece of user-facing copy or an error code, reproduce it exactly. Precedence:
+docs/prd/07-business-rules.md > the use-case files > PRD_REBUILD.md. When they are silent, choose
+the simplest behaviour consistent with the rules. Before starting a phase, every agent in it reads
+the use-case files listed for that phase in the PRD_REBUILD.md index table, and each use case (UC-…)
+it implements gets at least one test named after its id.
 
 Use workflows (multi-agent orchestration) to build it. Run EACH phase W0..W12 as its own workflow
 of about 2-8 agents (never the whole build as one workflow), in dependency order; inside a phase fan out the independent work items listed under "Parallel lanes" to
@@ -35,7 +55,9 @@ Hard rules (never violate):
 1. Money is integer paise (Java long / BIGINT), HALF_UP rounding. Never floats for money.
 2. One aggregate: a single loan_application row whose status walks the transition table in §5.
    Every transition is server-validated and appended to application_event. No stage skipping.
-3. Separation of duties is enforced server-side from the event trail; every approve has a reject.
+3. Separation of duties is enforced server-side: different roles own credit, disbursement and
+   repayment verification; settlements and collection payments also check the actor (proposer ≠
+   approver). Every approve has a reject.
 4. Staff and borrower auth are separate namespaces: different endpoints, cookies, JWT audiences.
 5. All browser→backend traffic goes through the Next.js BFF; the browser never calls Spring.
 6. Every external provider is behind a port with a mock adapter as the default. Do not call any
@@ -407,7 +429,7 @@ and `journey_step`; a second device resumes on the right screen):
   in-app), Profile `/profile` (self-edit non-identity fields; editing a verified field invalidates
   that check), Sign out.
 - Notification bell for the borrower (in-app inbox, unread badge, mark read / all).
-- Referral (flag `referral`): own code, share, apply a code at signup, earnings; ₹200 to each side
+- Referral (flag `referral`): own code, share, earnings (redeeming a code has no screen — §9.6); ₹200 to each side
   once the referred loan qualifies.
 
 ## 8. Staff console
@@ -428,7 +450,7 @@ and `journey_step`; a second device resumes on the right screen):
      Blocklist · Customer messages · Templates
   3. **Leads & sales** — Leads · Telecalling · Leads dashboard · Import leads · Referral payouts
   4. **Collections** — Loans register (active/overdue/closed) · DPD buckets (Upcoming, 1–7, 8–30,
-     31–60, 61–90, 90+) · Mandates & debits · Settlements (+ settlements dashboard) · Refunds owed
+     31–60, 61–90, 90+) · Mandates & debits · Settlements · Refunds owed
   5. **Finance & reports** — Transactions · Company expenses · Reports (10 category sub-items)
   6. **DSA** — My leads · My earnings
   7. **Team & settings** — Staff · DSA · Invites · Provider API dashboard · eSign documents · Settings
@@ -557,10 +579,10 @@ activation via invite link (`/staff/activate`), forgot/reset password.
   (PART_PAYMENT / FULL_PAYMENT → Accountant validates; SETTLEMENT → Head approves first), propose
   settlements.
 - **Settlements**: propose → approve / reject by Collection Head/ADMIN; **proposer ≠ approver**
-  (`SOD_VIOLATION`). An approved settlement caps the payable and closes the loan when met; NACH debits
-  are sized to it. Settlements dashboard (Head/ADMIN): customer/loan columns, dues summary, period
-  filter.
-- Hardship / revised plan: `repayment_plan` proposed by the officer, approved by the Head.
+  (`SOD_VIOLATION`, checked on the actor). An approved settlement caps the payable and closes the loan when met; NACH debits
+  are sized to it. (A settlements dashboard page exists only as untracked work with no backend
+  endpoint — not part of the platform.)
+- Hardship / revised plan: only the `repayment_plan` table and entity exist — no flow is built.
 - Refunds owed: NACH overpayments to return by hand.
 
 ### 9.2 eMandate & NACH (Digio)
@@ -609,7 +631,7 @@ payment on a borrower's behalf (`admin-record`).
   logged to `dsa_lead_rejection`). Lead view = what the DSA typed + coarse status
   `NOT_APPLIED/APPLIED/IN_PROGRESS/DISBURSED/REPAID/DECLINED` + net disbursed + commission — never KYC
   data, never a second loan. Foreign lead id → `LEAD_NOT_FOUND`. Outreach by SMS (fixed template) or
-  email (DSA-authored), rate-limited, audited.
+  email (one of three fixed templates), rate-limited, audited.
 - **Commission**: 350 bps of net disbursed on the lead's **first** loan; `ACCRUED` at disbursal →
   `PAYABLE` when fully repaid → `PAID` by ADMIN (txn id); `VOID` on approved settlement, default or
   write-off. Rate snapshotted per row. ADMIN can pay, void, reassign, create manually — every action
@@ -617,14 +639,15 @@ payment on a borrower's behalf (`admin-record`).
 - **DSA is firewalled from all customer data** (§12).
 
 ### 9.6 Referral (flag `referral`)
-Codes (8 chars), apply at signup (no self-referral, no double referral), live preview, payouts queue
+Codes (8 chars), apply/validate endpoints (no self-referral, no double referral) — **no screen calls
+  apply or validate today, so a code cannot be redeemed**; payouts queue
 for Disbursement Head/ADMIN (settle with txn id), expense totals. Off → `REFERRAL_DISABLED`.
 
 ### 9.7 Admin customer messaging & templates (flag `admin-messaging`)
 - Audience picker (rules ANY / LIVE / OVERDUE / repayment window), template preview with variables,
   send over SMS / WhatsApp / email, one ledger row per channel (`SENT/FAILED/SKIPPED`), send log.
-  Sends only **08:00–19:00 IST** (`OUTSIDE_SEND_HOURS`); marketing templates need a typed
-  confirmation (`CONFIRMATION_REQUIRED`).
+  Sends only **08:00–19:00 IST** (`OUTSIDE_SEND_HOURS`); a template that carries confirmation
+  text needs its tick box ticked (`CONFIRMATION_REQUIRED`).
 - Built-in catalogue keys: `reported_soft, reported_strict, cost_clock, eligibility_window,
   salary_day, ptp_confirmation, ptp_missed, part_payment, officer_assigned, no_response,
   settlement_offer, senior_review, notice_issued, visit_notice, repay_discount (MARKETING),
@@ -1082,7 +1105,7 @@ one read and mark all read. One shared bell component polls it for both audience
 - **Lanes**:
   - (a) Cases, worklist, DPD buckets, interactions, field payments, the Collection Head desk,
     executive scoping (`CASE_NOT_ASSIGNED`).
-  - (b) Settlements with SoD, the settlement-capped outstanding, and the settlements dashboard.
+  - (b) Settlements with SoD and the settlement-capped outstanding.
   - (c) `MandatePort` mock + mandate attempts, the offer step, Mandate tab actions (override, ceiling,
     cancel, cancel-active, change account).
   - (d) Debit service, scheduler, manual debit, reconcile, terminal denylist, refunds owed.
@@ -1322,3 +1345,26 @@ Plus an eSign-document invite/outcome event for external signers.
 
 Known product gaps that stay out of scope: a real NEFT/IMPS payout API, a Digio webhook receiver, UPI
 AutoPay, mandate amendment, distributed scheduler locks, FK constraints, and PII-at-rest encryption.
+
+## G. Known defects in the current platform — do NOT reproduce
+
+Found while extracting the use cases (details and code references in the `§Z` / "Contradictions"
+section of each `docs/prd/` file). The rebuild implements the **intended** behaviour on the right.
+
+| # | Current behaviour (defect) | Build this instead |
+|---|---|---|
+| D1 | `LoanService.disburse` recomputes the due date from the salary day at disbursal and ignores `approved_repayment_date`, so the KFS the borrower signed can show a different date and total than the loan booked | book the loan on the approved (signed) repayment date; re-sign if it must change |
+| D2 | Credit vs disbursement SoD is role-only (`actorOf` unused); ADMIN can record and verify the same repayment, raise and validate the same collection payment | actor-level checks: recorder ≠ verifier, raiser ≠ validator, outside ADMIN's explicit solo mode |
+| D3 | The blocklist screens nothing (`isBlocked` has no caller) | check PAN / phone / bank account against the blocklist at intake and before sanction |
+| D4 | Referral codes cannot be redeemed (no screen calls apply/validate) | a code field at signup + live validation |
+| D5 | `DISBURSEMENT_FAILED` has no inbound transition; its tab, segment and retry endpoint are dead | either a "transfer failed" action into it, or drop the state |
+| D6 | Reminder cron runs at 09:00 server time (UTC), i.e. 14:30 IST; the sweep stops scanning a loan once it is IN_COLLECTIONS | schedule in `Asia/Kolkata`; keep reminding through the overdue window |
+| D7 | The bureau-question path (`/credit-question` → `/loan/status`) never calls submit-kyc, leaving the file in DRAFT | submit after the question is answered or skipped |
+| D8 | Address-proof uploads on `/signup/submitted` reach S3 but are never recorded as documents | record them as documents staff can see |
+| D9 | NACH credits are stored with method `BANK_TRANSFER` | store `NACH` |
+| D10 | Nothing caps the sanctioned amount or the ADMIN limit override (₹10,00,000 caps only the formula) | cap both at the max loan |
+| D11 | Applications never move to OVERDUE / DEFAULTED / WRITTEN_OFF (only the loan goes to IN_COLLECTIONS) | mirror the loan's delinquency onto the application status |
+| D12 | Confirming the unchanged salary account still runs the ₹1 penny drop, and a provider error counts as a strike | skip the drop for the verified salary account; don't count provider errors |
+| D13 | Several UI permission gates disagree with backend checks (e.g. bulk reject offered to Collection Head; Collection Head working role lacks `collections:interact`) | one shared permission matrix, tested both sides |
+| D14 | Settlements dashboard and hardship/revised plan exist only as untracked UI / an unused table | build them fully or leave them out |
+| D15 | The KFS PDF says "no auto-debit mandate" even when `digio-mandate` is on | render the mandate clause from the flag |
