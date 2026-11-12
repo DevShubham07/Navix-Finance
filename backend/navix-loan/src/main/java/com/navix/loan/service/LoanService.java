@@ -47,11 +47,15 @@ public class LoanService {
         int salaryDay = application.getSalaryCreditDay() != null
                 ? application.getSalaryCreditDay()
                 : DEFAULT_SALARY_DAY;
-        // The credit team's approved repayment date wins over the salary-derived one (V45). A
-        // sanction never expires (decision 41), so a borrower who returns months later can carry a
-        // date that has already passed — fall back to the computed date rather than mint a loan with
-        // a negative tenure.
-        LocalDate dueDate = loanMath.dueDateFromSalary(disbursed, salaryDay);
+        // The Credit Executive's approved repayment date wins over the salary-derived one (V45): it is
+        // the date the summary and the signed Key Fact Statement quote, so the booked loan must match
+        // it. A sanction never expires (decision 41), so a borrower who returns months later can
+        // carry a date that has already passed — only then fall back to the computed date rather
+        // than mint a loan with a zero or negative tenure.
+        LocalDate approved = application.getApprovedRepaymentDate();
+        LocalDate dueDate = approved != null && approved.isAfter(disbursed)
+                ? approved
+                : loanMath.dueDateFromSalary(disbursed, salaryDay);
         int tenureDays = (int) java.time.temporal.ChronoUnit.DAYS.between(disbursed, dueDate);
 
         // The repayment discount pinned at reborrow: the SAME percent the summary and the Key Fact

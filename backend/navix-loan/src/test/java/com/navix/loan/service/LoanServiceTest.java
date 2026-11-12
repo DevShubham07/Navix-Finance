@@ -126,4 +126,37 @@ class LoanServiceTest {
         assertThat(loan.getDueDate()).isEqualTo(LocalDate.of(2028, 2, 29));
         assertThat(loan.getTotalRepayable()).isEqualTo(1_350_000L);
     }
+
+    @Test
+    void disbursementBooksTheCreditExecutivesApprovedRepaymentDate() {
+        // Sanctioned 15 Jun on salary day 30 → approved (and signed on the KFS) for 30 Jun. Paid out
+        // 24 Jun, the salary formula alone would pick 30 Jul; the signed date must win.
+        LoanApplication app = new LoanApplication();
+        app.setCustomerId(7L);
+        app.setAmountRequested(1_000_000L);
+        app.setSalaryCreditDay(30);
+        app.setApprovedRepaymentDate(LocalDate.of(2026, 6, 30));
+        when(loanRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        Loan loan = loanService.disburse(app, LocalDate.of(2026, 6, 24), "UTR-SIGNED");
+
+        assertThat(loan.getDueDate()).isEqualTo(LocalDate.of(2026, 6, 30));
+        assertThat(loan.getTotalRepayable()).isEqualTo(1_060_000L); // principal + 6d interest
+        assertThat(loan.getOutstanding()).isEqualTo(1_060_000L);
+    }
+
+    @Test
+    void anApprovedDateFallingOnThePayoutDayFallsBackToTheSalaryFormula() {
+        LoanApplication app = new LoanApplication();
+        app.setCustomerId(7L);
+        app.setAmountRequested(1_000_000L);
+        app.setSalaryCreditDay(30);
+        app.setApprovedRepaymentDate(LocalDate.of(2026, 6, 30));
+        when(loanRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        Loan loan = loanService.disburse(app, LocalDate.of(2026, 6, 30), "UTR-SAMEDAY");
+
+        assertThat(loan.getDueDate()).isEqualTo(LocalDate.of(2026, 7, 30)); // no zero-day tenure
+        assertThat(loan.getTotalRepayable()).isEqualTo(1_300_000L);
+    }
 }

@@ -120,12 +120,14 @@ Source of truth: `LoanMath` (backend), mirrored in `frontend/src/lib/calc/loan-m
 - **Violation:** n/a.
 - **Example:** A legacy file with no day, disbursed 2026-06-01 → due 2026-07-01.
 
-### BR-MNY-12 — Due date is recomputed at disbursal
-- **Rule:** The loan's due date is computed from the **disbursal date** and the salary day. The `approved_repayment_date` stored at sanction is **not** read at disbursal.
-- **Condition:** `loan.due_date = dueDateFromSalary(LocalDate.now(), app.salaryCreditDay)` at `DISBURSED → ACTIVE`.
-- **Enforced:** `ApplicationFlowService.finalizeDisbursal` → `LoanService.disburse`.
-- **Violation:** n/a. The KFS and summary date can differ from the real due date (Contradiction C-01).
-- **Example:** Sanctioned 2026-06-03 (approved date 06-30), disbursed 2026-06-21 → the loan is due **07-30**.
+### BR-MNY-12 — The loan is booked on the Credit Executive's approved repayment date
+- **Rule:** At disbursal the loan's due date is the `approved_repayment_date` set at sanction — the
+  date the offer summary and the signed KFS quote. Only when that date is not after the payout day (a
+  sanction never expires) is it recomputed from the payout day and the salary day.
+- **Condition:** `loan.due_date = approved > payoutDay ? approved : dueDateFromSalary(payoutDay, app.salaryCreditDay)` at `DISBURSED → ACTIVE`.
+- **Enforced:** `ApplicationFlowService.finalizeDisbursal` → `LoanService.disburse` (fixed 2026-11-13; C-01).
+- **Violation:** n/a.
+- **Example:** Sanctioned 2026-06-03 (approved date 06-30), disbursed 2026-06-21 → the loan is due **06-30** (9 days, ₹10,900 on ₹10,000), matching the KFS. An approved 06-30 paid out on 06-30 falls back to 07-30.
 
 ### BR-MNY-13 — Grace is per loan
 - **Rule:** Each loan stores its own penalty-free grace days. Every loan disbursed since V91 gets 0.
@@ -332,7 +334,7 @@ Source of truth: `LoanMath` (backend), mirrored in `frontend/src/lib/calc/loan-m
 | E24 | Mandate ceiling | salary ₹50,000 (limit ₹12,500), sanctioned ₹15,000 | 2 × max(12,500, 15,000) = **₹30,000** | formula (BR-MAN-03) |
 | E25 | KFS APR | ₹10,000 at 27 d / 36 d / 27 d with 5% discount | 555.8% / 518.2% / 455.4% | formula (BR-MNY-25) |
 | E26 | KFS APR, stale sanction | approved date already passed → tenure floored to 1 | 4461.1% printed | formula (C-05) |
-| E27 | KFS vs real due date | sanctioned 06-03 (day 30 → 06-30); KFS viewed and signed 06-21; disbursed 06-21 | KFS: 9 d, total ₹10,900. Real loan: due 07-30, 39 d, total ₹13,900 | formula (C-01) |
+| E27 | KFS vs booked due date | sanctioned 06-03 (day 30 → 06-30); KFS viewed and signed 06-21; disbursed 06-21 | KFS: 9 d, ₹10,900. Booked loan: due 06-30, 9 d, ₹10,900 (same) | `LoanServiceTest.disbursementBooksTheCreditExecutivesApprovedRepaymentDate` |
 | E28 | PayU card fee | ₹13,700 at 236 bps / ₹1 | ₹323.32 / ₹0.03 (ceil) | formula (BR-MNY-27) |
 | E29 | DSA commission | net disbursed ₹8,820 | 3.5% = ₹308.70 | formula (BR-GRW-03) |
 
@@ -1906,8 +1908,8 @@ Flags live in `feature_flag` and are read **uncached** via `FeatureFlagService.i
 
 Each item names the two sources that disagree. Where they differ, **code is authoritative**. The ids are cited above.
 
-- **C-01 — Due date at disbursal vs the signed KFS.**
-  - The `LoanService.disburse` comment says "the credit team's approved repayment date wins". The code always computes `dueDateFromSalary(disbursalDate, salaryDay)` and never reads `approvedRepaymentDate`.
+- **C-01 — Due date at disbursal vs the signed KFS. FIXED 2026-11-13** (BR-MNY-12): the loan is now booked on `approvedRepaymentDate`. History:
+  - The `LoanService.disburse` comment said "the credit team's approved repayment date wins", but the code always computed `dueDateFromSalary(disbursalDate, salaryDay)` and never read `approvedRepaymentDate`.
   - The offer summary and the KFS price interest from *today* to `approvedRepaymentDate` (`OfferService.tenureDays`).
   - The borrower can therefore sign one date and amount and be booked another (E27: KFS ₹10,900 at 9 days; the loan is due 07-30 at ₹13,900).
 - **C-02 — Mixed time zones.**
