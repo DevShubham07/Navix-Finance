@@ -338,7 +338,8 @@ schema as a small number of clean migrations (e.g. V1 core, V2 verification, V3 
   bank_score, request jsonb (keys only), response_json, report urls, last_polled_at)` ·
   `skip_trace(customer_id, application_id?, loan_id?, status SUCCESS|NO_RECORD|FAILED, run_by_*,
   request jsonb, response_json)`
-- `blocklist_entry(type PAN|AADHAAR_REF|PHONE|DEVICE|BANK_ACCOUNT, value, reason)` ·
+- `blocklist_entry(type PAN|AADHAAR_REF|PHONE|DEVICE|BANK_ACCOUNT, value normalised, reason, active,
+  customer_id)` unique (type, value) ·
   `company_expense(date, category, amount_paise, note, receipt_object_key)` ·
   `payment_settings` (singleton: payee name, UPI id, bank details, QR + PDF S3 keys) ·
   `monthly_target(month, disbursal_target_paise, collection_target_pct)` · `bureau_phone(mobile,
@@ -1353,9 +1354,9 @@ section of each `docs/prd/` file). The rebuild implements the **intended** behav
 
 | # | Current behaviour (defect) | Build this instead |
 |---|---|---|
-| D1 | `LoanService.disburse` recomputes the due date from the salary day at disbursal and ignores `approved_repayment_date`, so the KFS the borrower signed can show a different date and total than the loan booked | book the loan on the approved (signed) repayment date; re-sign if it must change |
+| D1 | **Fixed 2026-11-13.** `LoanService.disburse` recomputed the due date from the salary day at disbursal and ignored `approved_repayment_date` | book the loan on the approved (signed) repayment date; fall back to the salary formula only when that date has passed |
 | D2 | Credit vs disbursement SoD is role-only (`actorOf` unused); ADMIN can record and verify the same repayment, raise and validate the same collection payment | actor-level checks: recorder ≠ verifier, raiser ≠ validator, outside ADMIN's explicit solo mode |
-| D3 | The blocklist screens nothing (`isBlocked` has no caller) | check PAN / phone / bank account against the blocklist at intake and before sanction |
+| D3 | **Fixed 2026-11-13 (V103).** The blocklist screened nothing | one block: a staff block OR an active entry on any identifier refuses new applications/reborrows; block/unblock from either screen |
 | D4 | Referral codes cannot be redeemed (no screen calls apply/validate) | a code field at signup + live validation |
 | D5 | `DISBURSEMENT_FAILED` has no inbound transition; its tab, segment and retry endpoint are dead | either a "transfer failed" action into it, or drop the state |
 | D6 | Reminder cron runs at 09:00 server time (UTC), i.e. 14:30 IST; the sweep stops scanning a loan once it is IN_COLLECTIONS | schedule in `Asia/Kolkata`; keep reminding through the overdue window |

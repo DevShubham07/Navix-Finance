@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, ShieldAlert, Trash2 } from "lucide-react";
 import { EmptyState, ErrorState, Input, Select, Skeleton, toast } from "@/components/ui";
@@ -84,7 +85,10 @@ export default function AdminBlocklistPage() {
     <div>
       <PageHeader
         title="Fraud blocklist"
-        subtitle={["Blocked PAN, Aadhaar ref, phone, device and bank account identifiers.", describeRegister(th)]
+        subtitle={[
+          "A customer whose mobile, PAN, Aadhaar or bank account is on this list cannot start a new application or borrow again (applications already in progress continue). \"Block customer\" adds all their identifiers here; removing a customer's entries unblocks them.",
+          describeRegister(th),
+        ]
           .filter(Boolean)
           .join(" · ")}
       >
@@ -95,6 +99,7 @@ export default function AdminBlocklistPage() {
             { header: "Type", value: (b: BlocklistResponse) => b.type },
             { header: "Value", value: (b) => b.value },
             { header: "Reason", value: (b) => b.reason ?? "" },
+            { header: "Customer", value: (b) => (b.customerId != null ? String(b.customerId) : "") },
             { header: "Active", value: (b) => (b.active ? "yes" : "no") },
           ]}
           rows={cr.rows}
@@ -122,7 +127,7 @@ export default function AdminBlocklistPage() {
       </div>
 
       {q.isLoading ? (
-        <Skeleton variant="table" rows={8} cols={5} className="rounded border border-line bg-white" />
+        <Skeleton variant="table" rows={8} cols={6} className="rounded border border-line bg-white" />
       ) : q.error ? (
         <ErrorState error={q.error} onRetry={() => void q.refetch()} />
       ) : (
@@ -135,6 +140,7 @@ export default function AdminBlocklistPage() {
                   <Th th={th} col="type" />
                   <th>Value</th>
                   <Th th={th} col="reason" />
+                  <th>Customer</th>
                   <th className="text-right">Action</th>
                 </tr>
               </thead>
@@ -145,6 +151,15 @@ export default function AdminBlocklistPage() {
                     <td><span className="rounded-full bg-navy-tint text-xs font-semibold text-navy">{b.type}</span></td>
                     <td className="font-mono text-ink">{b.value}</td>
                     <td className="text-muted">{b.reason || "—"}</td>
+                    <td>
+                      {b.customerId != null ? (
+                        <Link href={`/staff/customers/${b.customerId}`} className="font-medium text-navy hover:underline">
+                          #{b.customerId}
+                        </Link>
+                      ) : (
+                        <span className="text-muted">—</span>
+                      )}
+                    </td>
                     <td className="text-right">
                       <button onClick={() => remove.mutate(b.id)} disabled={remove.isPending}
                         className="btn btn-sm btn-outline disabled:opacity-50">
@@ -157,7 +172,7 @@ export default function AdminBlocklistPage() {
                   // In-table so the headers survive an emptying filter and it can still be cleared.
                   <EmptyState
                     title={rq.activeCount > 0 && rows.length > 0 ? "No blocklist entries match the column filters." : "No active blocklist entries."}
-                    inTable={5}
+                    inTable={6}
                   />
                 )}
               </tbody>

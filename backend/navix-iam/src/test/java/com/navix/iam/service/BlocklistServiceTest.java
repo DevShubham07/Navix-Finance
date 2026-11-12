@@ -28,12 +28,14 @@ class BlocklistServiceTest {
 
     @Mock
     private BlocklistEntryRepository blocklistRepository;
+    @Mock
+    private org.springframework.context.ApplicationEventPublisher events;
 
     private BlocklistService blocklistService;
 
     @BeforeEach
     void setUp() {
-        blocklistService = new BlocklistService(blocklistRepository);
+        blocklistService = new BlocklistService(blocklistRepository, events);
         // add/remove/listActive are ADMIN-only; default the actor to ADMIN (isBlocked stays open).
         ActorContext.set(new CurrentActor("1", "Admin", "ADMIN"));
     }
@@ -106,6 +108,37 @@ class BlocklistServiceTest {
         blocklistService.remove(7L);
 
         assertThat(existing.isActive()).isFalse();
+    }
+
+    @Test
+    void addStoresTheValueNormalisedSoItMatchesHoweverItWasTyped() {
+        when(blocklistRepository.findByTypeAndValue(BlocklistType.PAN, "ABCDE1234F")).thenReturn(Optional.empty());
+        when(blocklistRepository.findByTypeAndValue(BlocklistType.PHONE, "9876543210")).thenReturn(Optional.empty());
+        when(blocklistRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        assertThat(blocklistService.add(BlocklistType.PAN, " abcde 1234f ", "x").getValue()).isEqualTo("ABCDE1234F");
+        assertThat(blocklistService.add(BlocklistType.PHONE, "+91 98765-43210", "x").getValue()).isEqualTo("9876543210");
+    }
+
+    @Test
+    void addRefusesABlankValue() {
+        assertThatThrownBy(() -> blocklistService.add(BlocklistType.BANK_ACCOUNT, " - ", "x"))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code").isEqualTo("BLOCKLIST_VALUE_REQUIRED");
+    }
+
+    @Test
+    void removingACustomerLinkedEntryAnnouncesItSoTheStaffBlockCanLift() {
+        BlocklistEntry linked = new BlocklistEntry();
+        linked.setId(8L);
+        linked.setActive(true);
+        linked.setCustomerId(42L);
+        when(blocklistRepository.findById(8L)).thenReturn(Optional.of(linked));
+        when(blocklistRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        blocklistService.remove(8L);
+
+        verify(events).publishEvent(new com.navix.common.blocklist.BlocklistEntryRemovedEvent(42L));
     }
 
     @Test

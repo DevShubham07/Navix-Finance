@@ -32,4 +32,7 @@ public interface BorrowerIdentityPort {
      *     it keys the forgot-password lookup and the cooling-off blocks.
      */
     boolean isLoginMobile(String mobile, Long customerId);
+
+    /** The 10-digit number {@code customerId} proved by OTP at sign-in, if they have signed in. */
+    java.util.Optional<String> loginMobile(Long customerId);
 }

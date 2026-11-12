@@ -138,6 +138,7 @@ public class CustomerService {
     private final CustomerTrustSignalsService trustSignals;
     private final ApplicationRejectionRepository rejectionRepository;
     private final BlocklistMirror blocklistMirror;
+    private final CustomerBlocklistKeys blocklistKeys;
 
     /**
      * Roles that see the ENTIRE customer book. Everyone else who holds {@code customer:view} is
@@ -1155,12 +1156,16 @@ public class CustomerService {
         CreditBriefView creditBrief = latestAppId != null ? creditBriefService.view(latestAppId) : null;
         ApplicationRejection block = profile != null && profile.getMobile() != null
                 ? activeBlocks(List.of(profile.getMobile())).get(profile.getMobile()) : null;
+        // The blocklist page is the same block: an ADMIN entry on any of this customer's identifiers
+        // shows here exactly like "Block customer" does.
+        String blocklistHit = block != null ? null
+                : blocklistMirror.firstActiveMatch(blocklistKeys.forCustomer(customerId)).orElse(null);
         return new CustomerDetail(customerId, profileView, appViews, loanViews, payments,
                 ownerStaffId, ownerName, creditBrief,
                 eligibilityService.overrideOf(customerId).orElse(null),
                 outstandingByLoanId,
-                block != null,
-                blockReason(block));
+                block != null || blocklistHit != null,
+                blocklistHit != null ? "On the blocklist (" + blocklistHit + ")" : blockReason(block));
     }
 
     /**
@@ -1197,10 +1202,12 @@ public class CustomerService {
         row.setBlockedUntil(ApplicationRejection.INDEFINITE);
         rejectionRepository.save(row);
 
+        // The block lives on the blocklist too, linked to this customer: every identifier we hold
+        // (mobile, PAN, Aadhaar, salary + payout accounts) so a new signup under any of them is
+        // stopped, and the blocklist page lists this customer.
         String mirrorReason = mirrorReason(detail);
-        blocklistMirror.block("PHONE", mobile, mirrorReason);
-        if (trimToNull(profile.getPan()) != null) {
-            blocklistMirror.block("PAN", profile.getPan(), mirrorReason);
+        for (var key : blocklistKeys.forCustomer(customerId)) {
+            blocklistMirror.block(key.type(), key.value(), mirrorReason, customerId);
         }
         logIfChanged(customerId, null, "blocked", null, detail);
         return new CustomerBlockView(customerId, true, detail);
@@ -1219,26 +1226,64 @@ public class CustomerService {
         requireVisible(customerId);
         CustomerProfile profile = requireProfileWithMobile(customerId);
         String mobile = profile.getMobile();
-        List<ApplicationRejection> live = rejectionRepository.findByMobileAndReasonCodeAndBlockedUntilAfter(
-                mobile, ApplicationRejection.BLOCKED_BY_STAFF, Instant.now());
-        if (live.isEmpty()) {
-            throw new BusinessException("NOT_BLOCKED", "This customer is not blocked by staff");
+        List<ApplicationRejection> live = liveStaffBlocks(customerId, mobile);
+        // Unblocking is total: the staff block AND every blocklist entry that matches this customer,
+        // whoever added it, so the customer is never left blocked by an entry not visible here.
+        int entries = blocklistMirror.deactivateAll(customerId, blocklistKeys.forCustomer(customerId));
+        if (live.isEmpty() && entries == 0) {
+            throw new BusinessException("NOT_BLOCKED", "This customer is not blocked");
         }
+        endStaffBlocks(live);
+        logIfChanged(customerId, null, "blocked",
+                live.isEmpty() ? "on the blocklist" : live.get(0).getReasonDetail(), null);
+        return new CustomerBlockView(customerId, false, null);
+    }
+
+    /**
+     * An ADMIN removed a blocklist entry written for this customer on the blocklist page: once nothing
+     * on the blocklist matches them any more, their staff block is lifted too, so both places give
+     * one answer. Runs inside the removing transaction.
+     */
+    @org.springframework.context.event.EventListener
+    public void onBlocklistEntryRemoved(com.navix.common.blocklist.BlocklistEntryRemovedEvent event) {
+        Long customerId = event.customerId();
+        if (customerId == null || blocklistMirror.hasActiveLinked(customerId)
+                || blocklistMirror.firstActiveMatch(blocklistKeys.forCustomer(customerId)).isPresent()) {
+            return;
+        }
+        CustomerProfile profile = latestProfile(applicationRepository.findByCustomerId(customerId));
+        List<ApplicationRejection> live = liveStaffBlocks(customerId, profile == null ? null : profile.getMobile());
+        if (!live.isEmpty()) {
+            endStaffBlocks(live);
+            logIfChanged(customerId, null, "blocked", live.get(0).getReasonDetail(), null);
+        }
+    }
+
+    /** Live BLOCKED_BY_STAFF rows on the customer id or their current mobile. */
+    private List<ApplicationRejection> liveStaffBlocks(Long customerId, String mobile) {
+        Map<Long, ApplicationRejection> live = new java.util.LinkedHashMap<>();
+        Instant now = Instant.now();
+        if (mobile != null) {
+            for (ApplicationRejection r : nullSafe(rejectionRepository.findByMobileAndReasonCodeAndBlockedUntilAfter(
+                    mobile, ApplicationRejection.BLOCKED_BY_STAFF, now))) {
+                live.put(r.getId(), r);
+            }
+        }
+        rejectionRepository.findFirstByCustomerIdAndReasonCodeAndBlockedUntilAfter(
+                customerId, ApplicationRejection.BLOCKED_BY_STAFF, now).ifPresent(r -> live.put(r.getId(), r));
+        return List.copyOf(live.values());
+    }
+
+    /** End each staff block now; the rows stay in the register as history. */
+    private void endStaffBlocks(List<ApplicationRejection> live) {
         Instant now = Instant.now();
         for (ApplicationRejection r : live) {
             r.setBlockedUntil(now);
             rejectionRepository.save(r);
-            String mirrorReason = mirrorReason(r.getReasonDetail());
-            blocklistMirror.unblock("PHONE", mobile, mirrorReason);
-            if (trimToNull(profile.getPan()) != null) {
-                blocklistMirror.unblock("PAN", profile.getPan(), mirrorReason);
-            }
         }
-        logIfChanged(customerId, null, "blocked", live.get(0).getReasonDetail(), null);
-        return new CustomerBlockView(customerId, false, null);
     }
 
-    /** The reason the mirrored blocklist entries carry — exact-matched again on unblock. */
+    /** The reason the mirrored blocklist entries carry. */
     private static String mirrorReason(String detail) {
         return "Blocked by staff: " + detail;
     }

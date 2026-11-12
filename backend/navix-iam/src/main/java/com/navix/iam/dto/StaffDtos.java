@@ -118,12 +118,13 @@ public final class StaffDtos {
             BlocklistType type,
             String value,
             String reason,
-            boolean active
+            boolean active,
+            Long customerId
     ) {
 
         public static BlocklistResponse of(BlocklistEntry entry) {
             return new BlocklistResponse(entry.getId(), entry.getType(), entry.getValue(),
-                    entry.getReason(), entry.isActive());
+                    entry.getReason(), entry.isActive(), entry.getCustomerId());
         }
     }
 }

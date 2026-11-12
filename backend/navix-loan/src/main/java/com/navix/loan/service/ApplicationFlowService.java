@@ -98,6 +98,10 @@ public class ApplicationFlowService {
     private final RepaymentDiscountOffers discountOffers;
     // ADMIN one-use "allow re-application" (V95): lets a disqualified customer reach credit review.
     private final com.navix.loan.repository.ReapplyAllowanceRepository allowanceRepository;
+    // The fraud blocklist: any active entry matching one of the customer's identifiers blocks a new
+    // application or reborrow, exactly like a staff block (files already in progress are untouched).
+    private final CustomerBlocklistKeys blocklistKeys;
+    private final com.navix.common.blocklist.BlocklistMirror blocklistMirror;
 
     /** Loan statuses that mean money is still owed past the due date — never fully repaid. */
     private static final Set<LoanStatus> DELINQUENT_LOAN_STATUSES =
@@ -1585,6 +1589,13 @@ public class ApplicationFlowService {
             throw new BusinessException("NOT_ELIGIBLE",
                     "Your account is not eligible for new loans. Please contact support.");
         }
+        // The blocklist page: an ADMIN entry on any of the customer's identifiers (mobile, PAN,
+        // Aadhaar, bank account) blocks them too. Same neutral message — never which identifier.
+        blocklistMirror.firstActiveMatch(blocklistKeys.forCustomer(customerId)).ifPresent(type -> {
+            log.info("blocked application start customer={} blocklist match={}", customerId, type);
+            throw new BusinessException("NOT_ELIGIBLE",
+                    "Your account is not eligible for new loans. Please contact support.");
+        });
         // Blocks are keyed on the customer id AND the mobile: a borrower who edits the mobile on their
         // profile must not walk out from under a block recorded against them.
         String mobile = latestProfileForCustomer(customerId).map(CustomerProfile::getMobile).orElse(null);

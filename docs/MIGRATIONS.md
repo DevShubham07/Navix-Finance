@@ -93,4 +93,5 @@ They live in `backend/navix-app/src/main/resources/db/migration/` and Flyway app
 | `V92__blank_known_seed_passwords.sql` | nulls `password_hash` on seeded staff accounts still carrying the passwords published in the repo (restore offline with `scripts/restore-demo-logins.sql`) |
 | `V100__scrub_bsa_statement_passwords.sql` | removes statement PDF passwords Signzy echoed into `bank_statement_analysis.response_json` |
 | `V101__esign_documents.sql` | `esign_document` + `esign_document_signer` — ADMIN uploads any PDF and has named signers Aadhaar-eSign it via Signzy Contract; flag `esign-documents` seeded off |
+| `V103__blocklist_merge.sql` | merges the blocklist page with "Block customer": `blocklist_entry.customer_id`, values normalised + de-duplicated, unique (type, value), and every live staff block gets a linked PHONE entry (PAN entries linked) |
 | `V102__esign_document_signature_boxes.sql` | drag-and-drop signature boxes (`jsonb` `{page,x,y,width,height}` in PDF points from top-left), sent as `signaturePosition CUSTOMIZE`; V101 page/position columns relaxed to nullable |

@@ -8,8 +8,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 /**
  * Spring Data JPA repository for {@link BlocklistEntry}.
- *
- * TODO: add a query for active entries by type for bulk screening.
  */
 public interface BlocklistEntryRepository extends JpaRepository<BlocklistEntry, Long> {
 
@@ -18,4 +16,8 @@ public interface BlocklistEntryRepository extends JpaRepository<BlocklistEntry, 
     Optional<BlocklistEntry> findByTypeAndValue(BlocklistType type, String value);
 
     List<BlocklistEntry> findByActiveTrue();
+
+    List<BlocklistEntry> findByCustomerIdAndActiveTrue(Long customerId);
+
+    boolean existsByCustomerIdAndActiveTrue(Long customerId);
 }

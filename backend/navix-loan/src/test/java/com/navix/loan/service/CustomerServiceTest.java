@@ -70,6 +70,7 @@ class CustomerServiceTest {
     @Mock private CustomerBookQuery bookQuery;
     @Mock private com.navix.loan.repository.ApplicationRejectionRepository rejectionRepository;
     @Mock private com.navix.common.blocklist.BlocklistMirror blocklistMirror;
+    @Mock private CustomerBlocklistKeys blocklistKeys;
 
     private CustomerService service;
 
@@ -82,7 +83,7 @@ class CustomerServiceTest {
                 staffDirectory, applicationActorDirectory, collectionCaseDirectory,
                 jdbc, creditBriefService, documentRepository, bureauStateService,
                 verificationFailureService, providerAttempts, verificationRepository, referenceRepository, otpVerifier, borrowerIdentity, eventPublisher,
-                loanMath, bookQuery, trustSignals, rejectionRepository, blocklistMirror);
+                loanMath, bookQuery, trustSignals, rejectionRepository, blocklistMirror, blocklistKeys);
         lenient().when(ownerRepository.findAll()).thenReturn(List.of());
         // Nothing outstanding by default: an unstubbed mock returns null, and the summary
         // dereferences the reason. Tests about a specific failure stub this themselves.
@@ -218,6 +219,9 @@ class CustomerServiceTest {
                 eq("9876543210"), eq(com.navix.loan.entity.ApplicationRejection.BLOCKED_BY_STAFF), any()))
                 .thenReturn(List.of());
 
+        when(blocklistKeys.forCustomer(9000001L)).thenReturn(List.of(com.navix.common.blocklist.BlocklistKey.of("PHONE", "9876543210"),
+                        com.navix.common.blocklist.BlocklistKey.of("PAN", "ABCDE1234F")));
+
         var view = service.block(9000001L, "  Repeated bounced repayments  ");
 
         assertThat(view.blocked()).isTrue();
@@ -235,9 +239,10 @@ class CustomerServiceTest {
         assertThat(saved.getValue().isIndefinite()).isTrue();
         assertThat(saved.getValue().getBlockedUntil())
                 .isEqualTo(com.navix.loan.entity.ApplicationRejection.INDEFINITE);
-        // Mirrored onto the fraud blocklist so dedupe flags a later signup on the same identifiers.
-        verify(blocklistMirror).block("PHONE", "9876543210", "Blocked by staff: Repeated bounced repayments");
-        verify(blocklistMirror).block("PAN", "ABCDE1234F", "Blocked by staff: Repeated bounced repayments");
+        // Every identifier goes onto the blocklist, linked to the customer, so a new signup under any
+        // of them is stopped and the blocklist page lists this customer.
+        verify(blocklistMirror).block("PHONE", "9876543210", "Blocked by staff: Repeated bounced repayments", 9000001L);
+        verify(blocklistMirror).block("PAN", "ABCDE1234F", "Blocked by staff: Repeated bounced repayments", 9000001L);
         // Audited the way assignOwner is.
         var log = org.mockito.ArgumentCaptor.forClass(com.navix.loan.entity.ProfileChangeLog.class);
         verify(changeLogRepository).save(log.capture());
@@ -284,7 +289,7 @@ class CustomerServiceTest {
         assertThatThrownBy(() -> service.block(9000001L, "no loan, no business here"))
                 .isInstanceOf(com.navix.common.exception.ResourceNotFoundException.class);
         verify(rejectionRepository, org.mockito.Mockito.never()).save(any());
-        verify(blocklistMirror, org.mockito.Mockito.never()).block(any(), any(), any());
+        verify(blocklistMirror, org.mockito.Mockito.never()).block(any(), any(), any(), any());
     }
 
     @Test
@@ -295,7 +300,7 @@ class CustomerServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("code", "FORBIDDEN_ROLE");
         verify(rejectionRepository, org.mockito.Mockito.never()).save(any());
-        verify(blocklistMirror, org.mockito.Mockito.never()).block(any(), any(), any());
+        verify(blocklistMirror, org.mockito.Mockito.never()).block(any(), any(), any(), any());
     }
 
     @Test
@@ -310,7 +315,7 @@ class CustomerServiceTest {
     }
 
     @Test
-    void adminUnblockEndsTheStaffBlockNowAndLiftsOnlyTheMirroredEntries() {
+    void adminUnblockEndsTheStaffBlockNowAndClearsEveryMatchingBlocklistEntry() {
         ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
         blockableProfile();
         var live = new com.navix.loan.entity.ApplicationRejection();
@@ -322,6 +327,10 @@ class CustomerServiceTest {
                 eq("9876543210"), eq(com.navix.loan.entity.ApplicationRejection.BLOCKED_BY_STAFF), any()))
                 .thenReturn(List.of(live));
 
+        var keys = List.of(com.navix.common.blocklist.BlocklistKey.of("PHONE", "9876543210"),
+                        com.navix.common.blocklist.BlocklistKey.of("PAN", "ABCDE1234F"));
+        when(blocklistKeys.forCustomer(9000001L)).thenReturn(keys);
+
         var view = service.unblock(9000001L);
 
         assertThat(view.blocked()).isFalse();
@@ -329,9 +338,8 @@ class CustomerServiceTest {
         assertThat(live.getBlockedUntil()).isBeforeOrEqualTo(java.time.Instant.now());
         assertThat(live.isIndefinite()).isFalse();
         verify(rejectionRepository).save(live);
-        // Exact-reason unblock: an entry an ADMIN added separately for the same PAN is left alone.
-        verify(blocklistMirror).unblock("PHONE", "9876543210", "Blocked by staff: Repeated bounced repayments");
-        verify(blocklistMirror).unblock("PAN", "ABCDE1234F", "Blocked by staff: Repeated bounced repayments");
+        // Unblock is total: every entry linked to or matching the customer is cleared, whoever added it.
+        verify(blocklistMirror).deactivateAll(9000001L, keys);
         var log = org.mockito.ArgumentCaptor.forClass(com.navix.loan.entity.ProfileChangeLog.class);
         verify(changeLogRepository).save(log.capture());
         assertThat(log.getValue().getField()).isEqualTo("blocked");
@@ -349,6 +357,46 @@ class CustomerServiceTest {
         assertThatThrownBy(() -> service.unblock(9000001L))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("code", "NOT_BLOCKED");
+    }
+
+    @Test
+    void unblockLiftsACustomerBlockedOnlyByABlocklistEntry() {
+        ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
+        blockableProfile();
+        when(rejectionRepository.findByMobileAndReasonCodeAndBlockedUntilAfter(any(), any(), any()))
+                .thenReturn(List.of());
+        when(blocklistMirror.deactivateAll(eq(9000001L), any())).thenReturn(1);
+
+        assertThat(service.unblock(9000001L).blocked()).isFalse();
+        verify(rejectionRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void removingTheLastLinkedBlocklistEntryLiftsTheStaffBlock() {
+        blockableProfile();
+        var live = new com.navix.loan.entity.ApplicationRejection();
+        live.setMobile("9876543210");
+        live.setReasonCode(com.navix.loan.entity.ApplicationRejection.BLOCKED_BY_STAFF);
+        live.setReasonDetail("Repeated bounced repayments");
+        live.setBlockedUntil(com.navix.loan.entity.ApplicationRejection.INDEFINITE);
+        when(rejectionRepository.findByMobileAndReasonCodeAndBlockedUntilAfter(
+                eq("9876543210"), eq(com.navix.loan.entity.ApplicationRejection.BLOCKED_BY_STAFF), any()))
+                .thenReturn(List.of(live));
+        when(blocklistMirror.hasActiveLinked(9000001L)).thenReturn(false);
+
+        service.onBlocklistEntryRemoved(new com.navix.common.blocklist.BlocklistEntryRemovedEvent(9000001L));
+
+        assertThat(live.isIndefinite()).isFalse();
+        verify(rejectionRepository).save(live);
+    }
+
+    @Test
+    void removingOneEntryKeepsTheStaffBlockWhileAnotherStillMatches() {
+        when(blocklistMirror.hasActiveLinked(9000001L)).thenReturn(true);
+
+        service.onBlocklistEntryRemoved(new com.navix.common.blocklist.BlocklistEntryRemovedEvent(9000001L));
+
+        verify(rejectionRepository, org.mockito.Mockito.never()).save(any());
     }
 
     @Test

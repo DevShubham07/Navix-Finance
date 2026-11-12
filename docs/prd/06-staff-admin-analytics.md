@@ -1026,13 +1026,22 @@ Request and response payloads are left out on purpose. Endpoint paths appear onl
 ## §F Admin registers and settings
 
 ### UC-S4-32 Fraud blocklist
+> **Updated 2026-11-13 (V103): the blocklist and "Block customer" are one block.** A customer is
+> blocked for new applications and reborrows when they hold a staff block or any of their
+> identifiers (login + profile mobile, PAN, Aadhaar, salary / payout account) is an active entry —
+> `NOT_ELIGIBLE` "Your account is not eligible for new loans. Please contact support." Files already in
+> progress are not touched. Values are stored normalised (PAN uppercase, phone = last 10 digits,
+> Aadhaar / account digits only; a value with nothing left → `BLOCKLIST_VALUE_REQUIRED`); (type, value)
+> is unique. "Block customer" writes every identifier here linked to the customer; unblocking the
+> customer clears every matching entry; removing a customer's last linked entry here lifts their staff
+> block. The customer page and the Customers "Blocked" segment show a blocklist match as blocked.
 - **Actor / working role / permission:** real ADMIN for list, add and remove; UI `staff:manage`.
 - **Entry point:** nav **Blocklist** (`/staff/admin/blocklist`).
 - **Screen:**
-  - Title "Fraud blocklist", with the subtitle "Blocked PAN, Aadhaar ref, phone, device and bank account identifiers."
+  - Title "Fraud blocklist"; the subtitle explains that a match blocks new applications and borrowing again, and that removing a customer's entries unblocks them.
   - Form: **Type** (PAN · Aadhaar ref · Phone · Device · Bank account), **Value** ("ABCDE1234F"), **Reason (optional)** ("Confirmed fraud").
-  - Table: S.No. · Type · Value · Reason · Action (Remove). Filters on Type and Reason.
-  - Export columns: Type, Value, Reason, Active.
+  - Table: S.No. · Type · Value · Reason · Customer (link to the customer page when "Block customer" wrote the entry) · Action (Remove). Filters on Type and Reason.
+  - Export columns: Type, Value, Reason, Customer, Active.
   - Empty state: "No active blocklist entries."
 - **Main flow:**
   1. Admin adds an entry. If an entry with the same type and value exists, it is **reactivated** and its reason replaced, so no duplicate is made.
@@ -1389,9 +1398,8 @@ Request and response payloads are left out on purpose. Endpoint paths appear onl
    - "Users by Company" counts customers on *applications created* in the period, but its row click lists *loans disbursed* in the period.
    - Its ⓘ says "(latest profile)", while the SQL uses each application's own profile.
 4. **"Invited" staff.** The Employee Snapshot's "Invited (not yet joined)" and the staff register's Invited tab read `staff_user.status = INVITED`. No code writes that status (it exists only in the V2 CHECK), because invites live in `staff_invite`. So both read 0 unless legacy rows exist.
-5. **Blocklist screens nothing.**
-   - `BlocklistType`'s comment and the controller say entries are screened at sign-up and before approval, and that "a match stops the application".
-   - In fact `BlocklistService.isBlocked` has no caller, and navix-loan never reads `blocklist_entry`.
+5. **Blocklist screened nothing — FIXED 2026-11-13 (V103), see UC-S4-32.**
+   - Before the fix, `BlocklistService.isBlocked` had no caller and navix-loan never read `blocklist_entry`.
    - The controller also says "RBAC deferred", but the service enforces ADMIN.
 6. **Dead state counted.** The Disbursement Head's "Failed" card, its queue strip and the `disbursement-pending` report all read `DISBURSEMENT_FAILED`. CLAUDE.md says nothing transitions into it.
 7. **PTP tile copy.** The "Total after assignment" and "Same-day collection" hints say money paid after or on the day of a *promise*, but the SQL keys on the *case creation* day. Only the PTP Collected chart actually requires a `PROMISE_TO_PAY` interaction.

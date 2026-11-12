@@ -30,4 +30,10 @@ class BorrowerIdentityAdapter implements BorrowerIdentityPort {
         String ten = digits.length() > 10 ? digits.substring(digits.length() - 10) : digits;
         return mobileRepository.findById(customerId).map(c -> c.getMobile().equals(ten)).orElse(false);
     }
+
+    @Override
+    public java.util.Optional<String> loginMobile(Long customerId) {
+        return customerId == null ? java.util.Optional.empty()
+                : mobileRepository.findById(customerId).map(BorrowerMobile::getMobile);
+    }
 }

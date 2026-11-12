@@ -134,7 +134,7 @@ backend/                       Spring Boot, Maven multi-module (com.navix)
   navix-onboarding/, navix-kyc/ legacy; their routes are denyAll in SecurityConfig — do not build on them
   navix-app/                   ★ the only bootable module: auth, SecurityConfig, JwtAuthFilter, schedulers,
                                dashboard, reports, search, skip trace, BSA, provider workbench, Flyway
-    src/main/resources/db/migration/   V1..V102 (the real schema)
+    src/main/resources/db/migration/   V1..V103 (the real schema)
   (navix-disbursement/ is a dead directory — only a stale target/, not in the pom)
 frontend/src/
   app/(marketing)/             public site — raw-HTML pages from _content/*.ts + marketing-scripts.tsx
@@ -386,10 +386,16 @@ sidebar and Cmd/Ctrl+K search):
   `/staff/customers/[id]`, 21 tabs: Customer, Loan, Disbursal, Repayment, Collections, Third-party
   logs, Banking, Credit report, BRE, AI Analyzer, Journey, References, Documents, Addresses, Dedupe,
   Communication, Activity, Sanction, Follow-ups, Mandate, Verifications), all applications,
-  rejections, onboarding waitlist, blocklist, customer messages, templates. The **blocklist is a
-  register only** — `BlocklistService.isBlocked` has no caller, so an entry screens nothing; what
-  actually stops a customer is ADMIN "block customer" (a `BLOCKED_BY_STAFF` rejection row, which
-  also mirrors PHONE/PAN into the blocklist).
+  rejections, onboarding waitlist, blocklist, customer messages, templates. **Blocklist and
+  "Block customer" are one block (V103):** a customer is blocked for new applications and reborrows
+  when they hold a `BLOCKED_BY_STAFF` row **or** any of their identifiers (login + profile mobile,
+  PAN, Aadhaar, salary / payout account — `CustomerBlocklistKeys`) is an active `blocklist_entry`
+  (`ApplicationFlowService.assertNotBlocked`, same neutral `NOT_ELIGIBLE` message). Files already in
+  progress are not touched. Values are stored normalised (`BlocklistKey`), (type, value) is unique.
+  "Block customer" writes every identifier as an entry linked by `customer_id`; unblocking a customer
+  clears every matching entry; removing a customer's last linked entry on the blocklist page lifts
+  their staff block (`BlocklistEntryRemovedEvent`). `DEVICE` entries match nothing (no device id is
+  captured).
 - *Leads & sales:* leads, telecalling, leads dashboard, lead import (CSV/XLSX via S3, background
   job), referral payouts.
 - *Collections:* Loans register, DPD buckets worklist (Upcoming, 1–7, 8–30, 31–60, 61–90, 90+),
@@ -464,6 +470,10 @@ Integer paise (`long`), `BigDecimal` rates, `HALF_UP`. Constants: `PROCESSING_FE
 `MAX_INSTANT_LOAN_PAISE=100_000_000`, `MAX_TERM_DAYS=40`, `SALARY_GRACE_DAYS=0`.
 
 - fee = round(P × 0.10) − fee discount; GST = round(fee × 0.18); **net = P − fee − GST**.
+- **Due date at disbursal** (`LoanService.disburse`) = the Credit Executive's
+  `approved_repayment_date` — the date the summary and signed KFS quote — when it is after the payout
+  day; only a date that has already passed (a sanction never expires) falls back to
+  `dueDateFromSalary(payoutDay, salaryDay)`.
 - `dueDateFromSalary(disbursedOn, salaryDay)` = the **latest** salary date strictly after disbursal
   and ≤ disbursal + 40 days (salary day clamped to month length).
 - **Outstanding is compute-on-read** (`RepaymentService.breakdown`): `days = DAYS.between(disbursedOn,
@@ -481,7 +491,7 @@ capped at 27 days + 5 penalty days (₹1,000) → ₹13,700. Prepaid on 2026-06-
 
 ## 10. Data model & migrations
 
-Flyway migrations live in **`backend/navix-app/src/main/resources/db/migration/`** — **V1..V102**,
+Flyway migrations live in **`backend/navix-app/src/main/resources/db/migration/`** — **V1..V103**,
 contiguous, applied on boot. Each file's header comment explains *why*; the index is
 [`docs/MIGRATIONS.md`](docs/MIGRATIONS.md).
 
@@ -631,10 +641,10 @@ Who does what, auth, hosts, live status and per-API gotchas →
 ## 14. Known gaps (go-live backlog)
 
 - Real bank **payout** (NEFT/IMPS) at disbursement — today the Disbursement Head transfers by hand.
-- **Known defects** (full list: `docs/PRD_REBUILD.md` Appendix G): the loan is booked on a due date
-  recomputed at disbursal, not the signed `approved_repayment_date`; the blocklist screens nothing;
-  referral codes can't be redeemed; the reminder cron runs on UTC; the bureau-question path never
-  submits KYC; ADMIN can record and verify the same repayment.
+- **Known defects** (full list: `docs/PRD_REBUILD.md` Appendix G): referral codes can't be
+  redeemed; the reminder cron runs on UTC; the bureau-question path never submits KYC; ADMIN can
+  record and verify the same repayment. (Fixed 2026-11-13: the loan is now booked on the Credit
+  Executive's `approved_repayment_date`; the blocklist now blocks.)
 - Bureau score floor recalibration (then re-enable `bureau-auto-reject`).
 - DB: FK constraints; drop the legacy `bytea` doc column; PII-at-rest encryption. The raw Aadhaar
   number (V75) and unredacted card images are a deliberate, product-approved exception to masking.

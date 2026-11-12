@@ -4012,6 +4012,8 @@ export interface BlocklistResponse {
   value: string;
   reason: string | null;
   active: boolean;
+  /** Set when "Block customer" wrote this entry; removing a customer's last entry unblocks them. */
+  customerId: number | null;
 }
 
 /** One company expense (ADMIN-tracked spend). Mirrors backend ExpenseResponse. Money is paise. */

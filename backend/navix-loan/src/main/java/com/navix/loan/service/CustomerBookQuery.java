@@ -94,7 +94,7 @@ public class CustomerBookQuery {
                 order by l.customer_id, l.id desc
             ), prof as (
                 select distinct on (a.customer_id) a.customer_id, p.full_name, p.pan, p.mobile,
-                       p.employer, p.monthly_salary_paise, p.bureau_score, p.risk_category
+                       p.aadhaar, p.salary_account_number, p.employer, p.monthly_salary_paise, p.bureau_score, p.risk_category
                 from customer_profile p
                 join loan_application a on a.id = p.application_id
                 order by a.customer_id, a.id desc
@@ -116,9 +116,17 @@ public class CustomerBookQuery {
                             select 1 from loan cl
                             where cl.customer_id = la.customer_id and cl.status = 'CLOSED'
                               and cl.closed_on <= cast(la.created_at at time zone 'Asia/Kolkata' as date))) as reloan,
-                       exists (
+                       (exists (
                             select 1 from application_rejection r
-                            where r.mobile = pr.mobile and r.blocked_until > now()) as blocked,
+                            where r.mobile = pr.mobile and r.blocked_until > now())
+                        or exists (
+                            -- the blocklist page is the same block (values stored normalised)
+                            select 1 from blocklist_entry bl
+                            where bl.active and (bl.customer_id = la.customer_id
+                               or (bl.type = 'PHONE' and bl.value = pr.mobile)
+                               or (bl.type = 'PAN' and bl.value = upper(pr.pan))
+                               or (bl.type = 'AADHAAR_REF' and bl.value = pr.aadhaar)
+                               or (bl.type = 'BANK_ACCOUNT' and bl.value = pr.salary_account_number)))) as blocked,
                        coalesce(s.at, la.created_at) as status_changed_at,
                        pr.full_name, pr.pan, pr.mobile,
                        pr.employer, pr.monthly_salary_paise as salary, pr.bureau_score as credit_score,

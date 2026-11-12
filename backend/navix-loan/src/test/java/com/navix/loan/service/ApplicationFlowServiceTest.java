@@ -88,6 +88,10 @@ class ApplicationFlowServiceTest {
     @Mock
     private com.navix.loan.repository.ReapplyAllowanceRepository allowanceRepository;
     @Mock
+    private CustomerBlocklistKeys blocklistKeys;
+    @Mock
+    private com.navix.common.blocklist.BlocklistMirror blocklistMirror;
+    @Mock
     private com.navix.loan.repository.RepaymentDiscountOfferRepository offerRepository;
 
     private ApplicationFlowService flow;
@@ -102,7 +106,7 @@ class ApplicationFlowServiceTest {
                 documentRepository, verificationRepository, referenceRepository, new LoanMath(),
                 event -> {}, referralService, dsaCommissionService, featureFlags, mandateService,
                 new RepaymentDiscountOffers(offerRepository, loanRepository, paymentRepository),
-                allowanceRepository);
+                allowanceRepository, blocklistKeys, blocklistMirror);
         // Applications are open unless a test closes them (strict stubs reject a bare other-flag stub).
         lenient().when(featureFlags.isEnabled(IntakeSwitchService.FLAG, false)).thenReturn(false);
         // Default: assignee passes activation gating; negative case overrides below.
@@ -216,6 +220,22 @@ class ApplicationFlowServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("code", "NOT_ELIGIBLE")
                 .hasMessage("Your account is not eligible for new loans. Please contact support.");
+    }
+
+    /** The blocklist page is the same block: an ADMIN entry on any identifier stops a new application. */
+    @Test
+    void aBlocklistEntryOnAnyIdentifierStopsANewApplication() {
+        actor("7", "BORROWER");
+        var keys = List.of(com.navix.common.blocklist.BlocklistKey.of("PAN", "ABCDE1234F"));
+        when(blocklistKeys.forCustomer(7L)).thenReturn(keys);
+        when(blocklistMirror.firstActiveMatch(keys)).thenReturn(Optional.of("PAN"));
+
+        assertThatThrownBy(() -> flow.createDraft(7L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "NOT_ELIGIBLE")
+                // never says which identifier matched
+                .hasMessage("Your account is not eligible for new loans. Please contact support.");
+        verify(applicationRepository, never()).save(any());
     }
 
     /** A rejection is recorded against the customer id too: a borrower who edits their profile mobile

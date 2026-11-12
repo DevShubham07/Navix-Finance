@@ -12,11 +12,10 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /**
- * A fraud / chargeback / fake-KYC blocklist entry. Screened at sign-up AND
- * before approval; a match stops the application.
- *
- * TODO: add a unique index on (type, value). Who added/removed it is captured
- * via {@link BaseAuditEntity}.
+ * A fraud / chargeback / fake-KYC blocklist entry. A customer matching any active entry cannot
+ * start a new application or reborrow ({@code ApplicationFlowService.assertNotBlocked}). The value is
+ * stored normalised ({@code BlocklistKey.normalize}); (type, value) is unique (V103). Who added /
+ * removed it is captured via {@link BaseAuditEntity}.
  */
 @Entity
 @Table(name = "blocklist_entry")
@@ -41,4 +40,11 @@ public class BlocklistEntry extends BaseAuditEntity {
     /** Whether the entry is currently active. */
     @Column(name = "active", nullable = false)
     private boolean active;
+
+    /**
+     * The customer this entry was written for by "Block customer" (null for an entry an ADMIN
+     * typed on the blocklist page). Removing the last such entry lifts that customer's staff block.
+     */
+    @Column(name = "customer_id")
+    private Long customerId;
 }
