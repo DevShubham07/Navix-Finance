@@ -769,6 +769,12 @@ What holds across all of it, and does not belong in that file:
   an **SSM param** (`/navix/dev/navix/captcha/secret`), not a task-def env var — no new ECS revision.
   **Order matters:** site key first, secret second; the reverse locks everyone out until the frontend
   rebuild lands, because `NEXT_PUBLIC_*` is inlined at build time.
+- **Network guard** (frontend `middleware.ts` → `lib/network-guard.ts`; the whole site except static
+  files, the block page and `/api/payu/*`): non-India visitors (`x-vercel-ip-country`, so Vercel-only)
+  and VPN/proxy/Tor IPs (proxycheck.io, `PROXYCHECK_API_KEY`, server-only; blank = skipped) get
+  `/network-blocked` (403), or a `NETWORK_BLOCKED` 403 envelope on `/api/*`. Fails open on vendor
+  errors; a clean verdict is cached 30 min in the IP-bound signed `dbx_net_ok` cookie.
+  `NETWORK_GUARD_ALLOWED_COUNTRIES` (default `IN`); `NETWORK_GUARD_DISABLED=true` is the kill switch.
 
 ---
 
