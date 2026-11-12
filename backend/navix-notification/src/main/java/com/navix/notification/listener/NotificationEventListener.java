@@ -1,5 +1,6 @@
 package com.navix.notification.listener;
 
+import com.navix.common.loan.LoanDirectory;
 import com.navix.common.notification.ContactInfo;
 import com.navix.common.notification.RecipientType;
 import com.navix.common.notification.event.ApplicationTransitionedEvent;
@@ -64,14 +65,17 @@ public class NotificationEventListener {
     private final String frontendBaseUrl;
     /** Fetches the signed sanction-letter PDF bytes for the SANCTION_LETTER_SIGNED email attachment. */
     private final DocumentStoragePort storage;
+    /** Renders the No Dues certificate attached to the LOAN_CLOSED email. */
+    private final LoanDirectory loanDirectory;
 
     public NotificationEventListener(NotificationDispatcher dispatcher,
             @Value("${navix.app.frontend-base-url:http://localhost:3000}") String frontendBaseUrl,
-            DocumentStoragePort storage) {
+            DocumentStoragePort storage, LoanDirectory loanDirectory) {
         this.dispatcher = dispatcher;
         this.frontendBaseUrl = frontendBaseUrl.endsWith("/")
                 ? frontendBaseUrl.substring(0, frontendBaseUrl.length() - 1) : frontendBaseUrl;
         this.storage = storage;
+        this.loanDirectory = loanDirectory;
     }
 
     /** The application state-machine: one event per transition, mapped by {@code action} (§5). */
@@ -90,7 +94,28 @@ public class NotificationEventListener {
                 .actorId(e.actorId())
                 .actorRole(e.actorRole())
                 .put("retryLine", retryLine(e))
+                .attachments(type == NotificationType.LOAN_CLOSED ? closureCertificate(e) : List.of())
                 .build());
+    }
+
+    /**
+     * The No Dues certificate for the LOAN_CLOSED email. Fail-open like the signed sanction letter:
+     * if it can't be rendered the email still goes out without it (§12 — never block on delivery).
+     */
+    private List<EmailAttachment> closureCertificate(ApplicationTransitionedEvent e) {
+        if (e.loanId() == null) {
+            return List.of();
+        }
+        try {
+            return loanDirectory.closureCertificate(e.loanId())
+                    .map(pdf -> List.of(new EmailAttachment(
+                            "DhanBoost-No-Dues-Certificate-" + e.loanId() + ".pdf", "application/pdf", pdf)))
+                    .orElse(List.of());
+        } catch (RuntimeException ex) {
+            log.warn("Could not render the closure certificate for loan {} (sending LOAN_CLOSED without "
+                    + "the attachment): {}", e.loanId(), ex.getMessage());
+            return List.of();
+        }
     }
 
     /**

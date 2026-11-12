@@ -1518,6 +1518,10 @@ export const borrowerApi = {
   /** Loan summary (net disbursed, due date, total repayable) once ACTIVE. */
   loan: (loanId: number) => bff<LoanView>(`${BORROWER_LOAN_BASE}/${loanId}`, "GET"),
 
+  /** No Dues certificate (or settlement closure letter) PDF of a CLOSED loan — open with `openDocument`. */
+  closureCertificate: (loanId: number) =>
+    bff<DocumentContent>(`${BORROWER_LOAN_BASE}/${loanId}/closure-certificate`, "GET"),
+
   /** Prepayment-aware balance as of a date (interest only to the day paid). */
   outstanding: (loanId: number, asOf?: string) =>
     bff<OutstandingView>(

@@ -49,6 +49,8 @@ public class LoanDirectoryAdapter implements LoanDirectory {
     private final LoanApplicationRepository applicationRepository;
     private final CustomerProfileRepository profileRepository;
     private final RepaymentService repaymentService;
+    private final CustomerReviewService reviewService;
+    private final com.navix.loan.pdf.ClosureCertificatePdfRenderer certificateRenderer;
 
     @Override
     @Transactional(readOnly = true)
@@ -246,6 +248,27 @@ public class LoanDirectoryAdapter implements LoanDirectory {
     @Transactional
     public void recomputeOutstanding(Long loanId) {
         repaymentService.recomputeOutstanding(loanId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<byte[]> closureCertificate(Long loanId) {
+        if (loanId == null) {
+            return Optional.empty();
+        }
+        return loanRepository.findById(loanId)
+                .filter(loan -> loan.getStatus() == LoanStatus.CLOSED)
+                .map(loan -> {
+                    LocalDate closedOn = loan.getClosedOn() != null ? loan.getClosedOn() : LocalDate.now(IST);
+                    var balance = repaymentService.outstandingBreakdownAsOf(loan, closedOn);
+                    Long applicationId = applicationRepository.findByLoanId(loanId)
+                            .map(LoanApplication::getId).orElse(null);
+                    String name = reviewService.latestProfile(loan.getCustomerId())
+                            .map(CustomerProfile::getFullName).orElse(null);
+                    return certificateRenderer.render(loanId, applicationId, name, loan.getPrincipal(),
+                            loan.getDisbursedOn(), closedOn, balance.verifiedPaise(),
+                            balance.settledAmountPaise());
+                });
     }
 
     /** Build the snapshot, resolving the borrower via the application's KYC profile (both nullable). */

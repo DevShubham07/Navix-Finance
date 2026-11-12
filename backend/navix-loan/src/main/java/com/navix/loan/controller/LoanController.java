@@ -36,6 +36,7 @@ public class LoanController {
     private final RepaymentService repaymentService;
     private final TransactionService transactionService;
     private final com.navix.loan.service.CustomerService customerService;
+    private final com.navix.common.loan.LoanDirectory loanDirectory;
 
     @GetMapping("/{loanId}")
     public ApiResponse<LoanView> getLoan(@PathVariable Long loanId) {
@@ -45,6 +46,21 @@ public class LoanController {
         // effective status so a past-due ACTIVE loan reads as OVERDUE (matches the repay page).
         long owed = repaymentService.outstandingBreakdownAsOf(loan, null).outstandingPaise();
         return ApiResponse.ok(LoanView.of(loan, owed, loan.effectiveStatus(LocalDate.now())));
+    }
+
+    /**
+     * The No Dues certificate (or settlement closure letter) of a CLOSED loan, as base64 PDF for the
+     * borrower's Past loans download. Owner-or-staff, same as the loan read; rendered on demand.
+     */
+    @GetMapping("/{loanId}/closure-certificate")
+    public ApiResponse<com.navix.loan.dto.ReviewDtos.DocumentContentView> closureCertificate(
+            @PathVariable Long loanId) {
+        readableLoan(loanId);
+        byte[] pdf = loanDirectory.closureCertificate(loanId).orElseThrow(() -> new BusinessException(
+                "LOAN_NOT_CLOSED", "The certificate is available once the loan is closed"));
+        return ApiResponse.ok(new com.navix.loan.dto.ReviewDtos.DocumentContentView(null,
+                "NO_DUES_CERTIFICATE", "DhanBoost-No-Dues-Certificate-" + loanId + ".pdf", "application/pdf",
+                java.util.Base64.getEncoder().encodeToString(pdf)));
     }
 
     /**

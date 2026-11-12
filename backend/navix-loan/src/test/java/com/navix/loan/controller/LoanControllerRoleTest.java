@@ -21,7 +21,7 @@ class LoanControllerRoleTest {
 
     private final RepaymentService repaymentService = mock(RepaymentService.class);
     private final LoanController controller = new LoanController(repaymentService, mock(TransactionService.class),
-            mock(com.navix.loan.service.CustomerService.class));
+            mock(com.navix.loan.service.CustomerService.class), mock(com.navix.common.loan.LoanDirectory.class));
 
     @AfterEach
     void clearActor() {

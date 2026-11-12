@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 import com.navix.common.notification.event.ApplicationTransitionedEvent;
 import com.navix.common.notification.event.RepaymentRejectedEvent;
@@ -35,11 +36,14 @@ class NotificationEventListenerTest {
     @Mock
     private DocumentStoragePort storage;
 
+    @Mock
+    private com.navix.common.loan.LoanDirectory loanDirectory;
+
     private NotificationEventListener listener;
 
     @BeforeEach
     void setUp() {
-        listener = new NotificationEventListener(dispatcher, "http://localhost:3000", storage);
+        listener = new NotificationEventListener(dispatcher, "http://localhost:3000", storage, loanDirectory);
     }
 
     private static ApplicationTransitionedEvent transition(String action, String toStatus) {
@@ -191,6 +195,27 @@ class NotificationEventListenerTest {
         listener.onApplicationTransitioned(transition("CREATE", "DRAFT"));
         listener.onApplicationTransitioned(transition("VALIDATE_SUCCESS", "DISBURSED"));
         verify(dispatcher, never()).dispatch(any(), any());
+    }
+
+    @Test
+    void loanClosedAttachesTheNoDuesCertificate() {
+        when(loanDirectory.closureCertificate(2L)).thenReturn(java.util.Optional.of(new byte[] {1, 2, 3}));
+        listener.onApplicationTransitioned(transition("REPAID", "CLOSED"));
+
+        ArgumentCaptor<NotificationContext> ctx = ArgumentCaptor.forClass(NotificationContext.class);
+        verify(dispatcher).dispatch(org.mockito.ArgumentMatchers.eq(NotificationType.LOAN_CLOSED), ctx.capture());
+        assertThat(ctx.getValue().attachments()).singleElement()
+                .satisfies(a -> assertThat(a.filename()).isEqualTo("DhanBoost-No-Dues-Certificate-2.pdf"));
+    }
+
+    @Test
+    void loanClosedStillSendsWhenTheCertificateFails() {
+        when(loanDirectory.closureCertificate(2L)).thenThrow(new IllegalStateException("boom"));
+        listener.onApplicationTransitioned(transition("REPAID", "CLOSED"));
+
+        ArgumentCaptor<NotificationContext> ctx = ArgumentCaptor.forClass(NotificationContext.class);
+        verify(dispatcher).dispatch(org.mockito.ArgumentMatchers.eq(NotificationType.LOAN_CLOSED), ctx.capture());
+        assertThat(ctx.getValue().attachments()).isEmpty();
     }
 
     @Test

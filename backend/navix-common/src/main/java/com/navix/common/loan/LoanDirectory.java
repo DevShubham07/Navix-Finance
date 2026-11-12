@@ -104,4 +104,13 @@ public interface LoanDirectory {
      * who has already paid the settled figure must not wait for another payment to be closed.
      */
     void recomputeOutstanding(Long loanId);
+
+    /**
+     * The borrower's closure document (No Dues certificate, or a settlement closure letter) as PDF
+     * bytes — empty unless the loan exists and is CLOSED. Actor-free: the async LOAN_CLOSED email
+     * listener attaches it. Defaults to empty so test doubles need not implement it.
+     */
+    default Optional<byte[]> closureCertificate(Long loanId) {
+        return Optional.empty();
+    }
 }

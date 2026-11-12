@@ -3,11 +3,12 @@
 import * as React from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { Wallet, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Wallet, CheckCircle2, AlertTriangle, Download } from "lucide-react";
 import { PaymentProofLink } from "@/components/ui/payment-proof-link";
 import { InfoRow } from "@/components/borrower/summary";
 import {
   borrowerApi,
+  openDocument,
   paiseToINR,
   type PaymentView,
 } from "@/lib/api/applications";
@@ -124,7 +125,8 @@ export function LoanDetailBody({
         <InfoRow label="Paid so far" value={paiseToINR(paidPaise)} />
         {settled ? (
           <div className="mt-2 flex items-center gap-2 rounded bg-success-50 px-4 py-3 text-sm font-semibold text-success-700">
-            <CheckCircle2 size={16} className="flex-shrink-0" /> Fully repaid — loan closed
+            <CheckCircle2 size={16} className="flex-shrink-0" />{" "}
+            {isSettlement ? "Closed by full & final settlement" : "Fully repaid — loan closed"}
           </div>
         ) : (
           <>
@@ -154,6 +156,7 @@ export function LoanDetailBody({
             )}
           </>
         )}
+        {loan.status === "CLOSED" && <CertificateButton loanId={loan.id} settlement={isSettlement} />}
       </section>
 
       {/* Payment history with dates + verification status. */}
@@ -174,6 +177,32 @@ export function LoanDetailBody({
         </Link>
       )}
     </div>
+  );
+}
+
+/** Downloads the closed loan's No Dues certificate (a settlement closure letter for a settled loan). */
+function CertificateButton({ loanId, settlement }: { loanId: number; settlement: boolean }) {
+  const [busy, setBusy] = React.useState(false);
+  const [failed, setFailed] = React.useState(false);
+  const download = async () => {
+    setBusy(true);
+    setFailed(false);
+    try {
+      openDocument(await borrowerApi.closureCertificate(loanId), true);
+    } catch {
+      setFailed(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <button type="button" className="btn btn-outline btn-block mt-3" onClick={download} disabled={busy}>
+        <Download size={16} />{" "}
+        {busy ? "Preparing…" : settlement ? "Download closure letter" : "Download No Dues certificate"}
+      </button>
+      {failed && <p className="mt-2 text-xs text-error-600">Could not download the certificate. Please try again.</p>}
+    </>
   );
 }
 

@@ -36,6 +36,8 @@ class LoanDirectoryAdapterTest {
     private CustomerProfileRepository profileRepository;
     @Mock
     private RepaymentService repaymentService;
+    @Mock
+    private CustomerReviewService reviewService;
 
     private LoanDirectoryAdapter adapter;
 
@@ -54,7 +56,7 @@ class LoanDirectoryAdapterTest {
     @BeforeEach
     void setUp() {
         adapter = new LoanDirectoryAdapter(loanRepository, applicationRepository, profileRepository,
-                repaymentService);
+                repaymentService, reviewService, new com.navix.loan.pdf.ClosureCertificatePdfRenderer());
     }
 
     private Loan loan(long id, LoanStatus status) {
@@ -364,5 +366,24 @@ class LoanDirectoryAdapterTest {
         when(repaymentService.outstandingForAll(any(), any())).thenReturn(java.util.Map.of());
 
         assertThat(adapter.listCollectible(today()).get(0).preDue()).isTrue();
+    }
+
+    @Test
+    void closureCertificateRendersForAClosedLoanOnly() {
+        Loan closed = loan(41L, LoanStatus.CLOSED);
+        closed.setClosedOn(today());
+        when(loanRepository.findById(41L)).thenReturn(Optional.of(closed));
+        when(repaymentService.outstandingBreakdownAsOf(closed, today()))
+                .thenReturn(new RepaymentService.OutstandingBreakdown(0L, 0L, 0L, 1_040_000L, null, 30, 0));
+        when(applicationRepository.findByLoanId(41L)).thenReturn(Optional.empty());
+        when(reviewService.latestProfile(7L)).thenReturn(Optional.empty());
+
+        Optional<byte[]> pdf = adapter.closureCertificate(41L);
+
+        assertThat(pdf).isPresent();
+        assertThat(new String(pdf.get(), 0, 4, java.nio.charset.StandardCharsets.US_ASCII)).isEqualTo("%PDF");
+
+        when(loanRepository.findById(42L)).thenReturn(Optional.of(loan(42L, LoanStatus.ACTIVE)));
+        assertThat(adapter.closureCertificate(42L)).isEmpty();
     }
 }

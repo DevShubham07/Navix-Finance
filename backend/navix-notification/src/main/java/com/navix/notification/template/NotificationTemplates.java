@@ -300,7 +300,8 @@ public class NotificationTemplates {
                         + "https://dhanboost.com/login to borrow again. - DhanBoost");
         email(NotificationType.LOAN_CLOSED, "Your DhanBoost loan is closed",
                 "Hi {name},\n\nYour loan on application #{applicationId} is fully repaid and now closed. "
-                        + "Thank you for choosing DhanBoost.\n\n— DhanBoost");
+                        + "You can download your No Dues certificate any time from Past loans in your "
+                        + "DhanBoost account.\n\nThank you for choosing DhanBoost.\n\n— DhanBoost");
 
         // ---------------- COLLECTIONS ----------------
         inApp(NotificationType.COLLECTION_CASE_OPENED, "New collections case",
