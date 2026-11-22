@@ -478,6 +478,10 @@ Integer paise (`long`), `BigDecimal` rates, `HALF_UP`. Constants: `PROCESSING_FE
   `dueDateFromSalary(payoutDay, salaryDay)`.
 - `dueDateFromSalary(disbursedOn, salaryDay)` = the **latest** salary date strictly after disbursal
   and ≤ disbursal + 40 days (salary day clamped to month length).
+- **No Sunday due dates** (`LoanMath.requireNotSunday`, `DUE_DATE_SUNDAY`): sanction and the ADMIN
+  salary-day edit refuse a salary day that projects a Sunday; a reborrow that would carry one goes to
+  the credit queue (`REBORROW_CREDIT_REVIEW`) instead of auto-sanction. Never shifted silently; files
+  sanctioned before this rule keep their signed date, and the disbursal fallback is unchanged.
 - **Outstanding is compute-on-read** (`RepaymentService.breakdown`): `days = DAYS.between(disbursedOn,
   asOf)`; interest on `min(days, tenure + grace)`; penalty on `min(max(0, dpd − grace), 30)` days;
   minus Σ VERIFIED payments; capped by an approved settlement. This one figure is used everywhere

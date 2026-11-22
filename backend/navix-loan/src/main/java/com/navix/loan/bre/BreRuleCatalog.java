@@ -217,6 +217,10 @@ public final class BreRuleCatalog {
                 "Eligible limit is 25% of monthly salary, floored to Rs 100 (an admin override wins).",
                 "The offer ceiling is capped at the limit.",
                 "LoanMath.eligibleLimitPaise"));
+        r.add(always("always-no-sunday-due", "No repayment due on a Sunday",
+                "The repayment date projected from the salary credit day falls on a Sunday.",
+                "Sanction and the admin salary-day edit are refused (DUE_DATE_SUNDAY) until another salary day is chosen; a reborrow goes to the credit queue instead of auto-sanction. Files already sanctioned keep their signed date.",
+                "LoanMath.requireNotSunday; ApplicationFlowService.sanction / reborrow; CustomerService.changeSalaryCreditDay"));
         r.add(always("always-penny-drop-lock", "Penny-drop lock",
                 "Three failed Rs 1 bank verifications.",
                 "The disbursal account step locks for 12 hours.",

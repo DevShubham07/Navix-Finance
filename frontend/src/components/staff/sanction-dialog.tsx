@@ -17,7 +17,7 @@ import { Loader2 } from "lucide-react";
 import { Dialog, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input, Select, Skeleton, toast } from "@/components/ui";
 import { staffApi, type ApplicationView } from "@/lib/api/applications";
-import { buildCostBreakdown, daysBetween, dueDateFromSalary } from "@/lib/calc/loan-math";
+import { buildCostBreakdown, daysBetween, dueDateFromSalary, isSunday } from "@/lib/calc/loan-math";
 import { formatDate, formatINR } from "@/lib/utils";
 import { useRefreshAfterAction, errMessage } from "@/components/staff/pipeline/hooks";
 
@@ -65,7 +65,8 @@ export function SanctionDialog({
   const tenure = daysBetween(today, projectedDate);
   const amountOk = Number.isFinite(rupees) && rupees >= MIN_AMOUNT;
   const dateOk = Number(salaryCreditDay) >= 1 && Number(salaryCreditDay) <= 31 && tenure > 0;
-  const preview = amountOk && dateOk ? buildCostBreakdown(rupees, tenure) : null;
+  const sunday = dateOk && isSunday(projectedDate);
+  const preview = amountOk && dateOk && !sunday ? buildCostBreakdown(rupees, tenure) : null;
 
   return (
     // !max-w / !w: globals.css's un-layered `.modal { max-width: 460px }` outranks plain utilities.
@@ -96,7 +97,13 @@ export function SanctionDialog({
           value={salaryCreditDay}
           onChange={(e) => setSalaryCreditDay(e.target.value)}
           helperText={dateOk ? `Projected ${formatDate(projectedDate)} — ${tenure} days from today. Final due date is set from actual disbursal.` : undefined}
-          error={!dateOk ? "Select a day from 1 to 31" : undefined}
+          error={
+            !dateOk
+              ? "Select a day from 1 to 31"
+              : sunday
+                ? `${formatDate(projectedDate)} is a Sunday — repayment can't fall due on a Sunday. Pick another salary day.`
+                : undefined
+          }
         >
           {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
             <option key={day} value={day}>{day}</option>

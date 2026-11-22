@@ -51,6 +51,29 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @ExtendWith(MockitoExtension.class)
 class ApplicationFlowServiceTest {
 
+    /** Nearest salary day (from {@code preferred} downwards, wrapping) whose projected due date today is not a Sunday. */
+    static int weekdayDay(int preferred) {
+        LoanMath math = new LoanMath();
+        for (int i = 0; i < 31; i++) {
+            int d = ((preferred - 1 - i + 31) % 31) + 1;
+            if (!LoanMath.isSunday(math.dueDateFromSalary(LocalDate.now(), d))) {
+                return d;
+            }
+        }
+        throw new IllegalStateException("no weekday salary day");
+    }
+
+    /** A salary day whose projected due date today is a Sunday (one always exists across days 1-31). */
+    static int sundayDay() {
+        LoanMath math = new LoanMath();
+        for (int d = 1; d <= 31; d++) {
+            if (LoanMath.isSunday(math.dueDateFromSalary(LocalDate.now(), d))) {
+                return d;
+            }
+        }
+        throw new IllegalStateException("no Sunday salary day");
+    }
+
     @Mock
     private LoanApplicationRepository applicationRepository;
     @Mock
@@ -268,10 +291,10 @@ class ApplicationFlowServiceTest {
 
         // The executive's sanction is FINAL — no Head counter-approval (V45).
         actor("55", "CREDIT_EXECUTIVE");
-        flow.sanction(1L, 2_000_000L, 28, "salary slips verified");
+        flow.sanction(1L, 2_000_000L, weekdayDay(28), "salary slips verified");
         assertThat(app.getStatus()).isEqualTo(ApplicationStatus.SANCTIONED);
         assertThat(app.getSanctionedAmountPaise()).isEqualTo(2_000_000L);
-        assertThat(app.getSalaryCreditDay()).isEqualTo(28);
+        assertThat(app.getSalaryCreditDay()).isEqualTo(weekdayDay(28));
         assertThat(app.getApprovedRepaymentDate()).isAfter(LocalDate.now());
 
         // The borrower accepts the offer, drawing down less than the ceiling. Phase 3's offer screens
@@ -448,14 +471,14 @@ class ApplicationFlowServiceTest {
         when(verificationRepository.findByApplicationIdAndCheckType(1L, "AADHAAR_DUPLICATE"))
                 .thenReturn(java.util.Optional.of(flag));
 
-        assertThatThrownBy(() -> flow.sanction(1L, 2_000_000L, 20, null))
+        assertThatThrownBy(() -> flow.sanction(1L, 2_000_000L, weekdayDay(20), null))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("code", "AADHAAR_DUPLICATE_UNRESOLVED");
         assertThat(app.getStatus()).isEqualTo(ApplicationStatus.CREDIT_EXEC_PENDING);
 
         // A reviewer who confirmed it is the same person (manual override → PASS) unblocks it.
         flag.setStatus("PASS");
-        flow.sanction(1L, 2_000_000L, 20, null);
+        flow.sanction(1L, 2_000_000L, weekdayDay(20), null);
         assertThat(app.getStatus()).isEqualTo(ApplicationStatus.SANCTIONED);
     }
 
@@ -468,6 +491,39 @@ class ApplicationFlowServiceTest {
         assertThatThrownBy(() -> flow.sanction(1L, 2_000_000L, 32, null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("between 1 and 31");
+    }
+
+    /** A salary day that projects a Sunday repayment date is refused; nothing is sanctioned. */
+    @Test
+    void sanctionRefusesASundayRepaymentDate() {
+        LoanApplication app = appAt(ApplicationStatus.CREDIT_EXEC_PENDING);
+        app.setAssignedExecutiveId(55L);
+        actor("55", "CREDIT_EXECUTIVE");
+
+        assertThatThrownBy(() -> flow.sanction(1L, 2_000_000L, sundayDay(), null))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "DUE_DATE_SUNDAY");
+        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.CREDIT_EXEC_PENDING);
+        assertThat(app.getApprovedRepaymentDate()).isNull();
+    }
+
+    /** A clean reborrow whose carried salary day projects a Sunday goes to credit review, not auto-sanction. */
+    @Test
+    void reborrowWithASundayRepaymentDateGoesToCreditReview() {
+        actor("7", "BORROWER");
+        LoanApplication prior = priorApp();
+        prior.setSalaryCreditDay(sundayDay());
+        prior.setSanctionedAmountPaise(1_250_000L);
+        when(applicationRepository.findByCustomerId(7L)).thenReturn(List.of(prior));
+        when(profileRepository.findByApplicationId(10L)).thenReturn(Optional.of(priorProfile()));
+        Loan closed = loanAt(50L, LoanStatus.CLOSED, LocalDate.now().minusDays(15));
+        when(loanRepository.findByCustomerId(7L)).thenReturn(List.of(closed));
+        when(paymentRepository.findByLoanId(50L)).thenReturn(List.of());
+
+        LoanApplication out = flow.reborrow();
+
+        assertThat(out.getStatus()).isEqualTo(ApplicationStatus.KYC_PENDING);
+        assertThat(out.getApprovedRepaymentDate()).isNull();
     }
 
     @Test
@@ -863,7 +919,7 @@ class ApplicationFlowServiceTest {
         LoanApplication app = appAt(ApplicationStatus.DRAFT);
         app.setAssignedExecutiveId(55L);
         actor("55", "CREDIT_EXECUTIVE");
-        assertThatThrownBy(() -> flow.sanction(1L, 2_000_000L, 20, null))
+        assertThatThrownBy(() -> flow.sanction(1L, 2_000_000L, weekdayDay(20), null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("not allowed");
     }
@@ -932,7 +988,7 @@ class ApplicationFlowServiceTest {
         // 6_000_000 * 0.25 = 1_500_000, already a ₹100 (10_000-paise) multiple, well under the
         // ₹10,00,000 (100_000_000-paise) instant cap -> eligible limit = 1_500_000.
         assertThat(result.getEligibleLimit()).isEqualTo(1_500_000L);
-        assertThat(result.getSalaryCreditDay()).isEqualTo(30);
+        assertThat(result.getSalaryCreditDay()).isEqualTo(weekdayDay(30));
     }
 
     /**
@@ -1105,7 +1161,7 @@ class ApplicationFlowServiceTest {
         lenient().when(verificationRepository.findByApplicationIdAndCheckType(1L, "AADHAAR_DUPLICATE"))
                 .thenReturn(java.util.Optional.of(flag));
 
-        flow.sanction(1L, 2_000_000L, 20, null);
+        flow.sanction(1L, 2_000_000L, weekdayDay(20), null);
         assertThat(app.getStatus()).isEqualTo(ApplicationStatus.SANCTIONED);
     }
 
@@ -1291,7 +1347,7 @@ class ApplicationFlowServiceTest {
         LoanApplication app = appAt(ApplicationStatus.CREDIT_EXEC_PENDING);
         app.setAssignedExecutiveId(55L);
         actor("acct1", "ACCOUNTANT");
-        assertThatThrownBy(() -> flow.sanction(1L, 2_000_000L, 20, null))
+        assertThatThrownBy(() -> flow.sanction(1L, 2_000_000L, weekdayDay(20), null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("CREDIT_EXECUTIVE or CREDIT_HEAD");
     }
@@ -1328,10 +1384,10 @@ class ApplicationFlowServiceTest {
         LoanApplication app = appAt(ApplicationStatus.PRE_APPROVED);
         // A genuine returning borrower: one fully repaid advance behind them.
         when(loanRepository.findByCustomerId(7L)).thenReturn(List.of(loanAt(50L, LoanStatus.CLOSED, LocalDate.now().minusDays(5))));
-        app.setSalaryCreditDay(15); // carried over by reborrow() from the borrower's first loan
+        app.setSalaryCreditDay(weekdayDay(15)); // carried over by reborrow() from the borrower's first loan
         actor("7", "BORROWER");
         flow.apply(1L, 1_000_000L, "medical", 1_500_000L, null);
-        assertThat(app.getSalaryCreditDay()).isEqualTo(15); // not wiped by the null
+        assertThat(app.getSalaryCreditDay()).isEqualTo(weekdayDay(15)); // not wiped by the null
         assertThat(app.getStatus()).isEqualTo(ApplicationStatus.DISBURSEMENT_PENDING);
     }
 
@@ -1565,7 +1621,7 @@ class ApplicationFlowServiceTest {
         prior.setId(10L);
         prior.setCustomerId(7L);
         prior.setStatus(ApplicationStatus.CLOSED); // terminal — reborrow allowed
-        prior.setSalaryCreditDay(30);
+        prior.setSalaryCreditDay(weekdayDay(30));
         return prior;
     }
 

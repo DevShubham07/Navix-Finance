@@ -1541,11 +1541,15 @@ public class CustomerService {
         LoanApplication app = applicationRepository.findByCustomerId(customerId).stream()
                 .max(Comparator.comparing(LoanApplication::getId))
                 .orElseThrow(() -> new BusinessException("NO_APPLICATION", "This customer has no application"));
+        boolean reprojects = app.getStatus() == ApplicationStatus.SANCTIONED && app.getLoanId() == null;
+        LocalDate today = LocalDate.now(IST);
+        LocalDate due = reprojects ? loanMath.dueDateFromSalary(today, day) : null;
+        if (reprojects) {
+            LoanMath.requireNotSunday(due); // before any write: a refused edit changes nothing
+        }
         logIfChanged(customerId, app.getId(), "salaryCreditDay", str(app.getSalaryCreditDay()), str(day));
         app.setSalaryCreditDay(day);
-        if (app.getStatus() == ApplicationStatus.SANCTIONED && app.getLoanId() == null) {
-            LocalDate today = LocalDate.now(IST);
-            LocalDate due = loanMath.dueDateFromSalary(today, day);
+        if (reprojects) {
             logIfChanged(customerId, app.getId(), "approvedRepaymentDate",
                     str(app.getApprovedRepaymentDate()), due.toString());
             app.setApprovedRepaymentDate(due);

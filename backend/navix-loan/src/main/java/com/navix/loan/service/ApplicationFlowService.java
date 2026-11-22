@@ -318,21 +318,27 @@ public class ApplicationFlowService {
 
         // Clean path: pin the best unlocked repay-now discount (the rejected path above never gets one).
         discountOffers.pin(app);
-        if (!bre.isOn(BreRuleCatalog.REBORROW_AUTO_SANCTION)) {
-            // BRE auto-sanction off: a clean returning borrower still goes to a credit executive. Carry the
-            // same person-level evidence the allowance path does. Not action "REBORROW": the notification
-            // listener would send CREDIT_REJECTED for it; this one maps to no notification.
-            LoanApplication reviewSource = latestSanctionedApplication(customerId).orElse(null);
-            if (reviewSource != null) {
-                copyCarriedVerifications(reviewSource.getId(), app.getId());
-                copyReferences(reviewSource, app);
+        LoanApplication source = latestSanctionedApplication(customerId).orElse(null);
+        // The carried sanction would re-project the repayment date off the salary day; a Sunday date is
+        // never allowed, and nobody is here to pick another day — so the file goes to a credit executive.
+        Integer carriedDay = app.getSalaryCreditDay() != null ? app.getSalaryCreditDay()
+                : source != null ? source.getSalaryCreditDay() : null;
+        boolean sundayDue = source != null && carriedDay != null
+                && LoanMath.isSunday(loanMath.dueDateFromSalary(LocalDate.now(), carriedDay));
+        if (!bre.isOn(BreRuleCatalog.REBORROW_AUTO_SANCTION) || sundayDue) {
+            // A clean returning borrower still goes to a credit executive. Carry the same person-level
+            // evidence the allowance path does. Not action "REBORROW": the notification listener would
+            // send CREDIT_REJECTED for it; this one maps to no notification.
+            if (source != null) {
+                copyCarriedVerifications(source.getId(), app.getId());
+                copyReferences(source, app);
             }
-            transition(app, ApplicationStatus.KYC_PENDING, "REBORROW_CREDIT_REVIEW",
-                    "Returning borrower sent to credit review (auto-sanction switched off)");
+            transition(app, ApplicationStatus.KYC_PENDING, "REBORROW_CREDIT_REVIEW", sundayDue
+                    ? "Returning borrower sent to credit review (projected repayment date is a Sunday)"
+                    : "Returning borrower sent to credit review (auto-sanction switched off)");
             return applicationRepository.save(app);
         }
         transition(app, ApplicationStatus.PRE_APPROVED, "REBORROW", "Pre-approved returning borrower");
-        LoanApplication source = latestSanctionedApplication(customerId).orElse(null);
         if (source == null) {
             // Pre-approved but with nothing to re-sanction from (a legacy file that never carried a
             // credit sanction). Leave them at PRE_APPROVED — apply() still routes them to disbursement.
@@ -739,6 +745,7 @@ public class ApplicationFlowService {
             throw new BusinessException("INVALID_SALARY_DAY", "Salary credit day must be between 1 and 31");
         }
         LocalDate projectedRepaymentDate = loanMath.dueDateFromSalary(LocalDate.now(), salaryCreditDay);
+        LoanMath.requireNotSunday(projectedRepaymentDate);
         app.setSanctionedAmountPaise(sanctionedAmountPaise);
         app.setApprovedRepaymentDate(projectedRepaymentDate);
         app.setSanctionTenureDays((int) java.time.temporal.ChronoUnit.DAYS.between(

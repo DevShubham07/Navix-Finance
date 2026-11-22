@@ -225,6 +225,24 @@ public class LoanMath {
         return anyDayInMonth.withDayOfMonth(day);
     }
 
+    /** True when {@code date} is a Sunday — no repayment may fall due then (no collections desk, no NACH). */
+    public static boolean isSunday(LocalDate date) {
+        return date != null && date.getDayOfWeek() == java.time.DayOfWeek.SUNDAY;
+    }
+
+    /**
+     * Refuses a Sunday due date. Called wherever a person sets the date (credit sanction, ADMIN
+     * salary-day edit); the date is never shifted silently — the staffer picks another salary day.
+     */
+    public static void requireNotSunday(LocalDate due) {
+        if (isSunday(due)) {
+            throw new com.navix.common.exception.BusinessException("DUE_DATE_SUNDAY",
+                    "That salary day makes the repayment date " + due.format(
+                            java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy"))
+                            + ", a Sunday. Choose a salary credit day that falls on a working day.");
+        }
+    }
+
     /** Round fractional paise to a whole paisa, HALF_UP. */
     private static long roundPaise(BigDecimal paise) {
         return paise.setScale(0, RoundingMode.HALF_UP).longValueExact();

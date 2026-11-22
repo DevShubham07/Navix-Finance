@@ -88,6 +88,9 @@ export function dpdBucket(daysPastDue: number): DpdBucket {
 }
 
 /** Whole days between two dates (b - a), ignoring time-of-day. */
+/** No repayment may fall due on a Sunday — mirrors backend `LoanMath.isSunday` (sanction refuses it). */
+export const isSunday = (d: Date): boolean => d.getDay() === 0;
+
 export function daysBetween(a: Date, b: Date): number {
   const ms = 24 * 60 * 60 * 1000;
   const da = Date.UTC(a.getFullYear(), a.getMonth(), a.getDate());

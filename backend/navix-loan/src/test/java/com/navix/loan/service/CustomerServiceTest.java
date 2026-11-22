@@ -1759,7 +1759,7 @@ class CustomerServiceTest {
         LoanApplication a = app(2, 9000001L, ApplicationStatus.SANCTIONED); // loanId null = pending offer
         when(applicationRepository.findByCustomerId(9000001L)).thenReturn(List.of(a));
         when(applicationRepository.save(any())).thenAnswer(i -> i.getArgument(0));
-        java.time.LocalDate stubbedDue = java.time.LocalDate.of(2026, 9, 20);
+        java.time.LocalDate stubbedDue = java.time.LocalDate.of(2026, 9, 21); // a Monday (Sundays are refused)
         when(loanMath.dueDateFromSalary(any(), org.mockito.ArgumentMatchers.anyInt())).thenReturn(stubbedDue);
 
         service.changeSalaryCreditDay(9000001L, 20);
@@ -1768,6 +1768,21 @@ class CustomerServiceTest {
         assertThat(a.getApprovedRepaymentDate()).isEqualTo(stubbedDue);
         assertThat(a.getSanctionTenureDays())
                 .isEqualTo((int) java.time.temporal.ChronoUnit.DAYS.between(today, stubbedDue));
+    }
+
+    @Test
+    void changeSalaryCreditDayRefusesASundayPendingOfferDateAndChangesNothing() {
+        ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
+        LoanApplication a = app(2, 9000001L, ApplicationStatus.SANCTIONED);
+        a.setSalaryCreditDay(28);
+        when(applicationRepository.findByCustomerId(9000001L)).thenReturn(List.of(a));
+        when(loanMath.dueDateFromSalary(any(), org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn(java.time.LocalDate.of(2026, 9, 20)); // a Sunday
+
+        assertThatThrownBy(() -> service.changeSalaryCreditDay(9000001L, 20))
+                .hasFieldOrPropertyWithValue("code", "DUE_DATE_SUNDAY");
+        assertThat(a.getSalaryCreditDay()).isEqualTo(28);
+        verify(applicationRepository, org.mockito.Mockito.never()).save(any());
     }
 
     @Test

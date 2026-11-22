@@ -208,4 +208,13 @@ class LoanMathTest {
                     .isEqualTo(LocalDate.of(2026, 4, 30));
         }
     }
+
+    @org.junit.jupiter.api.Test
+    void sundayDueDatesAreRefused() {
+        assertThat(LoanMath.isSunday(LocalDate.of(2026, 11, 22))).isTrue();   // a Sunday
+        assertThat(LoanMath.isSunday(LocalDate.of(2026, 11, 21))).isFalse();  // Saturday
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> LoanMath.requireNotSunday(LocalDate.of(2026, 11, 22)))
+                .hasFieldOrPropertyWithValue("code", "DUE_DATE_SUNDAY");
+        LoanMath.requireNotSunday(LocalDate.of(2026, 11, 23)); // Monday passes
+    }
 }

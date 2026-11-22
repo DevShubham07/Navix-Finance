@@ -45,6 +45,17 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @Tag("integration")
 class ApplicationFlowIntegrationTest {
 
+    /** Nearest salary day whose projected due date today is not a Sunday (sanction refuses Sundays). */
+    private int weekdayDay(int preferred) {
+        for (int i = 0; i < 31; i++) {
+            int d = ((preferred - 1 - i + 31) % 31) + 1;
+            if (!LoanMath.isSunday(loanMath.dueDateFromSalary(LocalDate.now(), d))) {
+                return d;
+            }
+        }
+        throw new IllegalStateException("no weekday salary day");
+    }
+
     @Container
     @ServiceConnection
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16");
@@ -88,7 +99,7 @@ class ApplicationFlowIntegrationTest {
         // sanction is final — no KYC approver, no Head counter-approval.
         act(appId, "assign", "5", "CREDIT_HEAD", "{\"executiveId\":2}", "CREDIT_EXEC_PENDING");
         act(appId, "sanction", "2", "CREDIT_EXECUTIVE",
-                "{\"sanctionedAmountPaise\":1000000,\"salaryCreditDay\":28,\"remarks\":\"verified\"}", "SANCTIONED");
+                "{\"sanctionedAmountPaise\":1000000,\"salaryCreditDay\":" + weekdayDay(28) + ",\"remarks\":\"verified\"}", "SANCTIONED");
         recordEsign(appId);
         act(appId, "accept-offer", "7", "BORROWER", "{\"amountPaise\":1000000}", "DISBURSEMENT_PENDING");
         // V48: the Disbursement Head releases directly and their transaction id IS the validation —
@@ -122,7 +133,7 @@ class ApplicationFlowIntegrationTest {
         act(appId, "submit-kyc", "10", "BORROWER", null, "KYC_PENDING");
         act(appId, "assign", "10", "ADMIN", "{\"executiveId\":10}", "CREDIT_EXEC_PENDING");
         act(appId, "sanction", "10", "ADMIN",
-                "{\"sanctionedAmountPaise\":1000000,\"salaryCreditDay\":28}",
+                "{\"sanctionedAmountPaise\":1000000,\"salaryCreditDay\":" + weekdayDay(28) + "}",
                 "SANCTIONED");
         recordEsign(appId);
         act(appId, "accept-offer", "10", "BORROWER", "{\"amountPaise\":1000000}", "DISBURSEMENT_PENDING");
@@ -143,7 +154,7 @@ class ApplicationFlowIntegrationTest {
     @Test
     void salaryCreditDayDeterminesTheDisbursalBasedLoanDueDate() throws Exception {
         long appId = createApplication(8L);
-        int salaryDay = 17;
+        int salaryDay = weekdayDay(17);
         LocalDate repay = loanMath.dueDateFromSalary(LocalDate.now(), salaryDay);
 
         act(appId, "submit-kyc", "8", "BORROWER", null, "KYC_PENDING");
@@ -186,7 +197,7 @@ class ApplicationFlowIntegrationTest {
         mvc.perform(post("/api/applications/{id}/sanction", appId)
                         .header("Authorization", bearer("10", "ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"sanctionedAmountPaise\":1000000,\"salaryCreditDay\":20}"))
+                        .content("{\"sanctionedAmountPaise\":1000000,\"salaryCreditDay\":" + weekdayDay(20) + "}"))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.error.code").value("ILLEGAL_TRANSITION"));
     }

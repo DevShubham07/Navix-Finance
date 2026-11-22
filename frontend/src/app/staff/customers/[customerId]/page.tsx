@@ -32,7 +32,7 @@ import {
   type BlocklistType,
   type ApplicationView,
 } from "@/lib/api/applications";
-import { dueDateFromSalary } from "@/lib/calc/loan-math";
+import { dueDateFromSalary, isSunday } from "@/lib/calc/loan-math";
 import {
   SALARY_DUE_MAX_DAYS,
   istCalendarToday,
@@ -572,6 +572,8 @@ function SalaryDayCard({
   const todayIst = istCalendarToday();
   const projectedDue = dueDateFromSalary({ disbursedOn: todayIst, salaryDay: Number(day) });
   const dueWindow = salaryDueWindow(todayIst, projectedDue);
+  // The backend refuses a Sunday repayment date when it re-projects a pending offer.
+  const sundayBlocked = hasPendingOffer && isSunday(projectedDue);
 
   const save = useMutation({
     mutationFn: () => customersApi.changeSalaryDay(customerId, Number(day)),
@@ -601,6 +603,12 @@ function SalaryDayCard({
       {/* The live region stays mounted so a note that appears after a day change is announced —
           a region inserted together with its text is often missed by screen readers. */}
       <div role="status">
+        {sundayBlocked && (
+          <p className="mb-2 flex items-start gap-1.5 rounded border border-error-100 bg-error-50 px-2 py-1.5 text-xs text-error-700">
+            <AlertTriangle size={13} className="mt-px flex-shrink-0" aria-hidden="true" />
+            <span>{formatDate(projectedDue)} is a Sunday — the pending offer can&apos;t fall due then. Pick another day.</span>
+          </p>
+        )}
         {dueWindow.exceeds && (
           <p className="mb-2 flex items-start gap-1.5 rounded border border-warning-100 bg-warning-50 px-2 py-1.5 text-xs text-warning-800">
             <AlertTriangle size={13} className="mt-px flex-shrink-0" aria-hidden="true" />
@@ -618,7 +626,7 @@ function SalaryDayCard({
       {save.error && <p className="mb-2 text-sm text-error-700">{errMessage(save.error)}</p>}
       <button
         onClick={() => save.mutate()}
-        disabled={save.isPending || Number(day) === (app.salaryCreditDay ?? 0)}
+        disabled={save.isPending || sundayBlocked || Number(day) === (app.salaryCreditDay ?? 0)}
         className="btn btn-sm btn-navy btn-block disabled:opacity-50"
       >
         {save.isPending ? <Loader2 size={13} className="animate-spin" /> : null} Save
