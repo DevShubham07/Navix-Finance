@@ -13,6 +13,7 @@
 import * as React from "react";
 import { useQueries, useQuery, type UseQueryResult } from "@tanstack/react-query";
 import {
+  breRulesApi,
   customersApi,
   staffApi,
   type CreditBriefView,
@@ -25,7 +26,7 @@ import { bankAnalysisApi } from "@/lib/api/bank-analysis";
 import { istCalendarToday } from "@/lib/customers/customer-360";
 import { parseBureauReport, reportFromTradelines, type BureauReport } from "@/lib/customers/bre/bureau-report";
 import { analyseProfile, type ProfileAnalysis } from "@/lib/customers/bre/profile-analysis";
-import { evaluateBre, mergeSteps, type BreResult } from "@/lib/customers/bre/rules";
+import { evaluateBre, mergeSteps, type BreInput, type BreResult } from "@/lib/customers/bre/rules";
 
 /** How many earlier applications to consult when the selected one lacks a check or a report. */
 const MAX_EARLIER = 3;
@@ -189,6 +190,19 @@ export function useBreData(detail: CustomerDetail, customerId: number, applicati
         .flatMap((g) => g.documents.map((doc) => ({ applicationId: g.applicationId, doc }))),
     [docsQ.data, chain.length, applicationId],
   );
+  const policyQ = useQuery({ queryKey: ["bre-rules"], queryFn: breRulesApi.list, staleTime: 60_000, retry: false });
+  const policy = React.useMemo<BreInput["policy"]>(() => {
+    const rules = policyQ.data;
+    if (!rules) return undefined; // fetch failed / loading: no policy (defaults)
+    const th = (key: string) => rules.flatMap((r) => r.thresholds).find((t) => t.key === key)?.value;
+    const tol = th("advisory-salary-tolerance-pct");
+    return {
+      disabled: rules.filter((r) => r.group === "ADVISORY" && r.enabled === false).map((r) => r.key.replace(/^advisory-/, "")),
+      minCreditScore: th("advisory-min-credit-score"),
+      maxNbfcDpdDays: th("advisory-max-nbfc-dpd"),
+      salaryMatchTolerancePct: tol == null ? undefined : tol / 100,
+    };
+  }, [policyQ.data]);
   const aadhaar = detail.profile?.aadhaar ?? profilesQ.data.map((p) => p?.aadhaar).find((a) => !!a) ?? null;
   const result = React.useMemo<BreResult | null>(() => {
     if (applicationId == null) return null;
@@ -210,8 +224,9 @@ export function useBreData(detail: CustomerDetail, customerId: number, applicati
       bankAnalyserLive: bankQ.data != null,
       // Off unless the staging build sets it — production always evaluates every rule.
       stagingPass: process.env.NEXT_PUBLIC_BRE_STAGING_PASS === "true",
+      policy,
     });
-  }, [applicationId, bureau.brief, bureau.report, detail.profile, stepsQ.steps, aadhaar, documents, bankQ.data]);
+  }, [applicationId, bureau.brief, bureau.report, detail.profile, stepsQ.steps, aadhaar, documents, bankQ.data, policy]);
   return {
     result,
     report: bureau.report,

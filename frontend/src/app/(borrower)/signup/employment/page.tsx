@@ -7,6 +7,7 @@ import { WizardActions } from "@/components/borrower/wizard-actions";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { useOnboarding, saveProfileSlice, completeStep, useSavedProfile } from "@/lib/onboarding";
 import { formatApiError } from "@/lib/api/errors";
+import { featureFlagsApi, type FeatureFlags } from "@/lib/api/applications";
 
 export default function SignupEmploymentPage() {
   const router = useRouter();
@@ -36,12 +37,10 @@ export default function SignupEmploymentPage() {
     setError(undefined);
     try {
       await saveProfileSlice(appId, { employmentStatus: status });
-      await completeStep(
-        appId,
-        "EMPLOYMENT",
-        router,
-        status === "SELF_EMPLOYED" ? "/signup/self-employed" : "/signup/employer",
-      );
+      // Admin can switch the self-employed auto-reject off; missing key / fetch failure = reject.
+      const flags = await featureFlagsApi.get().catch(() => ({}) as FeatureFlags);
+      const reject = status === "SELF_EMPLOYED" && flags["bre-self-employed-reject"] !== false;
+      await completeStep(appId, "EMPLOYMENT", router, reject ? "/signup/self-employed" : "/signup/employer");
     } catch (err) {
       setError(formatApiError(err, "Could not save — please try again."));
       setBusy(false);

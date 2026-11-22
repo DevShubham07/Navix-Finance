@@ -43,6 +43,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
+import com.navix.loan.bre.BreRuleCatalog;
+import com.navix.loan.bre.BreRuleService;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -102,6 +104,7 @@ public class ApplicationFlowService {
     // application or reborrow, exactly like a staff block (files already in progress are untouched).
     private final CustomerBlocklistKeys blocklistKeys;
     private final com.navix.common.blocklist.BlocklistMirror blocklistMirror;
+    private final BreRuleService bre;
 
     /** Loan statuses that mean money is still owed past the due date — never fully repaid. */
     private static final Set<LoanStatus> DELINQUENT_LOAN_STATUSES =
@@ -265,7 +268,7 @@ public class ApplicationFlowService {
         // finds nothing bad — so it used to come back PRE_APPROVED and skip KYC + credit (Sep 2026,
         // #10737 after a fake-salary-slip reject). No repaid loan → NO_PRIOR_LOAN, which the /reloan
         // page turns into a fresh signup. A delinquent history still takes the auto-reject below.
-        boolean disqualified = isDisqualifiedByHistory(customerId);
+        boolean disqualified = bre.isOn(BreRuleCatalog.PAST_DELINQUENCY_REJECT) && isDisqualifiedByHistory(customerId);
         if (!hasRepaidLoan(customerId) && !disqualified) {
             throw new BusinessException("NO_PRIOR_LOAN", "No repaid advance found to borrow against");
         }
@@ -306,7 +309,7 @@ public class ApplicationFlowService {
                 return applicationRepository.save(app);
             }
             recordRejection(app, ApplicationRejection.PAST_DELINQUENCY,
-                    "Repaid more than " + LATE_REPAYMENT_TOLERANCE_DAYS
+                    "Repaid more than " + bre.threshold(BreRuleCatalog.T_LATE_TOLERANCE_DAYS)
                             + " days late, or a prior advance was never fully repaid",
                     true, null);
             transition(app, ApplicationStatus.REJECTED, "REBORROW", "Past delinquency");
@@ -315,6 +318,19 @@ public class ApplicationFlowService {
 
         // Clean path: pin the best unlocked repay-now discount (the rejected path above never gets one).
         discountOffers.pin(app);
+        if (!bre.isOn(BreRuleCatalog.REBORROW_AUTO_SANCTION)) {
+            // BRE auto-sanction off: a clean returning borrower still goes to a credit executive. Carry the
+            // same person-level evidence the allowance path does. Not action "REBORROW": the notification
+            // listener would send CREDIT_REJECTED for it; this one maps to no notification.
+            LoanApplication reviewSource = latestSanctionedApplication(customerId).orElse(null);
+            if (reviewSource != null) {
+                copyCarriedVerifications(reviewSource.getId(), app.getId());
+                copyReferences(reviewSource, app);
+            }
+            transition(app, ApplicationStatus.KYC_PENDING, "REBORROW_CREDIT_REVIEW",
+                    "Returning borrower sent to credit review (auto-sanction switched off)");
+            return applicationRepository.save(app);
+        }
         transition(app, ApplicationStatus.PRE_APPROVED, "REBORROW", "Pre-approved returning borrower");
         LoanApplication source = latestSanctionedApplication(customerId).orElse(null);
         if (source == null) {
@@ -709,6 +725,7 @@ public class ApplicationFlowService {
         // explicitly cleared (manual override → PASS) before money is approved; an untouched REVIEW row,
         // or a FAIL ("not the same person"), stops the file here rather than failing open.
         verificationRepository.findByApplicationIdAndCheckType(appId, ApplicationVerificationService.AADHAAR_DUPLICATE)
+                .filter(row -> bre.isOn(BreRuleCatalog.AADHAAR_DUPLICATE_SANCTION_BLOCK))
                 .filter(row -> !ApplicationVerificationService.PASS.equals(row.getStatus()))
                 .ifPresent(row -> {
                     throw new BusinessException("AADHAAR_DUPLICATE_UNRESOLVED",
@@ -781,7 +798,7 @@ public class ApplicationFlowService {
         if (remarks == null || remarks.isBlank()) {
             throw new BusinessException("NOTE_REQUIRED", "A reason is required to reject this application");
         }
-        Instant blockedUntil = Instant.now().plus(Duration.ofDays(MANUAL_REJECT_BLOCK_DAYS));
+        Instant blockedUntil = Instant.now().plus(Duration.ofDays(bre.threshold(BreRuleCatalog.T_MANUAL_BLOCK_DAYS)));
         recordRejection(app, ApplicationRejection.MANUAL, remarks, false, blockedUntil);
         transition(app, ApplicationStatus.REJECTED, action, remarks, blockedUntil);
         return applicationRepository.save(app);
@@ -1505,7 +1522,7 @@ public class ApplicationFlowService {
 
     /** True if any verified repayment landed more than the tolerance past the loan's due date. */
     private boolean paidBeyondTolerance(Loan loan) {
-        LocalDate cutoff = loan.getDueDate().plusDays(LATE_REPAYMENT_TOLERANCE_DAYS);
+        LocalDate cutoff = loan.getDueDate().plusDays(bre.threshold(BreRuleCatalog.T_LATE_TOLERANCE_DAYS));
         return paymentRepository.findByLoanId(loan.getId()).stream()
                 .anyMatch(p -> p.getStatus() == PaymentStatus.VERIFIED
                         && p.getPaidOn() != null && p.getPaidOn().isAfter(cutoff));

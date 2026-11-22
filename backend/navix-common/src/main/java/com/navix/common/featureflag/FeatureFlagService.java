@@ -9,11 +9,12 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Read-only access to dev-controlled feature flags (the {@code feature_flag} table).
  *
- * <p>Flags are changed <b>only</b> by a developer running SQL against the database — this service has
- * no write methods and there is no admin UI / write endpoint anywhere in the app. Reads hit the DB
- * directly (no caching) so a {@code UPDATE feature_flag ...} takes effect on the very next call, with
- * no redeploy or cache bust. (Single exception: {@code onboarding-paused} is written by
- * {@code OnboardingWaitlistService.setPaused}, the admin Settings toggle.)
+ * <p>Flags are changed by a developer running SQL against the database — this service has no write
+ * methods. Reads hit the DB directly (no caching) so a {@code UPDATE feature_flag ...} takes effect on
+ * the very next call, with no redeploy or cache bust. Exceptions, each upserting its own row from an
+ * ADMIN-only endpoint: {@code onboarding-paused} ({@code OnboardingWaitlistService.setPaused}),
+ * {@code applications-closed} ({@code IntakeSwitchService}), {@code payu-repayment}, and the BRE rules
+ * tab ({@code BreRuleService}: {@code bre-*} keys and {@code bureau-auto-reject}).
  *
  * <p>Any feature gates itself with {@code featureFlags.isEnabled("its-key")}; when the row is absent the
  * supplied default (or {@code false}) applies.

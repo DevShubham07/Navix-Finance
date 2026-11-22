@@ -6,6 +6,8 @@ import com.navix.common.exception.BusinessException;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
 import com.navix.common.verification.ProviderCallContext;
+import com.navix.loan.bre.BreRuleCatalog;
+import com.navix.loan.bre.BreRuleService;
 import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.domain.BureauBackfillCohort;
 import com.navix.loan.domain.BureauBackfillOutcome;
@@ -96,6 +98,7 @@ public class BureauBackfillService {
     private final ApplicationVerificationService verificationService;
     private final ApplicationFlowService flow;
     private final ObjectMapper objectMapper;
+    private final BreRuleService bre;
 
     @Transactional(readOnly = true)
     public BackfillPreview preview() {
@@ -228,8 +231,8 @@ public class BureauBackfillService {
             // load-bearing, not laziness: NotificationEventListener routes on that prefix, so a novel
             // action string here would silently notify nobody.
             flow.autoReject(appId, ApplicationRejection.LOW_BUREAU_SCORE,
-                    "Rejected because credit score is under " + ApplicationFlowService.MIN_BUREAU_SCORE,
-                    ApplicationFlowService.LOW_BUREAU_SCORE_BLOCK_DAYS);
+                    "Rejected because credit score is under " + bre.threshold(BreRuleCatalog.T_BUREAU_FLOOR),
+                    bre.threshold(BreRuleCatalog.T_BUREAU_BLOCK_DAYS));
         } catch (RuntimeException e) {
             // An illegal transition (a status that can't reach REJECTED) must not abort the batch.
             saveRow(runId, null, appId, customerId, BureauBackfillOutcome.FAILED, score, score,
@@ -324,7 +327,7 @@ public class BureauBackfillService {
                     ? "PDF_INGEST" : null;
 
             if (cohort == BureauBackfillCohort.REJECTS) {
-                if (newScore != null && newScore >= ApplicationFlowService.MIN_BUREAU_SCORE) {
+                if (newScore != null && newScore >= bre.threshold(BreRuleCatalog.T_BUREAU_FLOOR)) {
                     reopenRejectedApplication(runId, appId, customerId, oldScore, newScore, failedStep);
                 } else {
                     saveRow(runId, cohort, appId, customerId, BureauBackfillOutcome.STILL_BELOW,
@@ -419,7 +422,7 @@ public class BureauBackfillService {
         return score != null
                 && score >= MIN_PLAUSIBLE_SCORE
                 && score <= MAX_PLAUSIBLE_SCORE
-                && score < ApplicationFlowService.MIN_BUREAU_SCORE;
+                && score < bre.threshold(BreRuleCatalog.T_BUREAU_FLOOR);
     }
 
     private Long scoreOf(Long appId) {

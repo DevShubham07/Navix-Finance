@@ -83,6 +83,11 @@ export function BreTab({ detail, customerId, applicationId, onTabChange }: TabCt
   return (
     <div className="space-y-3">
       <Summary rules={result.rules} counts={result.counts} reportLine={reportLine(data)} />
+      {result.disabledCount > 0 && (
+        <p className="text-xs text-muted">
+          {result.disabledCount} rule{result.disabledCount === 1 ? "" : "s"} switched off by admin
+        </p>
+      )}
       {result.rules.map((rule) => (
         <RuleSection
           key={rule.key}

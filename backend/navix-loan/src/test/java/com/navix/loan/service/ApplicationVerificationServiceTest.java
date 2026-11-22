@@ -69,6 +69,7 @@ class ApplicationVerificationServiceTest {
     @Mock private com.navix.loan.repository.ApplicationEventRepository applicationEventRepo;
 
     private ApplicationVerificationService service;
+    private final com.navix.loan.bre.BreRuleService bre = com.navix.loan.bre.BreTestSupport.defaults();
 
     private static final Long APP = 42L;
     private static final String SELFIE_KEY = "applications/42/selfie/9.jpg";
@@ -79,7 +80,7 @@ class ApplicationVerificationServiceTest {
                 documentRepo, verification, esign, otpVerifier, emailOtp, storage, risk,
                 new EligibilityService(applicationRepo, limitOverrideRepository, risk), new ObjectMapper(),
                 creditBriefService, eventPublisher, changeLogger, flow, pennyDropGuard, featureFlags,
-                applicationEventRepo, org.mockito.Mockito.mock(BureauPhoneIndexer.class));
+                applicationEventRepo, org.mockito.Mockito.mock(BureauPhoneIndexer.class), bre);
         // The score-floor auto-reject is SUSPENDED in production (see autoRejectEnabled). These tests
         // exercise the rule itself, so switch it on explicitly rather than depending on the default.
         lenient().when(featureFlags.isEnabled("bureau-auto-reject", false)).thenReturn(true);
@@ -2957,7 +2958,7 @@ class ApplicationVerificationServiceTest {
      */
     @Test
     void bureau_subFloorScore_doesNotAutoRejectWhileTheRuleIsSuspended() {
-        when(featureFlags.isEnabled("bureau-auto-reject", false)).thenReturn(false);
+        when(bre.isOn(com.navix.loan.bre.BreRuleCatalog.LOW_BUREAU_SCORE)).thenReturn(false);
         CustomerProfile p = bureauReadyProfile();
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
         stubConsentPassed();
@@ -2980,7 +2981,7 @@ class ApplicationVerificationServiceTest {
      */
     @Test
     void bureau_subFloorScore_autoRejectsOnceTheRuleIsArmed() {
-        when(featureFlags.isEnabled("bureau-auto-reject", false)).thenReturn(true);
+        when(bre.isOn(com.navix.loan.bre.BreRuleCatalog.LOW_BUREAU_SCORE)).thenReturn(true);
         CustomerProfile p = bureauReadyProfile();
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
         stubConsentPassed();
@@ -3165,6 +3166,63 @@ class ApplicationVerificationServiceTest {
         verify(flow).autoRejectSystem(eq(APP), eq(com.navix.loan.entity.ApplicationRejection.FRAUD_REJECTED),
                 detail.capture(), eq(ApplicationFlowService.FRAUD_REJECT_BLOCK_DAYS));
         assertThat(detail.getValue()).contains("2003-04-24").contains("2003-03-24");
+    }
+
+    @Test
+    void digilockerComplete_dobRuleOff_keepsEvidenceButDoesNotFailOrReject() {
+        when(bre.isOn(com.navix.loan.bre.BreRuleCatalog.DOB_MISMATCH)).thenReturn(false);
+        CustomerProfile p = digilockerReady(LocalDate.of(2003, 4, 24));   // Aadhaar says 2003-03-24
+
+        var result = service.digilockerComplete(APP);
+
+        assertThat(result.status()).isEqualTo("PASS");
+        assertThat(result.derived()).containsEntry("dobMismatch", true)
+                .containsEntry("enteredDob", "2003-04-24")
+                .doesNotContainKey("applicationRejected");
+        assertThat(p.getAadhaarVerified()).isTrue();
+        assertThat(p.getDob()).isEqualTo(LocalDate.of(2003, 3, 24));   // Aadhaar DOB wins
+        verify(flow, never()).autoRejectSystem(any(), any(), any(), anyInt());
+    }
+
+    @Test
+    void panVerify_fraudRuleOff_recordsEvidenceWithoutRejecting() {
+        when(bre.isOn(com.navix.loan.bre.BreRuleCatalog.AADHAAR_MISMATCH)).thenReturn(false);
+        CustomerProfile p = profile();
+        p.setAadhaar("234567890124");
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(verification.verifyPan(eq("QVEPS0901K"), anyString()))
+                .thenReturn(panCheckWithMaskedAadhaar("XXXXXXXX9999"));
+
+        var result = service.verifyPan(APP, "QVEPS0901K");
+
+        assertThat(result.status()).isEqualTo("PASS");
+        assertThat(result.derived()).containsEntry("aadhaarMismatch", true)
+                .doesNotContainKey("applicationRejected");
+        verify(flow, never()).autoRejectSystem(any(), any(), any(), anyInt());
+    }
+
+    @Test
+    void rejectIfAadhaarDuplicate_ruleOff_returnsNull() {
+        when(bre.isOn(com.navix.loan.bre.BreRuleCatalog.AADHAAR_DUPLICATE_REJECT)).thenReturn(false);
+        assertThat(service.rejectIfAadhaarDuplicate(APP)).isNull();
+        verify(profileRepo, never()).findSubmittedApplicationIdsByAadhaarForOtherCustomers(any(), any());
+    }
+
+    @Test
+    void bureau_floorAndBlockDaysComeFromThresholds() {
+        when(bre.threshold(com.navix.loan.bre.BreRuleCatalog.T_BUREAU_FLOOR)).thenReturn(600);
+        when(bre.threshold(com.navix.loan.bre.BreRuleCatalog.T_BUREAU_BLOCK_DAYS)).thenReturn(30);
+        CustomerProfile p = bureauReadyProfile();
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        stubConsentPassed();
+        when(verification.pullBureau(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new VerificationPort.BureauCheck("TXN-MID", "DIGITAP_EXPERIAN", 580, false,
+                        1, 0, 5000.0, null));
+
+        service.pullBureau(APP, "999111");
+
+        verify(flow).autoReject(eq(APP), eq(com.navix.loan.entity.ApplicationRejection.LOW_BUREAU_SCORE),
+                eq("Rejected because credit score is under 600"), eq(30));
     }
 
     @Test

@@ -65,6 +65,7 @@ class BureauChallengeAnswerTest {
     @Mock private com.navix.loan.repository.ApplicationEventRepository applicationEventRepo;
 
     private ApplicationVerificationService service;
+    private final com.navix.loan.bre.BreRuleService bre = com.navix.loan.bre.BreTestSupport.defaults();
 
     private static final Long APP = 42L;
     /** Note the padding — CRIF sends its options this way and compares them literally. */
@@ -76,7 +77,7 @@ class BureauChallengeAnswerTest {
                 documentRepo, verification, esign, otpVerifier, emailOtp, storage, risk,
                 new EligibilityService(applicationRepo, limitOverrideRepository, risk), new ObjectMapper(),
                 creditBriefService, eventPublisher, changeLogger, flow, pennyDropGuard, featureFlags,
-                applicationEventRepo, org.mockito.Mockito.mock(BureauPhoneIndexer.class));
+                applicationEventRepo, org.mockito.Mockito.mock(BureauPhoneIndexer.class), bre);
         lenient().when(verificationRepo.save(any())).thenAnswer(i -> i.getArgument(0));
         lenient().when(profileRepo.save(any())).thenAnswer(i -> i.getArgument(0));
         ActorContext.set(new CurrentActor("7", "Borrower", "BORROWER"));

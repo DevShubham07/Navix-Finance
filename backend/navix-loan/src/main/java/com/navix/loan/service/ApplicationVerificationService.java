@@ -16,6 +16,8 @@ import com.navix.common.verification.EmailOtpPort;
 import com.navix.common.verification.OtpVerifierPort;
 import com.navix.common.verification.ProviderFailureDetails;
 import com.navix.common.verification.VerificationPort;
+import com.navix.loan.bre.BreRuleCatalog;
+import com.navix.loan.bre.BreRuleService;
 import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.ApplicationDocument;
@@ -275,6 +277,8 @@ public class ApplicationVerificationService {
     private final ApplicationEventRepository eventRepo;
     // Derived bureau_phone rows (V80); swallows its own failures so it can never break a pull.
     private final BureauPhoneIndexer bureauPhones;
+    // Admin-editable BRE switches and thresholds (flag/threshold tables; defaults = the old constants).
+    private final BreRuleService bre;
 
     /** Borrower-safe view of one step (never carries bureau score / raw PII). */
     /**
@@ -400,13 +404,16 @@ public class ApplicationVerificationService {
         String aadhaarMismatch = aadhaarMismatch(profile, r.maskedAadhaar());
         if (aadhaarMismatch != null) {
             derived.put("aadhaarMismatch", true);
-            derived.put("applicationRejected", true);
+            // BRE rule off = evidence only: borrower pages route on applicationRejected, so leave it unset.
+            if (bre.isOn(BreRuleCatalog.AADHAAR_MISMATCH)) {
+                derived.put("applicationRejected", true);
+            }
             message = message + " — Aadhaar mismatch: " + aadhaarMismatch;
         }
         ApplicationVerification row = upsert(appId, PAN, status, r.provider(), r.txnId(), ref,
                 null, null, null, derived, message);
         recomputeNameMatch(appId);
-        if (aadhaarMismatch != null) {
+        if (aadhaarMismatch != null && bre.isOn(BreRuleCatalog.AADHAAR_MISMATCH)) {
             rejectForAadhaarMismatch(appId, "PAN record", aadhaarMismatch);
         }
         return view(row);
@@ -495,7 +502,7 @@ public class ApplicationVerificationService {
             return;
         }
         flow.autoRejectSystem(appId, ApplicationRejection.FRAUD_REJECTED, detail,
-                ApplicationFlowService.FRAUD_REJECT_BLOCK_DAYS);
+                bre.threshold(BreRuleCatalog.T_FRAUD_BLOCK_DAYS));
         log.info("application={} auto-rejected FRAUD_REJECTED (identity mismatch vs {})", appId, source);
     }
 
@@ -508,6 +515,9 @@ public class ApplicationVerificationService {
      */
     @Transactional
     public LoanApplication rejectIfAadhaarDuplicate(Long appId) {
+        if (!bre.isOn(BreRuleCatalog.AADHAAR_DUPLICATE_REJECT)) {
+            return null;
+        }
         LoanApplication app = applicationRepo.findById(appId).orElse(null);
         CustomerProfile profile = profileRepo.findByApplicationId(appId).orElse(null);
         String aadhaar = profile == null ? null : com.navix.common.util.Aadhaar.normalize(profile.getAadhaar());
@@ -1110,7 +1120,9 @@ public class ApplicationVerificationService {
         // Aadhaar-number mismatch below.
         LocalDate aadhaarDob = parseDob(a.dob());
         LocalDate enteredDob = profile.getDob();
-        String dobMismatch = dobMismatch(enteredDob, aadhaarDob);
+        String dobEvidence = dobMismatch(enteredDob, aadhaarDob);
+        // A BRE rule switched off keeps its mismatch as evidence in derived but no longer fails the check.
+        String dobMismatch = bre.isOn(BreRuleCatalog.DOB_MISMATCH) ? dobEvidence : null;
         // On a mismatch the entered DOB stays: it is the evidence, and a later DigiLocker run (a file that
         // could not be rejected) must compare against it again rather than against the Aadhaar DOB itself.
         if (aadhaarDob != null && dobMismatch == null) {
@@ -1124,7 +1136,8 @@ public class ApplicationVerificationService {
         // V75: the typed Aadhaar number must agree with the one DigiLocker just fetched (last four
         // digits — the masked form is all the provider returns). A disagreement is the fraud rule, so
         // the card is NOT marked verified and the file is rejected below once the evidence is stored.
-        String numberMismatch = aadhaarMismatch(profile, a.maskedAadhaar());
+        String numberEvidence = aadhaarMismatch(profile, a.maskedAadhaar());
+        String numberMismatch = bre.isOn(BreRuleCatalog.AADHAAR_MISMATCH) ? numberEvidence : null;
         String aadhaarMismatch = numberMismatch == null ? dobMismatch
                 : dobMismatch == null ? numberMismatch : numberMismatch + "; " + dobMismatch;
         profile.setAadhaarVerified(aadhaarMismatch == null);
@@ -1180,10 +1193,10 @@ public class ApplicationVerificationService {
         }
 
         Map<String, Object> derived = aadhaarDerived(a);
-        if (numberMismatch != null) {
+        if (numberEvidence != null) {
             derived.put("aadhaarMismatch", true);
         }
-        if (dobMismatch != null) {
+        if (dobEvidence != null) {
             derived.put("dobMismatch", true);
             derived.put("enteredDob", enteredDob.toString());
         }
@@ -1726,10 +1739,10 @@ public class ApplicationVerificationService {
         // itself still reports PASS when there's no mismatch (the pull succeeded); it's the application
         // that gets rejected as a side effect.
         if (autoRejectEnabled() && allowAutoReject && mismatch == null && bureauScore != null
-                && bureauScore < ApplicationFlowService.MIN_BUREAU_SCORE) {
+                && bureauScore < bre.threshold(BreRuleCatalog.T_BUREAU_FLOOR)) {
             flow.autoReject(appId, ApplicationRejection.LOW_BUREAU_SCORE,
-                    "Rejected because credit score is under " + ApplicationFlowService.MIN_BUREAU_SCORE,
-                    ApplicationFlowService.LOW_BUREAU_SCORE_BLOCK_DAYS);
+                    "Rejected because credit score is under " + bre.threshold(BreRuleCatalog.T_BUREAU_FLOOR),
+                    bre.threshold(BreRuleCatalog.T_BUREAU_BLOCK_DAYS));
         }
 
         return new StepResult(BUREAU, status, row.getMessage(), Map.of());
@@ -1801,10 +1814,10 @@ public class ApplicationVerificationService {
         profileRepo.save(profile);
 
         if (autoRejectEnabled() && allowAutoReject && mismatch == null && score != null
-                && score < ApplicationFlowService.MIN_BUREAU_SCORE) {
+                && score < bre.threshold(BreRuleCatalog.T_BUREAU_FLOOR)) {
             flow.autoReject(appId, ApplicationRejection.LOW_BUREAU_SCORE,
-                    "Rejected because credit score is under " + ApplicationFlowService.MIN_BUREAU_SCORE,
-                    ApplicationFlowService.LOW_BUREAU_SCORE_BLOCK_DAYS);
+                    "Rejected because credit score is under " + bre.threshold(BreRuleCatalog.T_BUREAU_FLOOR),
+                    bre.threshold(BreRuleCatalog.T_BUREAU_BLOCK_DAYS));
         }
         return new StepResult(BUREAU, status, row.getMessage(), Map.of());
     }
@@ -1919,7 +1932,7 @@ public class ApplicationVerificationService {
      * {@code feature_flag} once a threshold is chosen.
      */
     private boolean autoRejectEnabled() {
-        return featureFlags.isEnabled("bureau-auto-reject", false);
+        return bre.isOn(BreRuleCatalog.LOW_BUREAU_SCORE);
     }
 
     /**

@@ -95,6 +95,7 @@ class ApplicationFlowServiceTest {
     private com.navix.loan.repository.RepaymentDiscountOfferRepository offerRepository;
 
     private ApplicationFlowService flow;
+    private final com.navix.loan.bre.BreRuleService bre = com.navix.loan.bre.BreTestSupport.defaults();
     private final List<ApplicationEvent> events = new ArrayList<>();
 
     @BeforeEach
@@ -106,7 +107,7 @@ class ApplicationFlowServiceTest {
                 documentRepository, verificationRepository, referenceRepository, new LoanMath(),
                 event -> {}, referralService, dsaCommissionService, featureFlags, mandateService,
                 new RepaymentDiscountOffers(offerRepository, loanRepository, paymentRepository),
-                allowanceRepository, blocklistKeys, blocklistMirror);
+                allowanceRepository, blocklistKeys, blocklistMirror, bre);
         // Applications are open unless a test closes them (strict stubs reject a bare other-flag stub).
         lenient().when(featureFlags.isEnabled(IntakeSwitchService.FLAG, false)).thenReturn(false);
         // Default: assignee passes activation gating; negative case overrides below.
@@ -1044,6 +1045,68 @@ class ApplicationFlowServiceTest {
         ArgumentCaptor<ApplicationRejection> captor = ArgumentCaptor.forClass(ApplicationRejection.class);
         verify(rejectionRepository).save(captor.capture());
         assertThat(captor.getValue().getReasonCode()).isEqualTo(ApplicationRejection.PAST_DELINQUENCY);
+    }
+
+    /** BRE past-delinquency rule switched off: a late history is ignored and the clean path runs. */
+    @Test
+    void reborrowPastDelinquencyRuleOffTakesTheCleanPath() {
+        when(bre.isOn(com.navix.loan.bre.BreRuleCatalog.PAST_DELINQUENCY_REJECT)).thenReturn(false);
+        actor("7", "BORROWER");
+        when(applicationRepository.findByCustomerId(7L)).thenReturn(List.of(priorApp()));
+        when(profileRepository.findByApplicationId(10L)).thenReturn(Optional.of(priorProfile()));
+        Loan closed = loanAt(50L, LoanStatus.CLOSED, LocalDate.now().minusDays(20));
+        when(loanRepository.findByCustomerId(7L)).thenReturn(List.of(closed));
+        lenient().when(paymentRepository.findByLoanId(50L)).thenReturn(List.of(
+                paidOn(50L, closed.getDueDate().plusDays(ApplicationFlowService.LATE_REPAYMENT_TOLERANCE_DAYS + 1))));
+
+        assertThat(flow.reborrow().getStatus()).isEqualTo(ApplicationStatus.PRE_APPROVED);
+        verify(rejectionRepository, never()).save(any());
+    }
+
+    /** With the rule off, a customer who never repaid still has no repaid advance to borrow against. */
+    @Test
+    void reborrowPastDelinquencyRuleOffStillNeedsARepaidLoan() {
+        when(bre.isOn(com.navix.loan.bre.BreRuleCatalog.PAST_DELINQUENCY_REJECT)).thenReturn(false);
+        actor("7", "BORROWER");
+        when(applicationRepository.findByCustomerId(7L)).thenReturn(List.of(priorApp()));
+        when(profileRepository.findByApplicationId(10L)).thenReturn(Optional.of(priorProfile()));
+        when(loanRepository.findByCustomerId(7L)).thenReturn(List.of(
+                loanAt(50L, LoanStatus.IN_COLLECTIONS, LocalDate.now().minusDays(3))));
+
+        assertThatThrownBy(() -> flow.reborrow())
+                .hasFieldOrPropertyWithValue("code", "NO_PRIOR_LOAN");
+    }
+
+    /** BRE auto-sanction off: a clean returning borrower goes to the credit queue, not SANCTIONED. */
+    @Test
+    void reborrowAutoSanctionOffGoesToCreditReview() {
+        when(bre.isOn(com.navix.loan.bre.BreRuleCatalog.REBORROW_AUTO_SANCTION)).thenReturn(false);
+        actor("7", "BORROWER");
+        when(applicationRepository.findByCustomerId(7L)).thenReturn(List.of(priorApp()));
+        when(profileRepository.findByApplicationId(10L)).thenReturn(Optional.of(priorProfile()));
+        Loan closed = loanAt(50L, LoanStatus.CLOSED, LocalDate.now().minusDays(5));
+        when(loanRepository.findByCustomerId(7L)).thenReturn(List.of(closed));
+        when(paymentRepository.findByLoanId(50L)).thenReturn(List.of());
+
+        assertThat(flow.reborrow().getStatus()).isEqualTo(ApplicationStatus.KYC_PENDING);
+        ArgumentCaptor<ApplicationEvent> ev = ArgumentCaptor.forClass(ApplicationEvent.class);
+        verify(eventRepository, org.mockito.Mockito.atLeastOnce()).save(ev.capture());
+        assertThat(ev.getAllValues()).extracting(ApplicationEvent::getAction).contains("REBORROW_CREDIT_REVIEW");
+    }
+
+    @Test
+    void sanctionDuplicateBlockRuleOffLetsTheSanctionThrough() {
+        when(bre.isOn(com.navix.loan.bre.BreRuleCatalog.AADHAAR_DUPLICATE_SANCTION_BLOCK)).thenReturn(false);
+        LoanApplication app = appAt(ApplicationStatus.CREDIT_EXEC_PENDING);
+        actor("head1", "CREDIT_HEAD");
+        com.navix.loan.entity.ApplicationVerification flag = new com.navix.loan.entity.ApplicationVerification();
+        flag.setCheckType("AADHAAR_DUPLICATE");
+        flag.setStatus("REVIEW");
+        lenient().when(verificationRepository.findByApplicationIdAndCheckType(1L, "AADHAAR_DUPLICATE"))
+                .thenReturn(java.util.Optional.of(flag));
+
+        flow.sanction(1L, 2_000_000L, 20, null);
+        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.SANCTIONED);
     }
 
     /** Never fully repaid — still owed past the due date — is disqualifying regardless of days. */

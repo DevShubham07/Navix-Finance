@@ -134,7 +134,7 @@ backend/                       Spring Boot, Maven multi-module (com.navix)
   navix-onboarding/, navix-kyc/ legacy; their routes are denyAll in SecurityConfig — do not build on them
   navix-app/                   ★ the only bootable module: auth, SecurityConfig, JwtAuthFilter, schedulers,
                                dashboard, reports, search, skip trace, BSA, provider workbench, Flyway
-    src/main/resources/db/migration/   V1..V103 (the real schema)
+    src/main/resources/db/migration/   V1..V104 (the real schema)
   (navix-disbursement/ is a dead directory — only a stale target/, not in the pom)
 frontend/src/
   app/(marketing)/             public site — raw-HTML pages from _content/*.ts + marketing-scripts.tsx
@@ -406,8 +406,10 @@ sidebar and Cmd/Ctrl+K search):
   `lib/reports/categories.ts` — change together) + customer data export (field picker;
   `includeIdNumbers` returns full Aadhaar/PAN/UAN/account, logged).
 - *DSA:* my leads, my earnings.
-- *Team & settings:* staff, DSA admin, invites, Provider API dashboard, eSign documents, Settings
-  (onboarding-paused, applications-closed, PayU gateway, company payment block).
+- *Team & settings:* staff, DSA admin, invites, Provider API dashboard, eSign documents, **BRE rules**
+  (`/staff/admin/bre`, ADMIN: every auto-reject / auto-accept rule with its on/off switch and editable
+  numbers, the Customer-360 advisory rules, read-only review/always-on checks, and links to the intake
+  gates), Settings (onboarding-paused, applications-closed, PayU gateway, company payment block).
 
 Settlement and repayment approvals enforce **SoD** (proposer ≠ approver) server-side. Staff screens
 carry ⓘ info-tooltips (`components/ui/tooltip.tsx`).
@@ -491,7 +493,7 @@ capped at 27 days + 5 penalty days (₹1,000) → ₹13,700. Prepaid on 2026-06-
 
 ## 10. Data model & migrations
 
-Flyway migrations live in **`backend/navix-app/src/main/resources/db/migration/`** — **V1..V103**,
+Flyway migrations live in **`backend/navix-app/src/main/resources/db/migration/`** — **V1..V104**,
 contiguous, applied on boot. Each file's header comment explains *why*; the index is
 [`docs/MIGRATIONS.md`](docs/MIGRATIONS.md).
 
@@ -544,9 +546,15 @@ contiguous, applied on boot. Each file's header comment explains *why*; the inde
 - **Schedulers are single-instance** (no distributed lock): payment reminders 09:00 **server time (UTC — 14:30 IST; the cron has no zone)**, employment retry
   hourly :30, provider health hourly :15, NACH debit sweep 10:00 IST, PayU reconcile every 5 min,
   provider-history purge 02:15.
-- **Feature flags** live in `feature_flag`, are changed **only by SQL**, and are read uncached via
-  `FeatureFlagService.isEnabled(key, defaultWhenMissing)`. The only ADMIN-flippable ones (Staff →
-  Settings) are `onboarding-paused`, `applications-closed`, `payu-repayment`.
+- **Feature flags** live in `feature_flag`, are changed by SQL **except** the ADMIN-flippable ones, and
+  are read uncached via `FeatureFlagService.isEnabled(key, defaultWhenMissing)`. ADMIN can flip
+  `onboarding-paused`, `applications-closed`, `payu-repayment` (Staff → Settings) and the **BRE rules**
+  (Staff → BRE rules: `bureau-auto-reject` plus the `bre-*` keys below, upserted by `BreRuleService`).
+  BRE numbers (block days, score floor, late tolerance, advisory thresholds) live in `bre_threshold`
+  (V104; a missing row = the code default). Every BRE default reproduces the pre-tab behaviour; a rule
+  switched OFF is skipped entirely (a mismatch is still written to the check's `derived` as evidence).
+  A borrower token never sees `bre-*` / `bureau-auto-reject` in `GET /api/feature-flags`, except
+  `bre-self-employed-reject`.
 
 | Flag | Seed | Missing row ⇒ | Gates |
 |---|---|---|---|
@@ -562,6 +570,12 @@ contiguous, applied on boot. Each file's header comment explains *why*; the inde
 | `digio-mandate` | off | off | eMandate offer step (real NPCI filing, no sandbox) |
 | `digio-debit` | off | off | NACH debit presentation (moves real money) |
 | `payu-repayment` | off | off | PayU checkout (refused without credentials) |
+| `bre-self-employed-reject` | no row | **on** | self-employed intake auto-reject (BRE tab) |
+| `bre-aadhaar-mismatch-reject`, `bre-dob-mismatch-reject` | no row | **on** | FRAUD_REJECTED on typed Aadhaar / DOB vs PAN record / DigiLocker |
+| `bre-aadhaar-duplicate-reject`, `bre-aadhaar-duplicate-sanction-block` | no row | **on** | duplicate-Aadhaar auto-reject at submit-kyc; sanction refusal while unresolved |
+| `bre-past-delinquency-reject` | no row | **on** | reborrow auto-reject on a late/unpaid history |
+| `bre-reborrow-auto-sanction` | no row | **on** | clean reborrow lands on SANCTIONED (off → credit queue, action `REBORROW_CREDIT_REVIEW`) |
+| `bre-advisory-<rule>` (10) | no row | **on** | Customer-360 advisory BRE rules, evaluated in the browser |
 | `admin-messaging` | off | off | customer messaging, templates writes, discount offers |
 | `reference-otp` | off | off | OTP-confirm each reference |
 | `esign-documents` | off | off | admin eSign documents (billable, binding) |

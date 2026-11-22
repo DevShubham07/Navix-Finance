@@ -67,7 +67,8 @@ class BureauBackfillServiceTest {
     @BeforeEach
     void setUp() {
         service = new BureauBackfillService(applicationRepo, rejectionRepo, profileRepo, verificationRepo,
-                documentRepo, backfillRepo, verificationService, flow, new ObjectMapper());
+                documentRepo, backfillRepo, verificationService, flow, new ObjectMapper(),
+                com.navix.loan.bre.BreTestSupport.defaults());
         ActorContext.set(new CurrentActor("admin-1", "Admin", "ADMIN"));
     }
 

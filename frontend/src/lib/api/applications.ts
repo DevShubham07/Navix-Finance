@@ -4116,6 +4116,47 @@ export const featureFlagsApi = {
 };
 
 // ---------------------------------------------------------------------------
+// BRE rules (ADMIN) — `/api/staff/bre-rules`
+// ---------------------------------------------------------------------------
+
+export type BreRuleGroup = "AUTO" | "ADVISORY" | "REVIEW" | "ALWAYS" | "GATE";
+
+export interface BreThresholdView {
+  key: string;
+  label: string;
+  unit: "days" | "score" | "percent";
+  value: number;
+  defaultValue: number;
+  min: number;
+  max: number;
+  updatedBy: string | null;
+  updatedAt: string | null;
+}
+
+export interface BreRuleView {
+  key: string;
+  group: BreRuleGroup;
+  title: string;
+  checks: string;
+  outcome: string;
+  source: string;
+  toggleable: boolean;
+  flagKey: string | null;
+  enabled: boolean | null;
+  updatedBy: string | null;
+  updatedAt: string | null;
+  thresholds: BreThresholdView[];
+}
+
+export const breRulesApi = {
+  list: () => bff<BreRuleView[]>("/api/staff/bre-rules", "GET"),
+  setEnabled: (ruleKey: string, enabled: boolean) =>
+    bff<BreRuleView>(`/api/staff/bre-rules/${encodeURIComponent(ruleKey)}/enabled`, "PUT", { enabled }),
+  setThreshold: (key: string, value: number) =>
+    bff<BreThresholdView>(`/api/staff/bre-rules/thresholds/${encodeURIComponent(key)}`, "PUT", { value }),
+};
+
+// ---------------------------------------------------------------------------
 // Global search — staff Cmd/Ctrl+K palette (`/api/staff/search`)
 // ---------------------------------------------------------------------------
 

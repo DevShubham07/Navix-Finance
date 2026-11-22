@@ -54,7 +54,7 @@ class ApplicationStaffScopeTest {
             mock(OfferService.class), mandates, mock(StaffDirectory.class),
             mock(ApplicationActorDirectory.class), mock(CollectionCaseDirectory.class),
             mock(LoanRepository.class), mock(ApplicationEventRepository.class),
-            mock(EligibilityService.class), mock(CustomerTrustSignalsService.class), customers);
+            mock(EligibilityService.class), mock(CustomerTrustSignalsService.class), customers, mock(com.navix.loan.bre.BreRuleService.class));
 
     @AfterEach
     void clear() {

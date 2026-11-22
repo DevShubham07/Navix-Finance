@@ -48,6 +48,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
+import com.navix.loan.bre.BreRuleCatalog;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -87,6 +88,7 @@ public class ApplicationController {
     private final EligibilityService eligibilityService;
     private final com.navix.loan.service.CustomerTrustSignalsService trustSignals;
     private final com.navix.loan.service.CustomerService customerService;
+    private final com.navix.loan.bre.BreRuleService bre;
 
     @PostMapping
     public ApiResponse<ApplicationView> create(@Valid @RequestBody CreateApplicationRequest request) {
@@ -434,9 +436,13 @@ public class ApplicationController {
     @PostMapping("/{id}/self-employed")
     public ApiResponse<ApplicationView> selfEmployed(@PathVariable Long id) {
         requireBorrowerOwnsOrStaff(id);
+        if (!bre.isOn(BreRuleCatalog.SELF_EMPLOYED_REJECT)) {
+            // BRE rule switched off: no reject, no block; the borrower carries on as an applicant.
+            return ApiResponse.ok(ApplicationView.of(flow.get(id)).forReader());
+        }
         return ApiResponse.ok(ApplicationView.of(flow.autoReject(id,
                 ApplicationRejection.SELF_EMPLOYED, "Declared self-employed at intake",
-                ApplicationFlowService.SELF_EMPLOYED_BLOCK_DAYS)).forReader());
+                bre.threshold(BreRuleCatalog.T_SELF_EMPLOYED_BLOCK_DAYS))).forReader());
     }
 
     @PostMapping("/{id}/kyc-decision")

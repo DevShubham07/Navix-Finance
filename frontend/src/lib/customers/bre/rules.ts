@@ -109,6 +109,8 @@ export interface BreInput {
   bankAnalyserLive: boolean;
   /** Staging only (NEXT_PUBLIC_BRE_STAGING_PASS=true): rules in STAGING_PASS_RULES report PASS. */
   stagingPass?: boolean;
+  /** Admin-set policy (BRE rules page). `disabled` holds rule keys such as "credit-score". Absent = defaults. */
+  policy?: { disabled?: readonly string[]; minCreditScore?: number; maxNbfcDpdDays?: number; salaryMatchTolerancePct?: number };
 }
 
 /** Rules a staging build reports as passed. Rules 3, 5, 8 and 10 always evaluate for real. */
@@ -123,7 +125,13 @@ export interface BreResult {
   analysis: ProfileAnalysis;
   window: Window;
   counts: Record<BreOutcome, number>;
+  /** Rules an admin switched off (dropped from `rules` and `counts`). */
+  disabledCount: number;
 }
+
+const minScore = (i: BreInput) => i.policy?.minCreditScore ?? MIN_CREDIT_SCORE;
+const maxDpd = (i: BreInput) => i.policy?.maxNbfcDpdDays ?? MAX_NBFC_DPD_DAYS;
+const salaryTol = (i: BreInput) => i.policy?.salaryMatchTolerancePct ?? SALARY_MATCH_TOLERANCE;
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -194,6 +202,7 @@ function noReportCheck(input: BreInput, label: string): BreCheck {
 function r1Score(input: BreInput): BreRule {
   const score = input.bureau.score ?? input.report?.score ?? input.profile?.creditScore ?? null;
   const identityMismatch = str(derivedOf(input.steps, "BUREAU").identityMismatch);
+  const MIN_CREDIT_SCORE = minScore(input);
   const checks: BreCheck[] = [
     score == null
       ? noReportCheck(input, `Credit score above ${MIN_CREDIT_SCORE}`)
@@ -317,6 +326,7 @@ function r3Ownership(input: BreInput, w: Window): BreRule {
 }
 
 function r4Nbfc(input: BreInput, w: Window): BreRule {
+  const MAX_NBFC_DPD_DAYS = maxDpd(input);
   const hasLabel = `NBFC loan in the last ${LOOKBACK_MONTHS} months`;
   const dpdLabel = `No DPD over ${MAX_NBFC_DPD_DAYS} days on those NBFC loans`;
   const report = input.report;
@@ -348,7 +358,7 @@ function r4Nbfc(input: BreInput, w: Window): BreRule {
         : unseen > 0
           ? { label: dpdLabel, outcome: "UNKNOWN", detail: `${unseen} NBFC loan(s) report no payment history in the window` }
           : unclear > 0
-            ? { label: dpdLabel, outcome: "MANUAL", detail: "Experian reports 0–29 DPD as one bucket — confirm none exceeded 10 days" }
+            ? { label: dpdLabel, outcome: "MANUAL", detail: `Experian reports 0–29 DPD as one bucket — confirm none exceeded ${MAX_NBFC_DPD_DAYS} days` }
             : { label: dpdLabel, outcome: "PASS", detail: `Worst ${Math.max(0, ...nbfc.map((a) => worstDpdInWindow(a, w) ?? 0))} DPD in the window` },
     );
   } else if (!lenderTypeKnown) {
@@ -564,6 +574,7 @@ function r9Salary(input: BreInput): BreRule {
   const declared = input.profile?.monthlySalaryPaise ?? null;
   const bank = input.bankSalaryPaise;
   const slips = docsOf(input, ["SALARY_SLIP"]);
+  const SALARY_MATCH_TOLERANCE = salaryTol(input);
   const within = (a: number, b: number) => Math.abs(a - b) <= SALARY_MATCH_TOLERANCE * Math.max(a, b);
   const bankCheck: BreCheck =
     bank == null
@@ -614,10 +625,12 @@ export function evaluateBre(input: BreInput): BreResult {
     r7UanEmployer(input),
     r8AadhaarTriangle(input),
     r9Salary(input),
-  ].map((r) => (input.stagingPass && STAGING_PASS_RULES.includes(r.id) ? stagingPassed(r) : r));
+  ]
+    .filter((r) => !input.policy?.disabled?.includes(r.key))
+    .map((r) => (input.stagingPass && STAGING_PASS_RULES.includes(r.id) ? stagingPassed(r) : r));
   const counts: Record<BreOutcome, number> = { PASS: 0, FLAG: 0, MANUAL: 0, UNKNOWN: 0 };
   for (const r of rules) counts[r.outcome]++;
-  return { rules, analysis, window, counts };
+  return { rules, analysis, window, counts, disabledCount: 10 - rules.length };
 }
 
 /** Newest row per check type: the selected file first, then earlier files for what it lacks. */

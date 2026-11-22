@@ -71,6 +71,23 @@ describe("evaluateBre — a clean file", () => {
   });
 });
 
+describe("evaluateBre — admin policy", () => {
+  it("drops a disabled rule and counts it", () => {
+    const r = evaluateBre({ ...clean(), policy: { disabled: ["credit-score"] } });
+    expect(r.rules.find((x) => x.key === "credit-score")).toBeUndefined();
+    expect(r.rules).toHaveLength(9);
+    expect(r.disabledCount).toBe(1);
+    expect(r.counts.PASS).toBe(5);
+  });
+
+  it("minCreditScore 700 flags a 650 score; default does not", () => {
+    const i = clean();
+    i.bureau = { ...i.bureau, score: 650 };
+    expect(byId(evaluateBre(i).rules, 1).outcome).toBe("PASS");
+    expect(byId(evaluateBre({ ...i, policy: { minCreditScore: 700 } }).rules, 1).outcome).toBe("FLAG");
+  });
+});
+
 describe("evaluateBre — flags", () => {
   it("rule 1: score at or below 600, and a bureau identity mismatch", () => {
     const i = clean();

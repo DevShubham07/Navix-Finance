@@ -52,7 +52,7 @@ class ApplicationQueueScopeTest {
             mock(MandateService.class), mock(StaffDirectory.class), actors, cases,
             mock(LoanRepository.class), mock(ApplicationEventRepository.class),
             mock(EligibilityService.class), mock(CustomerTrustSignalsService.class),
-            customers);
+            customers, mock(com.navix.loan.bre.BreRuleService.class));
 
     @BeforeEach
     void threeActiveLoans() {

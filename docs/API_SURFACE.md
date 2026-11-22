@@ -204,7 +204,10 @@ All routes are gated by the **`referral` feature flag** (off → `REFERRAL_DISAB
 | `GET\|PUT /api/staff/me` | staff | staff self-profile (role/status stay ADMIN-only); `PUT` also toggles `emailOptIn` (operational-email opt-out, null-guarded so a partial PUT leaves it untouched — STAFF_IAM account/security mail is never suppressible) |
 | `GET/POST/DELETE /api/admin/expenses` (+`/{id}`) | ADMIN | company-expense ledger (+ receipt S3 keys) |
 | `GET /api/applications/all` | ADMIN | full register of every application (complete + incomplete) |
-| `GET /api/feature-flags` | any authed | dev-only flag states `{key: enabled}` for UI gating — **read-only, no write path** (flags change only via SQL, §12) |
+| `GET /api/feature-flags` | any authed | flag states `{key: enabled}` for UI gating — **read-only** (flags change via SQL or the ADMIN Settings / BRE endpoints, §12). A **borrower** token omits `bre-*` and `bureau-auto-reject`, except `bre-self-employed-reject` |
+| `GET /api/staff/bre-rules` | staff, **never DSA** | the BRE catalog: `BreRuleView[]` `{key, group AUTO\|ADVISORY\|REVIEW\|ALWAYS\|GATE, title, checks, outcome, source, toggleable, flagKey, enabled, updatedBy, updatedAt, thresholds[]}`; a threshold is `{key, label, unit, value, defaultValue, min, max, updatedBy, updatedAt}` |
+| `PUT /api/staff/bre-rules/{ruleKey}/enabled` | ADMIN | body `{enabled}` — switch a toggleable rule (upserts its `feature_flag` row). `BRE_RULE_NOT_FOUND` · `BRE_RULE_NOT_TOGGLEABLE` |
+| `PUT /api/staff/bre-rules/thresholds/{key}` | ADMIN | body `{value}` — whole number inside the threshold's min/max (upserts `bre_threshold`). `BRE_THRESHOLD_NOT_FOUND` · `BRE_THRESHOLD_OUT_OF_RANGE` |
 
 ### Admin eSign documents (`/api/admin/esign-documents`) — flag `esign-documents` (off)
 
