@@ -17,7 +17,8 @@ on:
 jobs:
   backend:
     name: Backend — unit + Testcontainers IT
-    runs-on: ubuntu-latest
+    # ponytail: pinned - ubuntu-26.04 Docker rejects API 1.32 used by Testcontainers 1.20 (Boot 3.4.1); unpin after bumping testcontainers.version to >=1.21.4
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
