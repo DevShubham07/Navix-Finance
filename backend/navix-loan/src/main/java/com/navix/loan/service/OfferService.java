@@ -654,7 +654,9 @@ public class OfferService {
                 maskAccount(firstNonBlank(app.getDisbursalAccountNumber(),
                         profile != null ? profile.getSalaryAccountNumber() : null)),
                 grievanceOfficerName, grievanceOfficerPhone, grievanceOfficerEmail,
-                loanMath.feeDiscountPaise(principal, discount));
+                loanMath.feeDiscountPaise(principal, discount),
+                profile != null ? profile.getEmail() : null,
+                profile != null ? profile.getAddress() : null);
     }
 
     private static String maskAccount(String account) {

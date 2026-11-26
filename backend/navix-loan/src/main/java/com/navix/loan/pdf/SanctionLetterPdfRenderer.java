@@ -35,6 +35,9 @@ import org.springframework.stereotype.Component;
  * GST deducted upfront, what actually lands in their account, the interest rate and tenure, the due
  * date, the total repayable, and the late-penalty and prepayment terms — plus the grievance officer.
  *
+ * <p>Layout follows the DB-LGL-001 sanction-letter template (subject, approved terms, conditions,
+ * disclosures, acceptance, lender, contacts), with every placeholder filled from the loan's own figures.
+ *
  * <p>Amounts carry an "Rs " prefix: the base-14 PDF fonts have no ₹ glyph, and substituting one would
  * silently drop the character.
  */
@@ -64,6 +67,9 @@ public class SanctionLetterPdfRenderer {
     private static final DateTimeFormatter SIGNED_TIME =
             DateTimeFormatter.ofPattern("d MMM yyyy, h:mm:ss a 'IST'", Locale.ENGLISH);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
+    private static final String LENDER = "MLB Securities Private Limited";
+    /** Room for the eSign stamp Signzy places bottom-left on every page. */
+    private static final float BOTTOM_MARGIN = 90;
 
     /** Everything the letter states. Assembled by the caller so this class stays free of repositories. */
     public record Facts(
@@ -84,7 +90,21 @@ public class SanctionLetterPdfRenderer {
             String grievanceOfficerName,
             String grievanceOfficerPhone,
             String grievanceOfficerEmail,
-            long feeDiscountPaise) {
+            long feeDiscountPaise,
+            String email,
+            String address) {
+
+        /** Shape without contact details (email / communication address). */
+        public Facts(long applicationId, String borrowerName, String pan, String mobile, long principalPaise,
+                     long processingFeePaise, long gstPaise, long netDisbursedPaise, long interestPaise,
+                     long totalRepayablePaise, int tenureDays, LocalDate sanctionedOn, LocalDate repaymentDate,
+                     String disbursalAccountMasked, String grievanceOfficerName, String grievanceOfficerPhone,
+                     String grievanceOfficerEmail, long feeDiscountPaise) {
+            this(applicationId, borrowerName, pan, mobile, principalPaise, processingFeePaise, gstPaise,
+                    netDisbursedPaise, interestPaise, totalRepayablePaise, tenureDays, sanctionedOn,
+                    repaymentDate, disbursalAccountMasked, grievanceOfficerName, grievanceOfficerPhone,
+                    grievanceOfficerEmail, feeDiscountPaise, null, null);
+        }
 
         /** Pre-discount shape: no repayment discount. */
         public Facts(long applicationId, String borrowerName, String pan, String mobile, long principalPaise,
@@ -112,7 +132,9 @@ public class SanctionLetterPdfRenderer {
     }
 
     private byte[] renderDocument(Facts f, byte[] signaturePng, String signerName, Instant signedAt) {
-        Document doc = new Document(PageSize.A4, 44, 44, 26, 22);
+        // The tall bottom margin is deliberate: Signzy stamps the Aadhaar eSign at the bottom-left of
+        // EVERY page (SignzyEsignAdapter, "All"/"BottomLeft"), so no text may run into that corner.
+        Document doc = new Document(PageSize.A4, 44, 44, 26, BOTTOM_MARGIN);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         try {
             SimulationStamp.apply(PdfWriter.getInstance(doc, out));
@@ -121,65 +143,118 @@ public class SanctionLetterPdfRenderer {
             doc.add(header());
             doc.add(rule());
 
-            doc.add(spaced(new Paragraph(safe(f.borrowerName(), "Customer"), NAME), 8, 0));
-            doc.add(new Paragraph("Application #" + f.applicationId()
-                    + (blank(f.pan()) ? "" : "  ·  PAN " + f.pan())
-                    + (blank(f.mobile()) ? "" : "  ·  " + f.mobile()), META));
-            doc.add(new Paragraph("Sanctioned on " + date(f.sanctionedOn()), META));
+            doc.add(spaced(new Paragraph("Subject: Sanction of Personal Loan — Application No. "
+                    + f.applicationId(), SECTION), 8, 4));
+            doc.add(new Paragraph("Dear " + safe(f.borrowerName(), "Customer") + ",", BODY));
+            doc.add(spaced(new Paragraph("With reference to your application, " + LENDER + " (the lender) "
+                    + "has approved the loan described below, subject to the conditions in this letter, this "
+                    + "Key Facts Statement (KFS), the loan agreement and applicable law. This sanction is not a "
+                    + "disbursement confirmation.", BODY), 3, 0));
 
             doc.add(hero(f));
 
-            doc.add(spaced(new Paragraph("Key Facts", SECTION), 8, 3));
+            doc.add(spaced(new Paragraph("Sanction and application details", SECTION), 8, 3));
             doc.add(kvTable(new String[][] {
-                    {"Lender", "MLB Securities Private Limited"},
-                    {"Loan amount (principal)", rs(f.principalPaise())},
+                    {"Issue date", date(f.sanctionedOn())},
+                    {"Application No.", String.valueOf(f.applicationId())},
+                    {"Loan account No.", "Assigned at disbursal"},
+                    {"Borrower name", safe(f.borrowerName(), "As per your KYC")},
+                    blank(f.pan()) ? null : new String[] {"PAN", f.pan()},
+                    blank(f.mobile()) ? null : new String[] {"Registered mobile", f.mobile()},
+                    blank(f.email()) ? null : new String[] {"Borrower email", f.email()},
+                    blank(f.address()) ? null : new String[] {"Communication address", f.address()},
+                    {"Lender", LENDER},
+                    {"Offer validity", "This sanction does not expire"},
+            }));
+
+            doc.add(spaced(new Paragraph("1. Approved loan terms", SECTION), 8, 3));
+            doc.add(kvTable(new String[][] {
+                    {"Approved principal / loan amount", rs(f.principalPaise())},
                     f.feeDiscountPaise() > 0
                             ? new String[] {"Repayment discount applied", rs(f.feeDiscountPaise())} : null,
+                    {"Tenure", f.tenureDays() + " days"},
+                    {"Interest rate and calculation method",
+                            "1% per day on the principal, simple interest, for the actual days held"},
+                    {"Annual Percentage Rate (APR)", apr(f)},
                     {"Processing fee (excluding GST)", rs(f.processingFeePaise())},
                     {"GST on processing fee (18%)", rs(f.gstPaise())},
-                    {"Amount credited to your account", rs(f.netDisbursedPaise())},
-                    {"Interest rate", "1% per day on the principal"},
-                    {"Annual Percentage Rate (APR)", apr(f)},
-                    {"Tenure", f.tenureDays() + " days"},
+                    {"Other charges", "None"},
+                    {"Total deductions from disbursal", rs(f.processingFeePaise() + f.gstPaise())},
+                    {"Net amount to be disbursed", rs(f.netDisbursedPaise())},
                     {"Interest payable over the tenure", rs(f.interestPaise())},
-                    {"Repayment date", date(f.repaymentDate())},
-                    {"Total repayable on the repayment date", rs(f.totalRepayablePaise())},
-                    {"Number of instalments", "1 (single repayment)"},
+                    {"Total amount payable on the repayment date", rs(f.totalRepayablePaise())},
+                    {"Repayment frequency / instalments", "Single repayment (1 instalment)"},
+                    {"Repayment due date", date(f.repaymentDate())},
+                    {"Late / penal charges",
+                            "2% per day on the principal from the day after the due date, capped at 30 days"},
+                    {"Prepayment / foreclosure", "Allowed at any time at no charge"},
+                    {"Authorised repayment method",
+                            "Only via the Repay page in your DhanBoost account, or an e-mandate you authorise"},
                     {"Credit account", safe(f.disbursalAccountMasked(), "As confirmed by you")},
             }));
 
-            doc.add(spaced(new Paragraph("Charges and terms", SECTION), 8, 3));
+            doc.add(spaced(new Paragraph("2. Conditions before disbursement", SECTION), 8, 3));
+            doc.add(bullets(new String[] {
+                    "Completion of KYC, bank-account and other legally permitted verification.",
+                    "Satisfactory creditworthiness, affordability and fraud-risk checks, as applicable.",
+                    "Your review and acceptance of this KFS, the loan agreement, the repayment schedule and "
+                            + "the required consents.",
+                    "Valid execution of the agreement and of any authorised electronic repayment mandate, "
+                            + "where applicable.",
+                    "Confirmation of the permitted disbursal account and completion of lender formalities.",
+            }));
+
+            doc.add(spaced(new Paragraph("3. Important customer disclosures", SECTION), 8, 3));
             doc.add(bullets(new String[] {
                     "The processing fee and GST are deducted upfront from the sanctioned amount. "
                             + "You receive " + rs(f.netDisbursedPaise()) + "; you repay "
                             + rs(f.totalRepayablePaise()) + ".",
                     "Interest accrues at 1% per day on the principal for the actual number of days the "
-                            + "advance is held.",
-                    "Prepayment is allowed at any time at no charge. Interest is charged only to the day "
-                            + "you pay, so repaying early reduces what you owe.",
+                            + "advance is held. Interest is charged only to the day you pay, so repaying early "
+                            + "reduces what you owe.",
                     "If the advance is not repaid by the repayment date, a late penalty of 2% per day on "
                             + "the principal applies from the day after the date shown above, capped at 30 days.",
                     "Information about this loan, including any late payment or default, may be reported by "
                             + "the lender to credit information companies. Late payment can lower your credit "
                             + "score, which those companies calculate.",
-                    "Repayment is a single instalment. There is no auto-debit mandate on this advance.",
-                    "This sanction is subject to successful verification and to the funds being released; "
-                            + "it does not itself create a debt until the amount is credited to you.",
+                    "This letter forms part of, and does not replace, the loan agreement and repayment "
+                            + "schedule. If any term appears inconsistent, ask for corrected documents before "
+                            + "accepting.",
+                    "No fee or charge is collected unless it is lawfully applicable, approved by the lender "
+                            + "and disclosed in this letter.",
+                    "Repay only through the authorised channels shown in your DhanBoost account. Never pay "
+                            + "an agent's personal account, and never share your OTP, password or UPI PIN.",
+                    "Any extension, cancellation, prepayment or other change is subject to the loan "
+                            + "documents, lender approval and applicable law.",
             }));
 
-            doc.add(spaced(new Paragraph("Grievance redressal", SECTION), 8, 3));
+            doc.add(spaced(new Paragraph("4. Borrower acceptance", SECTION), 8, 3));
+            doc.add(new Paragraph("I confirm that I have had an opportunity to review this sanction letter and "
+                    + "Key Facts Statement. I understand that the loan will be disbursed only after the required "
+                    + "conditions are satisfied and the applicable loan documents are accepted.", BODY));
+            if (signaturePng != null) {
+                doc.add(spaced(new Paragraph("Borrower signature", SECTION), 6, 3));
+                doc.add(signatureBlock(f.applicationId(), signaturePng,
+                        safe(signerName, f.borrowerName()), signedAt));
+            } else {
+                doc.add(spaced(new Paragraph("You accept this letter by signing it electronically in the "
+                        + "DhanBoost app.", META), 3, 0));
+            }
+
+            doc.add(spaced(new Paragraph("5. For the lender", SECTION), 8, 3));
+            doc.add(new Paragraph("Issued for and on behalf of " + LENDER + " through the DhanBoost platform "
+                    + "operated by NAVIX Finance Private Limited. This is a system-generated letter.", BODY));
+
+            doc.add(spaced(new Paragraph("Customer support and grievance redressal", SECTION), 8, 3));
             doc.add(new Paragraph(
+                    "Website www.dhanboost.com  ·  Customer support 8510028510  ·  WhatsApp 9211331167  ·  "
+                            + "support@dhanboost.com  ·  info@dhanboost.com", BODY));
+            doc.add(spaced(new Paragraph(
                     "Grievance Redressal Officer: " + safe(f.grievanceOfficerName(), "—")
                             + "  ·  " + safe(f.grievanceOfficerPhone(), "—")
                             + "  ·  " + safe(f.grievanceOfficerEmail(), "—")
                             + ". If your complaint is not resolved within 30 days you may escalate it to "
-                            + "the RBI Ombudsman.", BODY));
-
-            if (signaturePng != null) {
-                doc.add(spaced(new Paragraph("Borrower signature", SECTION), 8, 3));
-                doc.add(signatureBlock(f.applicationId(), signaturePng,
-                        safe(signerName, f.borrowerName()), signedAt));
-            }
+                            + "the RBI Ombudsman.", BODY), 2, 0));
 
             doc.add(footerSpacer());
             doc.add(rule());
@@ -187,7 +262,7 @@ public class SanctionLetterPdfRenderer {
                     "Lender: MLB Securities Private Limited (CIN U74899DL1995PTC067535, RBI Registration "
                             + "No. 14.00526). DhanBoost is operated by NAVIX Finance Private Limited "
                             + "(CIN U64990HR2026PTC144926) as technology service provider.  "
-                            + "This Key Fact Statement forms part of your loan agreement and is signed "
+                            + "This Key Facts Statement forms part of your loan agreement and is signed "
                             + "electronically by you.", FOOTER);
             footer.setAlignment(Element.ALIGN_CENTER);
             doc.add(footer);
@@ -241,9 +316,9 @@ public class SanctionLetterPdfRenderer {
     private PdfPTable header() throws DocumentException {
         PdfPTable t = new PdfPTable(2);
         t.setWidthPercentage(100);
-        t.setWidths(new float[] {2f, 1.4f});
+        t.setWidths(new float[] {1.2f, 2f});
         t.addCell(borderless(new Phrase("DhanBoost", WORDMARK), Element.ALIGN_LEFT));
-        t.addCell(borderless(new Phrase("SANCTION LETTER  ·  KEY FACT STATEMENT", TITLE),
+        t.addCell(borderless(new Phrase("LOAN SANCTION LETTER  ·  KEY FACTS STATEMENT", TITLE),
                 Element.ALIGN_RIGHT));
         return t;
     }

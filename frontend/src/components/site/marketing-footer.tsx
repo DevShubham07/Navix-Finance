@@ -46,6 +46,9 @@ export function MarketingFooter() {
             <Link href="/kyc-aml-policy">KYC &amp; AML Policy</Link>
             <Link href="/risk-management">Risk Management</Link>
             <Link href="/corporate-governance">Corporate Governance</Link>
+            <Link href="/kfs-information-policy">KFS Information Policy</Link>
+            <Link href="/loan-agreement-access-policy">Loan Agreement Access</Link>
+            <Link href="/publication-standards">Publication Standards</Link>
             <a href="https://sachet.rbi.org.in" target="_blank" rel="noopener noreferrer">RBI Sachet Portal</a>
             <Link href="/faq">FAQs</Link>
           </div>

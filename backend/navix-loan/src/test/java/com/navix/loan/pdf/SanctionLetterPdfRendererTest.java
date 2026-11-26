@@ -46,12 +46,13 @@ class SanctionLetterPdfRendererTest {
                 LocalDate.of(2026, 8, 7), LocalDate.of(2026, 9, 6), "•••• 9012",
                 "Lalit Kumar", "9716760246", "grievance@dhanboost.com");
 
-        PdfReader reader = new PdfReader(renderer.render(f));
-        String text = new PdfTextExtractor(reader).getTextFromPage(1);
-        reader.close();
+        String text = allText(renderer.render(f)).replaceAll("\\s+", " ");
 
-        assertThat(text.replaceAll("\\s+", " ")).contains("MLB Securities Private Limited", "14.00526", "540.7% per year", "excluding GST",
-                "credit information companies");
+        assertThat(text).contains("MLB Securities Private Limited", "14.00526", "540.7% per year", "excluding GST",
+                "credit information companies", "Sanction of Personal Loan", "Conditions before disbursement",
+                "Total deductions from disbursal", "Rs 1,770", "9211331167");
+        // The template's issuance control: never issue with placeholders or blank signature lines.
+        assertThat(text).doesNotContain("[", "____");
     }
 
     @Test
@@ -64,12 +65,8 @@ class SanctionLetterPdfRendererTest {
                 54L, "Asha Kumari", null, null, 1_000_000L, 100_000L, 18_000L, 882_000L, 270_000L, 1_270_000L, 27,
                 LocalDate.of(2026, 8, 7), LocalDate.of(2026, 9, 3), null, null, null, null);
 
-        PdfReader a = new PdfReader(renderer.render(with));
-        PdfReader b = new PdfReader(renderer.render(without));
-        assertThat(new PdfTextExtractor(a).getTextFromPage(1)).contains("Repayment discount applied");
-        assertThat(new PdfTextExtractor(b).getTextFromPage(1)).doesNotContain("Repayment discount applied");
-        a.close();
-        b.close();
+        assertThat(allText(renderer.render(with))).contains("Repayment discount applied");
+        assertThat(allText(renderer.render(without))).doesNotContain("Repayment discount applied");
     }
 
     @Test
@@ -101,12 +98,36 @@ class SanctionLetterPdfRendererTest {
                 Instant.parse("2026-08-09T13:17:18Z"));
 
         PdfReader reader = new PdfReader(pdf);
-        String text = new PdfTextExtractor(reader).getTextFromPage(1);
-        assertThat(reader.getNumberOfPages()).isEqualTo(1);
+        String text = allText(pdf);
+        // Two pages at most: the eSign stamp lands bottom-left on every page.
+        assertThat(reader.getNumberOfPages()).isBetween(1, 2);
         assertThat(text).contains("Borrower signature", "Signed by Asha Kumari",
                 "9 Aug 2026", "IST", "Application #54");
-        assertThat(reader.getPageN(1).getAsDict(com.lowagie.text.pdf.PdfName.RESOURCES)
+        assertThat(reader.getPageN(reader.getNumberOfPages()).getAsDict(com.lowagie.text.pdf.PdfName.RESOURCES)
                 .getAsDict(com.lowagie.text.pdf.PdfName.XOBJECT).size()).isGreaterThan(0);
         reader.close();
+    }
+
+    @Test
+    void showsContactDetailsWhenKnown() throws Exception {
+        SanctionLetterPdfRenderer.Facts f = new SanctionLetterPdfRenderer.Facts(
+                54L, "Asha Kumari", "AZKPQ3156X", "9811100948",
+                1_500_000L, 150_000L, 27_000L, 1_323_000L, 450_000L, 1_950_000L, 30,
+                LocalDate.of(2026, 8, 7), LocalDate.of(2026, 9, 6), "•••• 9012",
+                "Lalit Kumar", "9716760246", "grievance@dhanboost.com", 0L,
+                "asha@example.com", "12 MG Road, Gurugram 122001");
+
+        assertThat(allText(renderer.render(f)).replaceAll("\\s+", " "))
+                .contains("asha@example.com", "12 MG Road, Gurugram 122001");
+    }
+
+    private static String allText(byte[] pdf) throws Exception {
+        PdfReader reader = new PdfReader(pdf);
+        StringBuilder sb = new StringBuilder();
+        for (int i = 1; i <= reader.getNumberOfPages(); i++) {
+            sb.append(new PdfTextExtractor(reader).getTextFromPage(i)).append('\n');
+        }
+        reader.close();
+        return sb.toString();
     }
 }

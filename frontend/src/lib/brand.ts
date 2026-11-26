@@ -9,6 +9,8 @@ export const BRAND = {
   phone: "+91 85100 28510",
   phoneHref: "tel:+918510028510",
   email: "support@dhanboost.com",
+  infoEmail: "info@dhanboost.com",
+  whatsapp: "+91 92113 31167",
   grievanceEmail: "grievance@dhanboost.com",
   /** Grievance Redressal Officer under the Consumer Protection Act, 2019. */
   grievanceOfficer: {
@@ -37,7 +39,7 @@ export const PAYMENT_SAFETY_NOTICE =
   "Always use our secure Repayment on Website Link for loan payments. Do not make direct bank payments to fake UPI links or unauthorised payment links. DhanBoost is not responsible for payments made to other accounts.";
 
 /**
- * Shown at the top of the four new policy pages until they are approved under DB-LGL-004.
+ * Shown at the top of the seven draft policy pages until they are approved under DB-LGL-004.
  * On approval: set to "", remove `robots` from each page.tsx, and add the routes to sitemap.ts.
  */
 export const POLICY_DRAFT_NOTICE =
