@@ -1,5 +1,6 @@
 package com.navix.collections.dto;
 
+import com.navix.common.storage.DocumentStoragePort;
 import com.navix.collections.domain.DpdBucket;
 import com.navix.collections.entity.InteractionLog;
 import com.navix.common.loan.LoanSummary;
@@ -137,12 +138,24 @@ public final class CollectionsDtos {
             String outcome,
             LocalDate promiseToPayDate,
             String proofRef,
+            String proofUrl,
             Instant loggedAt) {
 
-        public static InteractionView of(InteractionLog l) {
+        public static InteractionView of(InteractionLog l, DocumentStoragePort storage) {
             return new InteractionView(l.getId(), l.getCollectionCaseId(), l.getType(),
-                    l.getOutcome(), l.getPromiseToPayDate(), l.getProofRef(), l.getLoggedAt());
+                    l.getOutcome(), l.getPromiseToPayDate(), l.getProofRef(),
+                    presignProof(storage, l.getProofRef()), l.getLoggedAt());
         }
+    }
+
+    /**
+     * A presigned GET for a proof that is an uploaded screenshot, else null (a UTR or a note is
+     * shown as text). Only a repayment-proof upload is presigned — the same rule as
+     * {@code RepaymentService.isProofKey}, so a typed key can never fetch some other document.
+     */
+    public static String presignProof(DocumentStoragePort storage, String ref) {
+        return ref != null && ref.startsWith("loan/repayment-proof/") && !ref.contains("..")
+                ? storage.presignDownload(ref) : null;
     }
 
     /**
@@ -241,6 +254,7 @@ public final class CollectionsDtos {
             LocalDate paidOn,
             String txnRef,
             String proofRef,
+            String proofUrl,
             UUID settlementId,
             String status,
             Long raisedBy,

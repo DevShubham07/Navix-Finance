@@ -33,6 +33,7 @@ import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import com.navix.common.storage.DocumentStoragePort;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -66,6 +67,7 @@ public class CollectionsController {
     private final CollectionPaymentService collectionPaymentService;
     private final DpdCalculator dpdCalculator;
     private final ManualDebitService manualDebitService;
+    private final DocumentStoragePort storage;
 
     /**
      * The collections worklist — one row per live loan, past due or due within the next week,
@@ -223,13 +225,13 @@ public class CollectionsController {
                                                        @Valid @RequestBody LogInteractionRequest request) {
         return ApiResponse.ok(InteractionView.of(collectionsService.logInteraction(
                 caseId, request.type(), request.outcome(),
-                request.promiseToPayDate(), request.proofRef())));
+                request.promiseToPayDate(), request.proofRef()), storage));
     }
 
     @GetMapping("/cases/{caseId}/interactions")
     public ApiResponse<List<InteractionView>> listInteractions(@PathVariable UUID caseId) {
         return ApiResponse.ok(
-                collectionsService.listInteractions(caseId).stream().map(InteractionView::of).toList());
+                collectionsService.listInteractions(caseId).stream().map(l -> InteractionView.of(l, storage)).toList());
     }
 
     /** Officer proposes a partial settlement (amount in paise). */

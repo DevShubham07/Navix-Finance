@@ -13,7 +13,8 @@ import { Badge, EmptyState, ErrorState, Input, Select, Skeleton, toast } from "@
 import { Field, FieldGrid } from "@/components/ui/field-grid";
 import { CallLogRow, Section } from "@/components/staff/detail-parts";
 import { errMessage } from "@/components/staff/live-pipeline";
-import { CasePaymentsCard, RecordPaymentCard } from "@/components/staff/collection-payments";
+import { CasePaymentsCard, RecordPaymentCard, uploadPaymentProof } from "@/components/staff/collection-payments";
+import { PaymentProofLink } from "@/components/ui/payment-proof-link";
 import { LoanSelector, todayISO, useSelectedLoanId } from "@/components/staff/customer-360/loan-card";
 import type { TabCtx } from "@/components/staff/customer-360/types";
 import { bucketOf, dpdDays, loanCycle, ordinal } from "@/lib/calc/loan-kpis";
@@ -214,20 +215,25 @@ function InteractionsSection({
   const [outcome, setOutcome] = React.useState("CONNECTED");
   const [ptp, setPtp] = React.useState("");
   const [proof, setProof] = React.useState("");
+  const [proofFile, setProofFile] = React.useState<File | null>(null);
+  const [fileKey, setFileKey] = React.useState(0);
   const isPromise = outcome === "PROMISE_TO_PAY";
   const isPaid = outcome === "PAID";
 
   const log = useMutation({
     // Only the fields on screen for this outcome are sent.
-    mutationFn: () =>
+    mutationFn: async () =>
       collectionsApi.logInteraction(caseId, {
         type,
         outcome,
         promiseToPayDate: isPromise && ptp ? ptp : undefined,
-        proofRef: isPaid ? proof.trim() || undefined : undefined,
+        // One proof slot: an attached screenshot wins over the typed UTR.
+        proofRef: !isPaid ? undefined : proofFile ? await uploadPaymentProof(proofFile) : proof.trim() || undefined,
       }),
     onSuccess: () => {
       setProof("");
+      setProofFile(null);
+      setFileKey((k) => k + 1);
       setPtp("");
       onLogged();
       toast.success("Interaction logged");
@@ -242,7 +248,17 @@ function InteractionsSection({
             <Select label="Type" value={type} onChange={(e) => setType(e.target.value)} options={TYPES.map((t) => ({ value: t, label: t }))} className="!mb-0" />
             <Select label="Outcome" value={outcome} onChange={(e) => setOutcome(e.target.value)} options={OUTCOMES.map((o) => ({ value: o, label: o }))} className="!mb-0" />
             {isPromise && <Input label="Promise-to-pay" type="date" value={ptp} onChange={(e) => setPtp(e.target.value)} className="!mb-0" />}
-            {isPaid && <Input label="Proof ref" value={proof} onChange={(e) => setProof(e.target.value)} placeholder="UTR / receipt" className="!mb-0" />}
+            {isPaid && !proofFile && <Input label="Proof ref" value={proof} onChange={(e) => setProof(e.target.value)} placeholder="UTR / receipt" className="!mb-0" />}
+            {isPaid && (
+              <Input
+                key={fileKey}
+                label="or screenshot"
+                type="file"
+                accept="image/*,.pdf"
+                onChange={(e) => setProofFile(e.target.files?.[0] ?? null)}
+                className="!mb-0"
+              />
+            )}
             <button type="button" onClick={() => log.mutate()} disabled={log.isPending} className="btn btn-sm btn-navy disabled:opacity-50">
               {log.isPending && <Loader2 size={13} className="animate-spin" />} Log
             </button>
@@ -265,7 +281,11 @@ function InteractionsSection({
               <span className="text-ink">
                 <span className="font-semibold">{i.type}</span> · {i.outcome}
                 {i.promiseToPayDate ? <span className="text-muted"> · PTP {i.promiseToPayDate}</span> : null}
-                {i.proofRef ? <span className="text-muted"> · proof {i.proofRef}</span> : null}
+                {i.proofUrl ? (
+                  <span className="text-muted"> · <PaymentProofLink url={i.proofUrl} /></span>
+                ) : i.proofRef ? (
+                  <span className="text-muted"> · proof {i.proofRef}</span>
+                ) : null}
               </span>
               <span className="flex-shrink-0 text-xs text-muted">{i.loggedAt ? formatDateTime(i.loggedAt) : ""}</span>
             </li>

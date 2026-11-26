@@ -75,7 +75,8 @@ class CollectionPaymentServiceTest {
     void setUp() {
         org.mockito.Mockito.lenient().when(collectionsService.scopedCaseIdsOrNull()).thenReturn(null); // unscoped by default
         service = new CollectionPaymentService(paymentRepository, caseRepository, settlementRepository,
-                settlementService, loanDirectory, staffDirectory, event -> {}, collectionsService);
+                settlementService, loanDirectory, staffDirectory, event -> {}, collectionsService,
+                org.mockito.Mockito.mock(com.navix.common.storage.DocumentStoragePort.class));
     }
 
     @AfterEach

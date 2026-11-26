@@ -4,11 +4,13 @@ import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, HandCoins, Loader2, ShieldCheck, XCircle } from "lucide-react";
 import { EmptyState, ErrorState, Input, Select, Skeleton, StatusBadge, toast } from "@/components/ui";
+import { PaymentProofLink } from "@/components/ui/payment-proof-link";
 import { errMessage, PermissionGate } from "@/components/staff/live-pipeline";
 import {
   collectionsApi,
   paiseToINR,
   rupeesToPaise,
+  storageApi,
   COLLECTION_PAYMENT_KINDS,
   type CollectionPaymentKind,
   type CollectionPaymentView,
@@ -45,6 +47,22 @@ function kindLabel(kind: CollectionPaymentKind) {
   return COLLECTION_PAYMENT_KINDS.find((k) => k.value === kind)?.label ?? kind;
 }
 
+/**
+ * Upload a payment screenshot the way the borrower's /repay does (presign -> browser->S3 PUT) and
+ * return its key. A repayment-proof key is what the ledger presigns, so once the accountant
+ * validates the payment the same screenshot shows on the loan's repayment rows too.
+ */
+export async function uploadPaymentProof(file: File): Promise<string> {
+  const up = await storageApi.presignUpload({
+    category: "REPAYMENT_PROOF",
+    // The key is copied onto payment.proof_url (varchar 255) on validation, so keep it short.
+    filename: file.name.slice(-100),
+    contentType: file.type || "application/octet-stream",
+  });
+  await storageApi.putToPresignedUrl(up.url, file);
+  return up.key;
+}
+
 // ---------------------------------------------------------------------------
 // Record a payment — Collection Executive / Head, on the case detail page
 // ---------------------------------------------------------------------------
@@ -56,22 +74,28 @@ export function RecordPaymentCard({ caseId, onRaised }: { caseId: string; onRais
   const [paidOn, setPaidOn] = React.useState(() => new Date().toISOString().slice(0, 10));
   const [txnRef, setTxnRef] = React.useState("");
   const [proofRef, setProofRef] = React.useState("");
+  const [proofFile, setProofFile] = React.useState<File | null>(null);
+  // Remounts the file input so a recorded payment clears the picked file.
+  const [fileKey, setFileKey] = React.useState(0);
   // Null while the box is empty, a lone ".", or zero — submit stays disabled until it is an amount.
   const rupees = parsePositiveRupees(amount);
 
   const raise = useMutation({
-    mutationFn: (value: number) =>
+    mutationFn: async (value: number) =>
       collectionsApi.raisePayment(caseId, {
         kind,
         amountPaise: rupeesToPaise(value),
         paidOn: paidOn || undefined,
         txnRef: txnRef.trim() || undefined,
-        proofRef: proofRef.trim() || undefined,
+        // An attached screenshot is the proof; the note box is the fallback when there is none.
+        proofRef: proofFile ? await uploadPaymentProof(proofFile) : proofRef.trim() || undefined,
       }),
     onSuccess: (data) => {
       setAmount("");
       setTxnRef("");
       setProofRef("");
+      setProofFile(null);
+      setFileKey((k) => k + 1);
       qc.invalidateQueries({ queryKey: ["collection-payments"] });
       onRaised?.();
       // Was a success line that never cleared; the payment itself stays visible (with its status)
@@ -114,11 +138,20 @@ export function RecordPaymentCard({ caseId, onRaised }: { caseId: string; onRais
           placeholder="UTR / UPI reference"
         />
         <Input
-          label="Proof (optional)"
-          value={proofRef}
-          onChange={(e) => setProofRef(e.target.value)}
-          placeholder="Screenshot reference or a note"
+          key={fileKey}
+          label="Payment screenshot (optional)"
+          type="file"
+          accept="image/*,.pdf"
+          onChange={(e) => setProofFile(e.target.files?.[0] ?? null)}
         />
+        {!proofFile && (
+          <Input
+            label="Proof note (optional)"
+            value={proofRef}
+            onChange={(e) => setProofRef(e.target.value)}
+            placeholder="A note, if you have no screenshot"
+          />
+        )}
         {raise.error && <p className="mb-2 text-sm text-error-700">{errMessage(raise.error)}</p>}
         <button
           onClick={() => rupees != null && raise.mutate(rupees)}
@@ -170,6 +203,12 @@ export function CasePaymentsCard({ caseId }: { caseId: string }) {
               <div className="mt-0.5 text-xs text-muted">
                 {kindLabel(p.kind)} · paid {p.paidOn ?? "—"} · recorded by {p.raisedByName ?? `#${p.raisedBy}`}
                 {p.txnRef ? ` · ${p.txnRef}` : ""}
+                {p.proofUrl && (
+                  <>
+                    {" · "}
+                    <PaymentProofLink url={p.proofUrl} />
+                  </>
+                )}
               </div>
               {p.remarks && (
                 <div className="mt-1 text-xs text-ink">
@@ -349,7 +388,13 @@ function QueueShell({
                 <div className="mt-0.5 text-xs text-muted">
                   Recorded by {p.raisedByName ?? `#${p.raisedBy}`} on {formatDateTime(p.raisedAt)}
                 </div>
-                {p.proofRef && <div className="mt-1 text-xs text-ink">Proof: {p.proofRef}</div>}
+                {p.proofUrl ? (
+                  <div className="mt-1 text-xs">
+                    <PaymentProofLink url={p.proofUrl} />
+                  </div>
+                ) : (
+                  p.proofRef && <div className="mt-1 text-xs text-ink">Proof: {p.proofRef}</div>
+                )}
               </div>
               {actions(p)}
             </li>

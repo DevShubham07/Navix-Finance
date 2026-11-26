@@ -1,6 +1,7 @@
 package com.navix.collections.service;
 
 import com.navix.collections.dto.CollectionsDtos.CollectionPaymentView;
+import static com.navix.collections.dto.CollectionsDtos.presignProof;
 import com.navix.collections.entity.CollectionCase;
 import com.navix.collections.entity.CollectionPayment;
 import com.navix.collections.entity.CollectionPaymentKind;
@@ -19,6 +20,7 @@ import com.navix.common.notification.event.CollectionPaymentRaisedEvent;
 import com.navix.common.security.ActorContext;
 import com.navix.common.staff.StaffDirectory;
 import com.navix.common.staff.StaffSummary;
+import com.navix.common.storage.DocumentStoragePort;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -76,6 +78,7 @@ public class CollectionPaymentService {
     private final StaffDirectory staffDirectory;
     private final ApplicationEventPublisher eventPublisher;
     private final CollectionsService collectionsService;
+    private final DocumentStoragePort storage;
 
     /**
      * Record a payment taken on a case. A settlement must name an <b>approved</b> settlement — the
@@ -296,7 +299,7 @@ public class CollectionPaymentService {
         return new CollectionPaymentView(
                 p.getId(), p.getCollectionCaseId(), p.getLoanId(),
                 p.getKind().name(), p.getAmountPaise(), p.getPaidOn(),
-                p.getTxnRef(), p.getProofRef(), p.getSettlementId(),
+                p.getTxnRef(), p.getProofRef(), presignProof(storage, p.getProofRef()), p.getSettlementId(),
                 p.getStatus().name(),
                 p.getRaisedBy(), staffName(p.getRaisedBy()), p.getRaisedAt(),
                 p.getValidatedBy(), staffName(p.getValidatedBy()), p.getValidatedAt(),
@@ -313,7 +316,7 @@ public class CollectionPaymentService {
         return new CollectionPaymentView(
                 p.getId(), p.getCollectionCaseId(), p.getLoanId(),
                 p.getKind().name(), p.getAmountPaise(), p.getPaidOn(),
-                p.getTxnRef(), p.getProofRef(), p.getSettlementId(),
+                p.getTxnRef(), p.getProofRef(), presignProof(storage, p.getProofRef()), p.getSettlementId(),
                 p.getStatus().name(),
                 p.getRaisedBy(), p.getRaisedBy() == null ? null : names.get(p.getRaisedBy()), p.getRaisedAt(),
                 p.getValidatedBy(), p.getValidatedBy() == null ? null : names.get(p.getValidatedBy()),

@@ -4562,6 +4562,8 @@ export interface InteractionView {
   outcome: string;
   promiseToPayDate: string | null;
   proofRef: string | null;
+  /** Presigned GET when the proof is an uploaded screenshot; null for a typed UTR / note. */
+  proofUrl?: string | null;
   loggedAt: string;
 }
 
@@ -4647,6 +4649,8 @@ export interface CollectionPaymentView {
   paidOn: string | null;
   txnRef: string | null;
   proofRef: string | null;
+  /** Presigned GET when the proof is an uploaded screenshot; null for a typed note. */
+  proofUrl?: string | null;
   settlementId: string | null;
   status: CollectionPaymentStatusName;
   raisedBy: number | null;
