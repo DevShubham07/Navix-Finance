@@ -17,6 +17,7 @@ import com.navix.common.verification.OtpVerifierPort;
 import com.navix.common.verification.ProviderFailureDetails;
 import com.navix.common.verification.VerificationPort;
 import com.navix.loan.bre.BreRuleCatalog;
+import com.navix.loan.bre.BlockedPincodeService;
 import com.navix.loan.bre.BreRuleService;
 import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.entity.CustomerProfile;
@@ -279,6 +280,8 @@ public class ApplicationVerificationService {
     private final BureauPhoneIndexer bureauPhones;
     // Admin-editable BRE switches and thresholds (flag/threshold tables; defaults = the old constants).
     private final BreRuleService bre;
+    // V105 blocked pin code list (BRE rule pincode-blocked-reject).
+    private final BlockedPincodeService blockedPincodes;
 
     /** Borrower-safe view of one step (never carries bureau score / raw PII). */
     /**
@@ -410,11 +413,15 @@ public class ApplicationVerificationService {
             }
             message = message + " — Aadhaar mismatch: " + aadhaarMismatch;
         }
+        boolean fraudReject = aadhaarMismatch != null && bre.isOn(BreRuleCatalog.AADHAAR_MISMATCH);
+        String blockedPin = fraudReject ? null : blockedPincodeToReject(appId, r.addressZip(), derived);
         ApplicationVerification row = upsert(appId, PAN, status, r.provider(), r.txnId(), ref,
                 null, null, null, derived, message);
         recomputeNameMatch(appId);
-        if (aadhaarMismatch != null && bre.isOn(BreRuleCatalog.AADHAAR_MISMATCH)) {
+        if (fraudReject) {
             rejectForAadhaarMismatch(appId, "PAN record", aadhaarMismatch);
+        } else if (blockedPin != null) {
+            rejectForBlockedPincode(appId, blockedPin, "PAN record");
         }
         return view(row);
     }
@@ -504,6 +511,38 @@ public class ApplicationVerificationService {
         flow.autoRejectSystem(appId, ApplicationRejection.FRAUD_REJECTED, detail,
                 bre.threshold(BreRuleCatalog.T_FRAUD_BLOCK_DAYS));
         log.info("application={} auto-rejected FRAUD_REJECTED (identity mismatch vs {})", appId, source);
+    }
+
+    /**
+     * Blocked-pin-code rule (V105). Marks {@code pincodeBlocked} on {@code derived} whenever the pin is
+     * listed (evidence, even with the rule off) and returns the pin when this file must be rejected: rule
+     * on, a new customer, and a status the state machine still lets us reject (staff retries run on later
+     * files too). The caller rejects with {@link #rejectForBlockedPincode} once the row is stored.
+     */
+    private String blockedPincodeToReject(Long appId, String pincode, Map<String, Object> derived) {
+        String pin = blockedPincodes.blockedOf(pincode);
+        if (pin == null) {
+            return null;
+        }
+        derived.put("pincodeBlocked", true);
+        if (!bre.isOn(BreRuleCatalog.PINCODE_BLOCKED_REJECT)) {
+            return null;
+        }
+        LoanApplication app = applicationRepo.findById(appId).orElse(null);
+        if (app == null || !app.getStatus().canTransitionTo(ApplicationStatus.REJECTED)
+                || !blockedPincodes.isNewCustomer(app)) {
+            return null;
+        }
+        derived.put("applicationRejected", true);
+        return pin;
+    }
+
+    /** Permanent reject; the borrower-readable event names no rule (the register detail is staff-only). */
+    private void rejectForBlockedPincode(Long appId, String pin, String source) {
+        flow.autoRejectSystem(appId, ApplicationRejection.PINCODE_BLOCKED,
+                "Pin code " + pin + " (from the " + source + ") is on the blocked list",
+                ApplicationRejection.INDEFINITE, "AUTO_REJECT_ELIGIBILITY", "Not eligible");
+        log.info("application={} auto-rejected PINCODE_BLOCKED ({} from {})", appId, pin, source);
     }
 
     /**
@@ -643,9 +682,14 @@ public class ApplicationVerificationService {
         derived.put("district", r.district());
         derived.put("country", r.country());
         derived.put("confidenceScore", r.confidenceScore());
+        String blockedPin = resolved ? blockedPincodeToReject(appId, r.pincode(), derived) : null;
         String status = resolved ? PASS : REVIEW;
-        return view(upsert(appId, ADDRESS, status, r.provider(), r.txnId(), ref, null, null, null, derived,
+        StepResult out = view(upsert(appId, ADDRESS, status, r.provider(), r.txnId(), ref, null, null, null, derived,
                 resolved ? "Address resolved" : "Address could not be resolved — review"));
+        if (blockedPin != null) {
+            rejectForBlockedPincode(appId, blockedPin, "geolocation address");
+        }
+        return out;
     }
 
     /** Manual address fallback when geolocation is unavailable — recorded for approver review. */
@@ -984,8 +1028,13 @@ public class ApplicationVerificationService {
         // (by either tab — see digilockerComplete) the step is done, regardless of the provider's
         // status flag. Checked BEFORE the clientId branches below: digilockerComplete nulls out
         // digilockerClientId on completion, so a completed DigiLocker must still resolve PASS here.
-        if (passed(appId, AADHAAR).isPresent()) {
+        Optional<ApplicationVerification> fetched = passed(appId, AADHAAR);
+        if (fetched.isPresent()) {
             Map<String, Object> derived = new LinkedHashMap<>();
+            // A blocked-pin-code reject keeps the AADHAAR row PASS; the polling tab must still learn of it.
+            if (Boolean.TRUE.equals(fromJson(fetched.get().getDerived()).get("applicationRejected"))) {
+                derived.put("applicationRejected", true);
+            }
             derived.put("status", "completed");
             derived.put("completed", true);
             derived.put("failed", false);
@@ -1203,6 +1252,7 @@ public class ApplicationVerificationService {
         if (aadhaarMismatch != null) {
             derived.put("applicationRejected", true);
         }
+        String blockedPin = aadhaarMismatch == null ? blockedPincodeToReject(appId, a.pincode(), derived) : null;
         ApplicationVerification row = upsert(appId, AADHAAR, aadhaarMismatch == null ? PASS : FAIL,
                 "DIGILOCKER", a.txnId(), null, null, null, s3Key, derived,
                 aadhaarMismatch == null ? "Aadhaar fetched from DigiLocker"
@@ -1216,6 +1266,9 @@ public class ApplicationVerificationService {
         if (aadhaarMismatch != null) {
             rejectForIdentityMismatch(appId, "Details entered do not match the Aadhaar DigiLocker returned ("
                     + aadhaarMismatch + ")", "DigiLocker Aadhaar");
+        }
+        if (blockedPin != null) {
+            rejectForBlockedPincode(appId, blockedPin, "DigiLocker Aadhaar");
         }
         // Signzy's requestId is single-use consent state, not customer data. Clear it from the
         // profile and replace the temporary DIGILOCKER row so it cannot be retained in CRM/audits.

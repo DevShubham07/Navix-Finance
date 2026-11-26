@@ -134,7 +134,7 @@ backend/                       Spring Boot, Maven multi-module (com.navix)
   navix-onboarding/, navix-kyc/ legacy; their routes are denyAll in SecurityConfig — do not build on them
   navix-app/                   ★ the only bootable module: auth, SecurityConfig, JwtAuthFilter, schedulers,
                                dashboard, reports, search, skip trace, BSA, provider workbench, Flyway
-    src/main/resources/db/migration/   V1..V104 (the real schema)
+    src/main/resources/db/migration/   V1..V105 (the real schema)
   (navix-disbursement/ is a dead directory — only a stale target/, not in the pom)
 frontend/src/
   app/(marketing)/             public site — raw-HTML pages from _content/*.ts + marketing-scripts.tsx
@@ -497,7 +497,7 @@ capped at 27 days + 5 penalty days (₹1,000) → ₹13,700. Prepaid on 2026-06-
 
 ## 10. Data model & migrations
 
-Flyway migrations live in **`backend/navix-app/src/main/resources/db/migration/`** — **V1..V104**,
+Flyway migrations live in **`backend/navix-app/src/main/resources/db/migration/`** — **V1..V105**,
 contiguous, applied on boot. Each file's header comment explains *why*; the index is
 [`docs/MIGRATIONS.md`](docs/MIGRATIONS.md).
 
@@ -578,6 +578,7 @@ contiguous, applied on boot. Each file's header comment explains *why*; the inde
 | `bre-aadhaar-mismatch-reject`, `bre-dob-mismatch-reject` | no row | **on** | FRAUD_REJECTED on typed Aadhaar / DOB vs PAN record / DigiLocker |
 | `bre-aadhaar-duplicate-reject`, `bre-aadhaar-duplicate-sanction-block` | no row | **on** | duplicate-Aadhaar auto-reject at submit-kyc; sanction refusal while unresolved |
 | `bre-past-delinquency-reject` | no row | **on** | reborrow auto-reject on a late/unpaid history |
+| `bre-pincode-blocked-reject` | no row | **on** | NEW customer whose verified pin (PAN zip, DigiLocker Aadhaar, geolocation address) is in `blocked_pincode` (V105, ADMIN-edited on the BRE tab) → permanent `PINCODE_BLOCKED` |
 | `bre-reborrow-auto-sanction` | no row | **on** | clean reborrow lands on SANCTIONED (off → credit queue, action `REBORROW_CREDIT_REVIEW`) |
 | `bre-advisory-<rule>` (10) | no row | **on** | Customer-360 advisory BRE rules, evaluated in the browser |
 | `admin-messaging` | off | off | customer messaging, templates writes, discount offers |

@@ -108,6 +108,7 @@ export default function LoanDigiLockerPage() {
     const run = async (): Promise<void> => {
       try {
         const r = await verificationApi.digilockerComplete(appId);
+        if (r.derived?.applicationRejected) { router.replace("/application-rejected"); return; }
         setResult(r);
         setPhase(r.status === "FAIL" ? "failed" : "done");
         // A REVIEW carrying `validDsc: false` is terminal too — the e-Aadhaar arrived with a bad
@@ -144,13 +145,14 @@ export default function LoanDigiLockerPage() {
       }
     };
     await run();
-  }, [appId, advance, enterAadhaarUpload]);
+  }, [appId, advance, enterAadhaarUpload, router]);
 
   const poll = React.useCallback(async () => {
     if (appId == null) return;
     try {
       polls.current += 1;
       const r = await verificationApi.digilockerStatus(appId);
+      if (r.derived?.applicationRejected) { stop(); router.replace("/application-rejected"); return; }
       setResult(r);
       if (r.status === "PASS") {
         stop();
@@ -179,7 +181,7 @@ export default function LoanDigiLockerPage() {
       setError(formatApiError(err, "Lost connection to DigiLocker."));
       setPhase("failed");
     }
-  }, [appId, stop, finalise, advance, enterAadhaarUpload]);
+  }, [appId, stop, finalise, advance, enterAadhaarUpload, router]);
 
   const connect = async () => {
     if (appId == null) return;

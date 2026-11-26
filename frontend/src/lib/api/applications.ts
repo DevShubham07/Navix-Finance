@@ -4154,7 +4154,19 @@ export const breRulesApi = {
     bff<BreRuleView>(`/api/staff/bre-rules/${encodeURIComponent(ruleKey)}/enabled`, "PUT", { enabled }),
   setThreshold: (key: string, value: number) =>
     bff<BreThresholdView>(`/api/staff/bre-rules/thresholds/${encodeURIComponent(key)}`, "PUT", { value }),
+  searchPincodes: (q: string) =>
+    bff<BlockedPincodeList>(`/api/staff/bre-rules/pincodes?q=${encodeURIComponent(q)}`, "GET"),
+  addPincodes: (pincodes: string[]) => bff<BlockedPincodeList>("/api/staff/bre-rules/pincodes", "POST", { pincodes }),
+  replacePincodes: (pincodes: string[]) => bff<BlockedPincodeList>("/api/staff/bre-rules/pincodes", "PUT", { pincodes }),
+  removePincode: (pincode: string) =>
+    bff<BlockedPincodeList>(`/api/staff/bre-rules/pincodes/${encodeURIComponent(pincode)}`, "DELETE"),
 };
+
+/** The blocked pin code list behind BRE rule `pincode-blocked-reject` (V105): total + up to 50 prefix matches. */
+export interface BlockedPincodeList {
+  total: number;
+  matches: string[];
+}
 
 // ---------------------------------------------------------------------------
 // Global search — staff Cmd/Ctrl+K palette (`/api/staff/search`)

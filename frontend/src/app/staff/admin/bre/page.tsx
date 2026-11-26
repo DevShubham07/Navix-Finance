@@ -8,6 +8,10 @@ import { ErrorState, Skeleton, toast } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage, useStaffMe, useCan, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { breRulesApi, type BreRuleGroup, type BreRuleView, type BreThresholdView } from "@/lib/api/applications";
+
+const PINCODE_RULE = "pincode-blocked-reject";
+/** Every 6-digit pin code in free text or a CSV (header row and other columns are ignored). */
+const pinsIn = (text: string) => [...new Set(text.match(/[1-9]\d{5}/g) ?? [])];
 import { formatDateTime } from "@/lib/utils";
 
 /** One colour family per group, so a rule's tab, banner, stripe and code chip all read as one set. */
@@ -140,6 +144,141 @@ function ThresholdEditor({ t, tone, onSaved }: { t: BreThresholdView; tone: Tone
   );
 }
 
+/** ADMIN editor for the blocked pin code list (BRE rule pincode-blocked-reject). */
+function PincodeListEditor({ tone }: { tone: Tone }) {
+  const qc = useQueryClient();
+  const [q, setQ] = React.useState("");
+  const [addText, setAddText] = React.useState("");
+  const [upload, setUpload] = React.useState<{ name: string; pins: string[] } | null>(null);
+  const list = useQuery({
+    queryKey: ["bre-pincodes", q],
+    queryFn: () => breRulesApi.searchPincodes(q),
+    placeholderData: (prev) => prev,
+  });
+  const refresh = () => void qc.invalidateQueries({ queryKey: ["bre-pincodes"] });
+  const add = useMutation({
+    mutationFn: (pins: string[]) => breRulesApi.addPincodes(pins),
+    onSuccess: (r, pins) => {
+      setAddText("");
+      refresh();
+      toast.success(`${pins.length} pin code(s) blocked · ${r.total} on the list`);
+    },
+    onError: (e) => toast.error(errMessage(e)),
+  });
+  const remove = useMutation({
+    mutationFn: (pin: string) => breRulesApi.removePincode(pin),
+    onSuccess: (r, pin) => {
+      refresh();
+      toast.success(`${pin} unblocked · ${r.total} on the list`);
+    },
+    onError: (e) => toast.error(errMessage(e)),
+  });
+  const replace = useMutation({
+    mutationFn: (pins: string[]) => breRulesApi.replacePincodes(pins),
+    onSuccess: (r) => {
+      setUpload(null);
+      refresh();
+      toast.success(`List replaced · ${r.total} pin codes`);
+    },
+    onError: (e) => toast.error(errMessage(e)),
+  });
+  const toAdd = pinsIn(addText);
+
+  return (
+    <details className={`rounded-md border px-3 py-2 text-xs ${tone.soft}`}>
+      <summary className={`cursor-pointer select-none font-semibold ${tone.text}`}>
+        Blocked pin codes{list.data ? ` · ${list.data.total.toLocaleString("en-IN")}` : ""}
+      </summary>
+      <div className="mt-3 flex flex-col gap-3">
+        <div>
+          <label htmlFor="pin-search" className="font-semibold text-navy">Search</label>
+          <input
+            id="pin-search"
+            inputMode="numeric"
+            placeholder="Type a pin code or its first digits"
+            value={q}
+            onChange={(e) => setQ(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            className="mt-1 w-full rounded border border-line bg-white px-2 py-1 font-mono text-navy"
+          />
+          {list.error ? (
+            <p className="mt-1 text-error-700">{errMessage(list.error)}</p>
+          ) : (
+            <div className="mt-2 flex max-h-40 flex-wrap gap-1.5 overflow-y-auto">
+              {list.data?.matches.map((pin) => (
+                <span key={pin} className="inline-flex items-center gap-1 rounded bg-white px-1.5 py-0.5 font-mono text-navy shadow-sm">
+                  {pin}
+                  <button
+                    type="button"
+                    aria-label={`Unblock ${pin}`}
+                    disabled={remove.isPending}
+                    onClick={() => remove.mutate(pin)}
+                    className="text-muted hover:text-error-700"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+              {list.data && list.data.matches.length === 0 && <span className="text-muted">No blocked pin code matches.</span>}
+              {list.data && list.data.matches.length === 50 && <span className="text-muted">First 50 shown. Type more digits to narrow the list.</span>}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <label htmlFor="pin-add" className="font-semibold text-navy">Block more</label>
+          <div className="mt-1 flex gap-2">
+            <input
+              id="pin-add"
+              placeholder="e.g. 110001, 400001"
+              value={addText}
+              onChange={(e) => setAddText(e.target.value)}
+              className="w-full rounded border border-line bg-white px-2 py-1 font-mono text-navy"
+            />
+            <button className="btn btn-navy" disabled={!toAdd.length || add.isPending} onClick={() => add.mutate(toAdd)}>
+              {add.isPending ? "Adding…" : `Add${toAdd.length ? ` ${toAdd.length}` : ""}`}
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <label htmlFor="pin-csv" className="font-semibold text-navy">Replace the whole list from a CSV</label>
+          <input
+            id="pin-csv"
+            type="file"
+            accept=".csv,text/csv,text/plain"
+            className="mt-1 block w-full text-xs"
+            onChange={async (e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (!f) return;
+              const pins = pinsIn(await f.text());
+              if (!pins.length) toast.error("No 6-digit pin codes found in that file");
+              else setUpload({ name: f.name, pins });
+            }}
+          />
+          {upload && (
+            <div role="alertdialog" aria-label="Replace blocked pin codes" className="mt-2 rounded-md border border-warning-500 bg-warning-50 p-3">
+              <p className="font-semibold text-ink">
+                Replace all {list.data?.total.toLocaleString("en-IN") ?? ""} blocked pin codes with the{" "}
+                {upload.pins.length.toLocaleString("en-IN")} in {upload.name}?
+              </p>
+              <p className="mt-1 text-muted">Pin codes that are not in the file will be unblocked.</p>
+              <div className="mt-2 flex gap-2">
+                <button className="btn btn-navy" disabled={replace.isPending} onClick={() => replace.mutate(upload.pins)}>
+                  {replace.isPending ? "Replacing…" : "Yes, replace"}
+                </button>
+                <button className="btn" disabled={replace.isPending} onClick={() => setUpload(null)}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </details>
+  );
+}
+
 function RuleCard({
   rule,
   code,
@@ -222,6 +361,8 @@ function RuleCard({
             ))}
           </div>
         )}
+
+        {rule.key === PINCODE_RULE && <PincodeListEditor tone={tone} />}
 
         <details className="group text-xs">
           <summary className="cursor-pointer select-none font-medium text-navy marker:text-muted">What happens when it fires</summary>

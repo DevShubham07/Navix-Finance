@@ -34,6 +34,7 @@ public final class BreRuleCatalog {
     public static final String AADHAAR_DUPLICATE_SANCTION_BLOCK = "aadhaar-duplicate-sanction-block";
     public static final String PAST_DELINQUENCY_REJECT = "past-delinquency-reject";
     public static final String REBORROW_AUTO_SANCTION = "reborrow-auto-sanction";
+    public static final String PINCODE_BLOCKED_REJECT = "pincode-blocked-reject";
 
     // ---- threshold keys ----
     public static final String T_SELF_EMPLOYED_BLOCK_DAYS = "self-employed-block-days";
@@ -131,6 +132,11 @@ public final class BreRuleCatalog {
                 "On reborrow: a customer with a repaid loan and a clean standing.",
                 "Skips KYC and credit and lands directly on SANCTIONED. When off, the new file goes to the credit queue (KYC_PENDING) for an executive to decide.",
                 "ApplicationFlowService.reborrow"));
+        r.add(auto(PINCODE_BLOCKED_REJECT, "bre-pincode-blocked-reject", true,
+                "New customer from a blocked pin code is rejected",
+                "A new customer's (no loan on record, not a reborrow) verified pin code: the PAN record's zip at intake, the DigiLocker Aadhaar address and the geolocation address in the offer journey. A typed address is not checked. The list is managed below.",
+                "File rejected permanently (PINCODE_BLOCKED); the borrower sees a neutral not-eligible screen. Returning borrowers are never checked. When off, a blocked pin is still marked on the check as evidence but nobody is rejected.",
+                "ApplicationVerificationService.verifyPan / completeDigilocker / verifyAddress; BlockedPincodeService"));
 
         // ---- B. advisory rules (Customer 360) ----
         r.add(advisory("credit-score", "Credit score above the minimum",

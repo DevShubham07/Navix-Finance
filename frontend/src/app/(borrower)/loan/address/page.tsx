@@ -47,6 +47,11 @@ export default function LoanAddressPage() {
     setError(undefined);
     try {
       const r = await verificationApi.address(appId, { latitude, longitude });
+      // Blocked-pin-code BRE rule: the backend has already rejected the file; the reason stays staff-only.
+      if (r.derived?.applicationRejected) {
+        router.replace("/application-rejected");
+        return;
+      }
       const resolved = typeof r.derived?.address === "string" ? (r.derived.address as string) : undefined;
       if (needsManualAddressFallback(r)) {
         setResult(r);

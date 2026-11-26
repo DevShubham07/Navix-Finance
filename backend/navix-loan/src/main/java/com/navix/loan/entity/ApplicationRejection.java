@@ -37,6 +37,8 @@ public class ApplicationRejection extends BaseAuditEntity {
      * and application.
      */
     public static final String AADHAAR_DUPLICATE = "AADHAAR_DUPLICATE";
+    /** V105: a new customer's verified pin code is on the blocked list. Permanent ({@link #INDEFINITE}). */
+    public static final String PINCODE_BLOCKED = "PINCODE_BLOCKED";
     /**
      * A staffer blocked the customer for future loans (decided when a repayment is verified, or from
      * the customer page). Not a cooling-off: {@link #blockedUntil} is {@link #INDEFINITE} until an

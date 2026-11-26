@@ -67,6 +67,7 @@ class ApplicationVerificationServiceTest {
     @Mock private com.navix.common.featureflag.FeatureFlagService featureFlags;
     @Mock private com.navix.loan.repository.CustomerLimitOverrideRepository limitOverrideRepository;
     @Mock private com.navix.loan.repository.ApplicationEventRepository applicationEventRepo;
+    @Mock private com.navix.loan.bre.BlockedPincodeService blockedPincodes;
 
     private ApplicationVerificationService service;
     private final com.navix.loan.bre.BreRuleService bre = com.navix.loan.bre.BreTestSupport.defaults();
@@ -80,7 +81,8 @@ class ApplicationVerificationServiceTest {
                 documentRepo, verification, esign, otpVerifier, emailOtp, storage, risk,
                 new EligibilityService(applicationRepo, limitOverrideRepository, risk), new ObjectMapper(),
                 creditBriefService, eventPublisher, changeLogger, flow, pennyDropGuard, featureFlags,
-                applicationEventRepo, org.mockito.Mockito.mock(BureauPhoneIndexer.class), bre);
+                applicationEventRepo, org.mockito.Mockito.mock(BureauPhoneIndexer.class), bre,
+                blockedPincodes);
         // The score-floor auto-reject is SUSPENDED in production (see autoRejectEnabled). These tests
         // exercise the rule itself, so switch it on explicitly rather than depending on the default.
         lenient().when(featureFlags.isEnabled("bureau-auto-reject", false)).thenReturn(true);
@@ -1901,6 +1903,46 @@ class ApplicationVerificationServiceTest {
     }
 
     @Test
+    void panVerify_blockedPincode_newCustomer_rejectsPermanently() {
+        CustomerProfile p = profile();
+        p.setAadhaar("234567890124");
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        LoanApplication app = draftApp();
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
+        when(verification.verifyPan(eq("QVEPS0901K"), anyString()))
+                .thenReturn(panCheckWithMaskedAadhaar("XXXXXXXX0124"));
+        when(blockedPincodes.blockedOf("131001")).thenReturn("131001");
+        when(blockedPincodes.isNewCustomer(app)).thenReturn(true);
+
+        var result = service.verifyPan(APP, "QVEPS0901K");
+
+        assertThat(result.derived()).containsEntry("pincodeBlocked", true)
+                .containsEntry("applicationRejected", true);
+        verify(flow).autoRejectSystem(eq(APP), eq(com.navix.loan.entity.ApplicationRejection.PINCODE_BLOCKED),
+                anyString(), eq(com.navix.loan.entity.ApplicationRejection.INDEFINITE),
+                eq("AUTO_REJECT_ELIGIBILITY"), anyString());
+    }
+
+    @Test
+    void panVerify_blockedPincode_returningCustomer_evidenceOnly() {
+        CustomerProfile p = profile();
+        p.setAadhaar("234567890124");
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        LoanApplication app = draftApp();
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
+        when(verification.verifyPan(eq("QVEPS0901K"), anyString()))
+                .thenReturn(panCheckWithMaskedAadhaar("XXXXXXXX0124"));
+        when(blockedPincodes.blockedOf("131001")).thenReturn("131001");
+        when(blockedPincodes.isNewCustomer(app)).thenReturn(false);
+
+        var result = service.verifyPan(APP, "QVEPS0901K");
+
+        assertThat(result.derived()).containsEntry("pincodeBlocked", true)
+                .doesNotContainKey("applicationRejected");
+        verify(flow, org.mockito.Mockito.never()).autoRejectSystem(any(), any(), any(), any(java.time.Instant.class), any(), any());
+    }
+
+    @Test
     void panVerify_aadhaarMatchesWhateverTheMaskReveals_doesNotReject() {
         CustomerProfile p = profile();
         p.setAadhaar("234567890124");
@@ -3147,6 +3189,21 @@ class ApplicationVerificationServiceTest {
         LoanApplication sanctioned = appWithStatus(APP, ApplicationStatus.SANCTIONED);
         lenient().when(applicationRepo.findById(APP)).thenReturn(Optional.of(sanctioned));
         return p;
+    }
+
+    @Test
+    void digilockerComplete_blockedPincode_newCustomer_rejectsPermanently() {
+        digilockerReady(LocalDate.of(2003, 3, 24));
+        when(blockedPincodes.blockedOf("131001")).thenReturn("131001");
+        when(blockedPincodes.isNewCustomer(any())).thenReturn(true);
+
+        var result = service.digilockerComplete(APP);
+
+        assertThat(result.derived()).containsEntry("pincodeBlocked", true)
+                .containsEntry("applicationRejected", true);
+        verify(flow).autoRejectSystem(eq(APP), eq(com.navix.loan.entity.ApplicationRejection.PINCODE_BLOCKED),
+                anyString(), eq(com.navix.loan.entity.ApplicationRejection.INDEFINITE),
+                eq("AUTO_REJECT_ELIGIBILITY"), anyString());
     }
 
     @Test

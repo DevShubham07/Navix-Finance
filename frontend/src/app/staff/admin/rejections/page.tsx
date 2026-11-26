@@ -23,6 +23,7 @@ const REASON_LABEL: Record<string, string> = {
   LOW_BUREAU_SCORE: "Low credit score",
   /** V75: the Aadhaar number entered disagrees with the one on the PAN record / DigiLocker. */
   FRAUD_REJECTED: "Fraud rejected",
+  PINCODE_BLOCKED: "Blocked pin code",
   /** The Aadhaar number is already on another customer's submitted application; the detail names it. */
   AADHAAR_DUPLICATE: "Duplicate Aadhaar",
   MANUAL: "Rejected by credit",
