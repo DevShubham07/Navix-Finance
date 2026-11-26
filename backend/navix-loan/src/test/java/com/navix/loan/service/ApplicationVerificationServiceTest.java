@@ -93,6 +93,14 @@ class ApplicationVerificationServiceTest {
         lenient().when(verificationRepo.findByApplicationIdAndCheckType(eq(APP), anyString()))
                 .thenReturn(Optional.empty());
         lenient().when(verificationRepo.findByApplicationIdOrderByIdAsc(APP)).thenReturn(List.of());
+        // The four home photos are on file by default, so the signing tests reach what they exercise.
+        lenient().when(documentRepo.findByApplicationIdOrderByIdAsc(APP)).thenReturn(
+                ApplicationVerificationService.HOME_PHOTO_DOC_TYPES.stream().map(t -> {
+                    com.navix.loan.entity.ApplicationDocument d = new com.navix.loan.entity.ApplicationDocument();
+                    d.setApplicationId(APP);
+                    d.setDocType(t);
+                    return d;
+                }).toList());
     }
 
     @AfterEach
@@ -2815,6 +2823,18 @@ class ApplicationVerificationServiceTest {
                 .contains("/api/v3/contract/initiate");
         // The signer's identity and the presigned KFS URL must never reach the log.
         assertThat(output).doesNotContain("SHUBHAM").doesNotContain("s3.test/kfs.pdf");
+    }
+
+    @Test
+    void signing_requiresAllFourHomePhotos() {
+        when(documentRepo.findByApplicationIdOrderByIdAsc(APP)).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.esignInit(APP, "https://app.test/ok", "https://app.test/no"))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code").isEqualTo("HOME_PHOTOS_REQUIRED");
+        assertThatThrownBy(() -> service.recordManualEsign(APP, "data:image/png;base64,AAAA", null, null, null))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code").isEqualTo("HOME_PHOTOS_REQUIRED");
     }
 
     @Test

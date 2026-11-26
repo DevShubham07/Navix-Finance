@@ -80,6 +80,8 @@ public class JourneyService {
         OFFER_SUMMARY("summary"),
         OFFER_SELFIE("selfie"),
         OFFER_ADDRESS("address"),
+        /** Four compulsory home photos (inside, outside, selfie inside, street); proven by documents. */
+        OFFER_HOME_PHOTOS("home-photos"),
         OFFER_SANCTION_LETTER("sanction-letter"),
         OFFER_ESIGN("esign"),
         OFFER_SANCTIONED("sanctioned"),
@@ -308,6 +310,11 @@ public class JourneyService {
 
     private OfferStep currentOfferStep(LoanApplication app) {
         OfferStep derived = deriveOffer(app);
+        // Proven by documents, like the intake card screens: a pointer already on the sanction letter
+        // (left there before this step existed) must not carry the borrower past it.
+        if (derived == OfferStep.OFFER_HOME_PHOTOS) {
+            return derived;
+        }
         OfferStep resolved = parseOffer(app.getJourneyStep())
                 .filter(stored -> stored.ordinal() > derived.ordinal())
                 .orElse(derived);
@@ -359,7 +366,12 @@ public class JourneyService {
         if (!checks.contains(ApplicationVerificationService.ADDRESS)) {
             return OfferStep.OFFER_ADDRESS;
         }
-        if (!signed(app.getId())) {
+        boolean signed = signed(app.getId());
+        // Held only until the letter is signed: a borrower who signed before this step existed walks on.
+        if (!signed && !homePhotosComplete(app.getId())) {
+            return OfferStep.OFFER_HOME_PHOTOS;
+        }
+        if (!signed) {
             return OfferStep.OFFER_SANCTION_LETTER;
         }
         if (app.getDisbursalConfirmedAt() == null) {
@@ -382,6 +394,13 @@ public class JourneyService {
                 .filter(v -> v.getReopenedAt() == null)
                 .map(ApplicationVerification::getCheckType)
                 .collect(Collectors.toSet());
+    }
+
+    private boolean homePhotosComplete(Long appId) {
+        return documentRepository.findByApplicationIdOrderByIdAsc(appId).stream()
+                .map(ApplicationDocument::getDocType)
+                .collect(Collectors.toSet())
+                .containsAll(ApplicationVerificationService.HOME_PHOTO_DOC_TYPES);
     }
 
     /** Whether the sanction letter is actually signed — an ESIGN row in {@code PASS}, nothing less. */

@@ -18,6 +18,7 @@ export const OFFER_STEPS: Array<{ seg: string; step: string; label: string }> = 
   { seg: "summary", step: "OFFER_SUMMARY", label: "Loan summary" },
   { seg: "selfie", step: "OFFER_SELFIE", label: "Take a selfie" },
   { seg: "address", step: "OFFER_ADDRESS", label: "Confirm your address" },
+  { seg: "home-photos", step: "OFFER_HOME_PHOTOS", label: "Photos of your home" },
   { seg: "sanction-letter", step: "OFFER_SANCTION_LETTER", label: "Agreement & signature" },
   { seg: "sanctioned", step: "OFFER_SANCTIONED", label: "Sanctioned" },
   { seg: "disbursal-account", step: "OFFER_DISBURSAL_ACCOUNT", label: "Where to send the money" },

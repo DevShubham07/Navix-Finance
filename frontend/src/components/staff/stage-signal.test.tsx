@@ -6,8 +6,8 @@ import { stepInfo } from "@/lib/domain/journey-steps";
 describe("stepInfo", () => {
   it("maps intake and offer steps", () => {
     expect(stepInfo("PAYSLIPS")).toMatchObject({ journey: "intake", label: "Payslips", n: 8, total: 12 });
-    expect(stepInfo("OFFER_ESIGN")).toMatchObject({ journey: "offer", label: "eSign", n: 9, total: 12 });
-    expect(stepInfo("OFFER_MANDATE")).toMatchObject({ journey: "offer", label: "Mandate", n: 12, total: 12 });
+    expect(stepInfo("OFFER_ESIGN")).toMatchObject({ journey: "offer", label: "eSign", n: 10, total: 13 });
+    expect(stepInfo("OFFER_MANDATE")).toMatchObject({ journey: "offer", label: "Mandate", n: 13, total: 13 });
   });
   it("returns null for unknown/empty", () => {
     expect(stepInfo("NOPE")).toBeNull();
@@ -23,7 +23,7 @@ describe("StageSignal", () => {
   });
   it("SANCTIONED with offer step", () => {
     render(<StageSignal status="SANCTIONED" journeyStep="OFFER_ESIGN" />);
-    expect(screen.getByText("Offer · eSign (9/12)")).toBeTruthy();
+    expect(screen.getByText("Offer · eSign (10/13)")).toBeTruthy();
   });
   it("ACTIVE overdue shows DPD", () => {
     render(<StageSignal status="ACTIVE" loanStatus="OVERDUE" dpd={5} />);

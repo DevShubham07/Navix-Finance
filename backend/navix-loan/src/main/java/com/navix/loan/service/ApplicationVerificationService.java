@@ -140,6 +140,27 @@ public class ApplicationVerificationService {
     public static final List<String> INTAKE_CARD_DOC_TYPES =
             List.of(AADHAAR_CARD_FRONT, AADHAAR_CARD_BACK, PAN_CARD_FRONT, PAN_CARD_BACK);
     /**
+     * The four home photos of the offer step {@code /loan/home-photos} (right after the geolocation
+     * address): inside the home, outside it, a selfie inside it, and the street outside. All four are
+     * compulsory on every application (never carried to a reborrow) before the borrower may sign.
+     */
+    public static final List<String> HOME_PHOTO_DOC_TYPES =
+            List.of("HOME_INSIDE", "HOME_OUTSIDE", "HOME_SELFIE", "HOME_STREET");
+
+    /** Whether all four {@link #HOME_PHOTO_DOC_TYPES} are on file for this application. */
+    public boolean homePhotosComplete(Long appId) {
+        Set<String> docs = documentRepo.findByApplicationIdOrderByIdAsc(appId).stream()
+                .map(ApplicationDocument::getDocType)
+                .collect(java.util.stream.Collectors.toSet());
+        return docs.containsAll(HOME_PHOTO_DOC_TYPES);
+    }
+
+    private void requireHomePhotos(Long appId) {
+        if (!homePhotosComplete(appId)) {
+            throw new BusinessException("HOME_PHOTOS_REQUIRED", "Take all four photos of your home before signing");
+        }
+    }
+    /**
      * Written by {@code CustomerReviewService.saveProfile} (V75) when the Aadhaar number a borrower
      * types is already on file for a different customer. A REVIEW row for the credit team — the
      * borrower is told nothing, so the profile write cannot be used as a "do you hold this number"
@@ -737,7 +758,8 @@ public class ApplicationVerificationService {
      *  monthly salary; this generic path is for documents with no accompanying verification step. */
     static final java.util.Set<String> UPLOADABLE_DOC_TYPES =
             java.util.Set.of("BANK_STATEMENT", BANK_PROOF, AADHAAR_FRONT, AADHAAR_BACK,
-                    AADHAAR_CARD_FRONT, AADHAAR_CARD_BACK, PAN_CARD_FRONT, PAN_CARD_BACK);
+                    AADHAAR_CARD_FRONT, AADHAAR_CARD_BACK, PAN_CARD_FRONT, PAN_CARD_BACK,
+                    "HOME_INSIDE", "HOME_OUTSIDE", "HOME_SELFIE", "HOME_STREET");
 
     /**
      * Persist already-uploaded S3 keys as {@link ApplicationDocument} rows under an arbitrary
@@ -2840,6 +2862,7 @@ public class ApplicationVerificationService {
         if (existing.isPresent()) {
             return view(existing.get());
         }
+        requireHomePhotos(appId);
         ApplicationDocument letter = requireSanctionLetter(appId);
         CustomerProfile profile = profile(appId);
         String ref = ref(appId, ESIGN);
@@ -3046,6 +3069,7 @@ public class ApplicationVerificationService {
         if (signatureDataUrl == null || !signatureDataUrl.startsWith("data:image/png;base64,")) {
             throw new BusinessException("SIGNATURE_INVALID", "Draw your signature in the signing area");
         }
+        requireHomePhotos(appId);
         byte[] signature;
         try {
             signature = Base64.getDecoder().decode(signatureDataUrl.substring("data:image/png;base64,".length()));

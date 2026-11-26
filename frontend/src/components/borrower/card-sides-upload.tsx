@@ -31,7 +31,7 @@ export interface CardSideSpec {
   label: string;
 }
 
-interface SideState {
+export interface SideState {
   file: File | null;
   /** A document of this type already on the application (resume on another device / a reload). */
   existing: DocumentView | null;
@@ -192,18 +192,21 @@ export function CardSidesUpload({
   );
 }
 
-function SideTile({
+/** One upload tile. `cameraOnly` (home photos) drops the file picker: every action opens the camera. */
+export function SideTile({
   label,
   state,
   onPick,
   disabled,
   loading,
+  cameraOnly,
 }: {
   label: string;
   state: SideState;
   onPick: (file: File | null) => void;
   disabled?: boolean;
   loading?: boolean;
+  cameraOnly?: "user" | "environment";
 }) {
   const fileRef = React.useRef<HTMLInputElement>(null);
   const cameraRef = React.useRef<HTMLInputElement>(null);
@@ -229,6 +232,7 @@ function SideTile({
 
   const picked = state.file;
   const existing = !picked && state.existing;
+  const reopen = () => (cameraOnly ? cameraRef : fileRef).current?.click();
   const done = Boolean(picked || existing);
 
   return (
@@ -240,7 +244,7 @@ function SideTile({
       <input ref={fileRef} type="file" accept={DOC_UPLOAD_ACCEPT} className="sr-only" onChange={onChange} disabled={disabled} />
       {/* Camera shortcut: image-only + capture, so phones open the rear camera directly. Kept apart
           from the file input above because `capture` would hide the file picker (no PDFs). */}
-      <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="sr-only" onChange={onChange} disabled={disabled} />
+      <input ref={cameraRef} type="file" accept="image/*" capture={cameraOnly ?? "environment"} className="sr-only" onChange={onChange} disabled={disabled} />
 
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="text-sm font-semibold text-navy">{label}</span>
@@ -270,26 +274,28 @@ function SideTile({
             <FileText size={28} className="text-navy" />
           )}
           <span className="line-clamp-1 w-full break-all text-xs text-ink">{picked.name}</span>
-          <button type="button" onClick={() => fileRef.current?.click()} disabled={disabled} className="text-xs font-semibold text-navy hover:underline">
-            Replace
+          <button type="button" onClick={reopen} disabled={disabled} className="text-xs font-semibold text-navy hover:underline">
+            {cameraOnly ? "Retake" : "Replace"}
           </button>
         </div>
       ) : existing ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-1 text-center">
           <FileCheck2 size={26} className="text-success-600" />
           <span className="text-xs font-semibold text-success-700">Already uploaded</span>
-          <button type="button" onClick={() => fileRef.current?.click()} disabled={disabled} className="text-xs font-semibold text-navy hover:underline">
-            Upload a different file
+          <button type="button" onClick={reopen} disabled={disabled} className="text-xs font-semibold text-navy hover:underline">
+            {cameraOnly ? "Retake" : "Upload a different file"}
           </button>
         </div>
       ) : (
         <div className="flex flex-1 flex-col items-center justify-center gap-2">
           <UploadCloud size={24} className="text-navy" />
           <div className="flex flex-wrap items-center justify-center gap-2">
-            <button type="button" onClick={() => fileRef.current?.click()} disabled={disabled} className="btn btn-sm btn-outline">
-              Choose file
-            </button>
-            <button type="button" onClick={() => cameraRef.current?.click()} disabled={disabled} className="btn btn-sm btn-outline sm:hidden">
+            {cameraOnly ? null : (
+              <button type="button" onClick={() => fileRef.current?.click()} disabled={disabled} className="btn btn-sm btn-outline">
+                Choose file
+              </button>
+            )}
+            <button type="button" onClick={() => cameraRef.current?.click()} disabled={disabled} className={`btn btn-sm btn-outline ${cameraOnly ? "" : "sm:hidden"}`}>
               <Camera size={14} /> Take photo
             </button>
           </div>

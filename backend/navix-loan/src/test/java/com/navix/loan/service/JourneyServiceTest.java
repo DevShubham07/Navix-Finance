@@ -302,7 +302,7 @@ class JourneyServiceTest {
 
         assertThat(journey.current(APP).step()).isEqualTo("OFFER_AMOUNT");
         assertThat(journey.current(APP).route()).isEqualTo("/loan/amount");
-        assertThat(journey.current(APP).total()).isEqualTo(10);
+        assertThat(journey.current(APP).total()).isEqualTo(11);
         assertThat(journey.current(APP).steps()).doesNotContain("OFFER_ESIGN");
     }
 
@@ -358,6 +358,7 @@ class JourneyServiceTest {
         app.setStatus(ApplicationStatus.SANCTIONED);
         app.setAmountRequested(1_500_000L);
         app.setJourneyStep("OFFER_ESIGN");
+        homePhotos();
         when(verificationRepository.findByApplicationIdOrderByIdAsc(APP)).thenReturn(List.of(
                 check(ApplicationVerificationService.AADHAAR),
                 check(ApplicationVerificationService.SELFIE),
@@ -384,7 +385,7 @@ class JourneyServiceTest {
 
         assertThat(journey.current(APP).steps())
                 .doesNotContain("OFFER_DIGILOCKER", "OFFER_SELFIE", "OFFER_ADDRESS", "OFFER_REFERENCES", "OFFER_ESIGN");
-        assertThat(journey.current(APP).total()).isEqualTo(6);
+        assertThat(journey.current(APP).total()).isEqualTo(7);
     }
 
     // ---- V74: staff "send the customer a link" reopen -----------------------
@@ -432,6 +433,7 @@ class JourneyServiceTest {
         app.setStatus(ApplicationStatus.SANCTIONED);
         app.setAmountRequested(1_500_000L);
         app.setJourneyStep("OFFER_DISBURSAL_ACCOUNT"); // the pointer the old derivation let them reach
+        homePhotos();
         ApplicationVerification pending = check(ApplicationVerificationService.ESIGN);
         pending.setStatus(ApplicationVerificationService.PENDING);
         when(verificationRepository.findByApplicationIdOrderByIdAsc(APP)).thenReturn(List.of(
@@ -449,6 +451,52 @@ class JourneyServiceTest {
 
         pending.setStatus(ApplicationVerificationService.PASS);
         assertThat(journey.current(APP).step()).isEqualTo("OFFER_DISBURSAL_ACCOUNT");
+    }
+
+    /** The four home photos are compulsory before signing; a pointer already past them cannot skip them. */
+    @Test
+    void missingHomePhotosHoldAnUnsignedBorrowerEvenWithAPointerAhead() {
+        app.setStatus(ApplicationStatus.SANCTIONED);
+        app.setAmountRequested(1_500_000L);
+        app.setJourneyStep("OFFER_SANCTION_LETTER");
+        when(verificationRepository.findByApplicationIdOrderByIdAsc(APP)).thenReturn(List.of(
+                check(ApplicationVerificationService.AADHAAR),
+                check(ApplicationVerificationService.SELFIE),
+                check(ApplicationVerificationService.ADDRESS)));
+        when(referenceRepository.findByApplicationIdOrderBySlotAsc(APP)).thenReturn(List.of(
+                new com.navix.loan.entity.ApplicationReference(),
+                new com.navix.loan.entity.ApplicationReference()));
+        docs("HOME_INSIDE", "HOME_OUTSIDE", "HOME_SELFIE"); // three of four
+
+        assertThat(journey.current(APP).step()).isEqualTo("OFFER_HOME_PHOTOS");
+        assertThat(journey.current(APP).route()).isEqualTo("/loan/home-photos");
+
+        homePhotos();
+        assertThat(journey.current(APP).step()).isEqualTo("OFFER_SANCTION_LETTER");
+    }
+
+    /** Signed before the step existed: never sent back for photos. */
+    @Test
+    void aBorrowerWhoAlreadySignedIsNotSentBackForHomePhotos() {
+        app.setStatus(ApplicationStatus.SANCTIONED);
+        app.setAmountRequested(1_500_000L);
+        ApplicationVerification esign = check(ApplicationVerificationService.ESIGN);
+        when(verificationRepository.findByApplicationIdOrderByIdAsc(APP)).thenReturn(List.of(
+                check(ApplicationVerificationService.AADHAAR),
+                check(ApplicationVerificationService.SELFIE),
+                check(ApplicationVerificationService.ADDRESS),
+                esign));
+        when(verificationRepository.findByApplicationIdAndCheckType(APP, ApplicationVerificationService.ESIGN))
+                .thenReturn(Optional.of(esign));
+        when(referenceRepository.findByApplicationIdOrderBySlotAsc(APP)).thenReturn(List.of(
+                new com.navix.loan.entity.ApplicationReference(),
+                new com.navix.loan.entity.ApplicationReference()));
+
+        assertThat(journey.current(APP).step()).isEqualTo("OFFER_DISBURSAL_ACCOUNT");
+    }
+
+    private void homePhotos() {
+        docs(ApplicationVerificationService.HOME_PHOTO_DOC_TYPES.toArray(String[]::new));
     }
 
     private static ApplicationVerification check(String type) {

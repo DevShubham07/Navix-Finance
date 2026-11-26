@@ -26,6 +26,7 @@ const OFFER: Array<[string, string]> = [
   ["OFFER_SUMMARY", "Summary"],
   ["OFFER_SELFIE", "Selfie"],
   ["OFFER_ADDRESS", "Address"],
+  ["OFFER_HOME_PHOTOS", "Home photos"],
   ["OFFER_SANCTION_LETTER", "Sanction letter"],
   ["OFFER_ESIGN", "eSign"],
   ["OFFER_SANCTIONED", "Sanctioned"],
