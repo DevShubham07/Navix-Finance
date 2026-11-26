@@ -318,6 +318,10 @@ public class AccountAggregatorService {
         if ("ReportGenerated".equals(st.code())) {
             pull.put("documentId", storeReport(appId, txnId, aa.retrieveReport(txnId)));
             pull.put("status", "REPORT_READY");
+        } else if (st.code() != null && st.code().endsWith("Error")) {
+            // Digitap failure codes (AAFIRequestError, AAFIDataStatusError, AAConsent*Error…) are final:
+            // free the slot so staff can pull again instead of waiting out the timeout.
+            pull.put("status", "FAILED");
         } else if (Duration.between(Instant.parse(String.valueOf(pull.get("at"))), Instant.now())
                 .compareTo(PULL_TIMEOUT) > 0) {
             pull.put("status", "FAILED");
