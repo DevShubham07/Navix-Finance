@@ -113,7 +113,7 @@ class AccountAggregatorServiceTest {
         assertThat(consents.get(0)).containsEntry("template_id", "CT001").containsEntry("fetch_type", "ONETIME")
                 .containsEntry("fi_date_range", Map.of("start_date", "2025-11-27", "end_date", "2026-11-27"));
         assertThat(consents.get(1)).containsEntry("template_id", "CT003").containsEntry("fetch_type", "PERIODIC")
-                .containsEntry("fi_date_range", Map.of("start_date", "2026-11-27", "end_date", "2027-05-27"));
+                .containsEntry("fi_date_range", Map.of("start_date", "2026-06-01", "end_date", "2027-05-27"));
         assertThat(AccountAggregatorService.generateUrlBody("r", "7417682036", "P", null, true, "c", RETURN, consents))
                 .containsEntry("multi_aa", "1").doesNotContainKey("aa_vendor");
     }

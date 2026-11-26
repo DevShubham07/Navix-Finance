@@ -379,7 +379,9 @@ public class AccountAggregatorService {
             out.add(consent("CT001", "ONETIME", today.minusMonths(ct001Months), today));
         }
         if (ct003) {
-            out.add(consent("CT003", "PERIODIC", today, today.plusMonths(ct003Months)));
+            // Starts 179 days back (Digitap's max look-back): a range starting today asks the bank for an
+            // empty window and the initial fetch fails AAFIRequestError (seen live 2026-11-27).
+            out.add(consent("CT003", "PERIODIC", today.minusDays(179), today.plusMonths(ct003Months)));
         }
         if (ct035) {
             out.add(consent("CT035", "PERIODIC", today, today.plusMonths(ct035Months)));
