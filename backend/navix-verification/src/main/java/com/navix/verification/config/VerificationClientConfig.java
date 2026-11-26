@@ -38,7 +38,7 @@ import org.springframework.web.client.RestClient;
  */
 @Configuration
 @EnableConfigurationProperties({
-        SignzyProperties.class, DigitapProperties.class, FintrixProperties.class,
+        SignzyProperties.class, DigitapProperties.class, DigitapAaProperties.class, FintrixProperties.class,
         VerificationChainProperties.class})
 public class VerificationClientConfig {
 
@@ -46,6 +46,8 @@ public class VerificationClientConfig {
     public static final String SIGNZY_PROD_CLIENT = "signzyProdRestClient";
     public static final String DIGITAP_SVC_CLIENT = "digitapSvcRestClient";
     public static final String DIGITAP_API_CLIENT = "digitapApiRestClient";
+    /** Digitap Account Aggregator (/bank-data/*) - svc host, own credentials. */
+    public static final String DIGITAP_AA_CLIENT = "digitapAaRestClient";
     /** Digitap Credit Analytics — same host and auth as {@link #DIGITAP_API_CLIENT}, longer read. */
     public static final String DIGITAP_CREDIT_CLIENT = "digitapCreditRestClient";
     /** Digitap Credit Analytics CRIF — the SVC host (not api), same auth, its own tighter read. */
@@ -160,6 +162,16 @@ public class VerificationClientConfig {
     public RestClient digitapSvcRestClient(DigitapProperties props, VerificationChainProperties timeouts) {
         return RestClient.builder()
                 .baseUrl(props.svcBaseUrl())
+                .requestFactory(timeoutRequestFactory(timeouts.connectTimeout(), timeouts.readTimeout()))
+                .messageConverters(VerificationClientConfig::lenientJson)
+                .defaultHeader(HttpHeaders.AUTHORIZATION, basic(props.clientId(), props.clientSecret()))
+                .build();
+    }
+
+    @Bean(DIGITAP_AA_CLIENT)
+    public RestClient digitapAaRestClient(DigitapAaProperties props, VerificationChainProperties timeouts) {
+        return RestClient.builder()
+                .baseUrl(props.baseUrl())
                 .requestFactory(timeoutRequestFactory(timeouts.connectTimeout(), timeouts.readTimeout()))
                 .messageConverters(VerificationClientConfig::lenientJson)
                 .defaultHeader(HttpHeaders.AUTHORIZATION, basic(props.clientId(), props.clientSecret()))

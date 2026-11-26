@@ -16,7 +16,7 @@ public final class BreRuleCatalog {
     private BreRuleCatalog() {
     }
 
-    public enum Group { AUTO, ADVISORY, REVIEW, ALWAYS, GATE }
+    public enum Group { AUTO, ADVISORY, REVIEW, ALWAYS, GATE, AA }
 
     public record Threshold(String key, String label, String unit, long defaultValue, long min, long max) {
     }
@@ -35,6 +35,11 @@ public final class BreRuleCatalog {
     public static final String PAST_DELINQUENCY_REJECT = "past-delinquency-reject";
     public static final String REBORROW_AUTO_SANCTION = "reborrow-auto-sanction";
     public static final String PINCODE_BLOCKED_REJECT = "pincode-blocked-reject";
+    public static final String AA_ENABLED = "aa-enabled";
+    public static final String AA_CT001 = "aa-ct001";
+    public static final String AA_CT003 = "aa-ct003";
+    public static final String AA_CT035 = "aa-ct035";
+    public static final String AA_MULTI = "aa-multi";
 
     // ---- threshold keys ----
     public static final String T_SELF_EMPLOYED_BLOCK_DAYS = "self-employed-block-days";
@@ -46,6 +51,10 @@ public final class BreRuleCatalog {
     public static final String T_ADVISORY_MIN_SCORE = "advisory-min-credit-score";
     public static final String T_ADVISORY_MAX_NBFC_DPD = "advisory-max-nbfc-dpd";
     public static final String T_ADVISORY_SALARY_TOL = "advisory-salary-tolerance-pct";
+    public static final String T_AA_MAX_ATTEMPTS = "aa-max-attempts";
+    public static final String T_AA_CT001_MONTHS = "aa-ct001-history-months";
+    public static final String T_AA_CT003_MONTHS = "aa-ct003-months";
+    public static final String T_AA_CT035_MONTHS = "aa-ct035-months";
 
     private static final String ONBOARDING_PAUSED = "onboarding-paused";
     private static final String APPLICATIONS_CLOSED = "applications-closed";
@@ -80,6 +89,16 @@ public final class BreRuleCatalog {
     private static Rule gate(String key, String flag, String title, String checks, String outcome) {
         return new Rule(key, Group.GATE, title, checks, outcome,
                 "Staff > Settings (change it there)", flag, false, false, List.of());
+    }
+
+    private static Rule aa(String key, boolean defaultOn, String title, String checks, String outcome,
+                           Threshold... thresholds) {
+        return new Rule(key, Group.AA, title, checks, outcome, "AccountAggregatorService; JourneyService",
+                "bre-" + key, defaultOn, true, List.of(thresholds));
+    }
+
+    private static Threshold months(String key, String label, long def, long max) {
+        return new Threshold(key, label, "months", def, 1, max);
     }
 
     public static final List<Rule> RULES;
@@ -248,6 +267,27 @@ public final class BreRuleCatalog {
         r.add(gate(APPLICATIONS_CLOSED, APPLICATIONS_CLOSED, "Applications closed",
                 "Any new application or reborrow.",
                 "Refused with APPLICATIONS_CLOSED; files in flight carry on."));
+
+        // ---- F. Account Aggregator (bank-data consent), all dormant until aa-enabled is switched on ----
+        r.add(aa(AA_ENABLED, false, "Account Aggregator step",
+                "Every borrower, right after the bank details step (and in the offer journey when no consent was given).",
+                "The borrower must connect their bank through the Account Aggregator; after the maximum attempts they upload a bank statement instead. When off, nothing changes.",
+                new Threshold(T_AA_MAX_ATTEMPTS, "Max attempts", "count", 3, 1, 10)));
+        r.add(aa(AA_CT001, false, "Consent template CT001 (one-time history)",
+                "Asks for a one-time pull of past statements.",
+                "Included in the consent request when on.",
+                months(T_AA_CT001_MONTHS, "History months", 12, 14)));
+        r.add(aa(AA_CT003, true, "Consent template CT003 (periodic pulls)",
+                "Asks for ongoing consent so staff can pull a fresh statement on demand.",
+                "Included in the consent request when on. Staff pulls need this consent.",
+                months(T_AA_CT003_MONTHS, "Consent months", 12, 60)));
+        r.add(aa(AA_CT035, false, "Consent template CT035",
+                "Asks for the CT035 consent (currently refused by Digitap).",
+                "Included in the consent request when on.",
+                months(T_AA_CT035_MONTHS, "Consent months", 12, 96)));
+        r.add(aa(AA_MULTI, false, "Multi-AA",
+                "Lets the borrower pick any Account Aggregator (currently refused by Digitap).",
+                "When off, the consent is requested through Anumati only."));
         RULES = List.copyOf(r);
     }
 

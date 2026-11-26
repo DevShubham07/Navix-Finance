@@ -48,7 +48,7 @@ class ApplicationQueueScopeTest {
     private final ApplicationController controller = new ApplicationController(flow,
             mock(CustomerReviewService.class), mock(ApplicationVerificationService.class),
             mock(VerificationOutreachService.class), mock(CreditBriefService.class),
-            mock(AdminApplicationService.class), mock(JourneyService.class), mock(OfferService.class),
+            mock(AdminApplicationService.class), mock(JourneyService.class), mock(com.navix.loan.service.AccountAggregatorService.class), mock(OfferService.class),
             mock(MandateService.class), mock(StaffDirectory.class), actors, cases,
             mock(LoanRepository.class), mock(ApplicationEventRepository.class),
             mock(EligibilityService.class), mock(CustomerTrustSignalsService.class),

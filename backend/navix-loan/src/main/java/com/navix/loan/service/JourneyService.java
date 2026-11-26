@@ -42,6 +42,8 @@ public class JourneyService {
         EMPLOYER("employer"),
         EMAIL("email"),
         BANK("bank"),
+        /** Digitap Account Aggregator consent (flag bre-aa-enabled); never derived or listed while off. */
+        ACCOUNT_AGGREGATOR("account-aggregator"),
         PAYSLIPS("payslips"),
         /** V75: Aadhaar number + both sides of the card. Proven by the number and the two documents. */
         AADHAAR("aadhaar"),
@@ -82,6 +84,8 @@ public class JourneyService {
         OFFER_ADDRESS("address"),
         /** Four compulsory home photos (inside, outside, selfie inside, street); proven by documents. */
         OFFER_HOME_PHOTOS("home-photos"),
+        /** Account Aggregator consent for a borrower who has none (flag bre-aa-enabled); never listed while off. */
+        OFFER_ACCOUNT_AGGREGATOR("account-aggregator"),
         OFFER_SANCTION_LETTER("sanction-letter"),
         OFFER_ESIGN("esign"),
         OFFER_SANCTIONED("sanctioned"),
@@ -118,6 +122,7 @@ public class JourneyService {
     private final ApplicationReferenceRepository referenceRepository;
     private final ApplicationDocumentRepository documentRepository;
     private final MandateService mandateService;
+    private final AccountAggregatorService accountAggregator;
 
     @Transactional(readOnly = true)
     public JourneyView current(Long appId) {
@@ -138,12 +143,16 @@ public class JourneyService {
                     steps.stream().map(Enum::name).toList());
         }
         Step step = currentStep(app);
-        List<Step> steps = java.util.Arrays.stream(Step.values()).filter(s -> s != Step.DONE).toList();
+        boolean aaOn = accountAggregator.enabled();
+        List<Step> steps = java.util.Arrays.stream(Step.values())
+                .filter(s -> s != Step.DONE && (aaOn || s != Step.ACCOUNT_AGGREGATOR)).toList();
         List<String> completed = steps.stream()
                 .filter(s -> s.ordinal() < step.ordinal())
                 .map(Enum::name)
                 .toList();
-        return new JourneyView(step.name(), step.route(), step.ordinal(), steps.size(), completed,
+        // Index within the listed steps (not the ordinal, which counts the AA step even while it is off).
+        int index = step == Step.DONE ? steps.size() : steps.indexOf(step);
+        return new JourneyView(step.name(), step.route(), index, steps.size(), completed,
                 steps.stream().map(Enum::name).toList());
     }
 
@@ -164,6 +173,9 @@ public class JourneyService {
         // mandate (or any application while the flag is off) must skip the step too.
         if (!mandateService.mandateRequired(app)) {
             all = all.stream().filter(s -> s != OfferStep.OFFER_MANDATE).toList();
+        }
+        if (!accountAggregator.offerApplicable(app.getId())) {
+            all = all.stream().filter(s -> s != OfferStep.OFFER_ACCOUNT_AGGREGATOR).toList();
         }
         if (app.getReappliedFrom() == null) {
             return all;
@@ -299,20 +311,23 @@ public class JourneyService {
         // The two card screens (V75) are proven by documents and can never be skipped by the pointer:
         // a pointer written before they existed (CONSENT, say) would otherwise carry a mid-flow
         // borrower straight past them into a submit that KYC_INCOMPLETE then refuses.
-        if (derived == Step.AADHAAR || derived == Step.PAN_CARD) {
+        if (derived == Step.AADHAAR || derived == Step.PAN_CARD || derived == Step.ACCOUNT_AGGREGATOR) {
             return derived;
         }
-        return parse(app.getJourneyStep())
+        Step resolved = parse(app.getJourneyStep())
                 .map(stored -> Step.values()[Math.max(derived.ordinal(),
                         Math.min(stored.ordinal() + 1, Step.DONE.ordinal()))])
                 .orElse(derived);
+        // A pointer on BANK lands on the AA step by ordinal; it is only real when derive() asked for it
+        // (returned above). Otherwise (flag off, or consent done) step over it, exactly as before.
+        return resolved == Step.ACCOUNT_AGGREGATOR ? Step.PAYSLIPS : resolved;
     }
 
     private OfferStep currentOfferStep(LoanApplication app) {
         OfferStep derived = deriveOffer(app);
         // Proven by documents, like the intake card screens: a pointer already on the sanction letter
         // (left there before this step existed) must not carry the borrower past it.
-        if (derived == OfferStep.OFFER_HOME_PHOTOS) {
+        if (derived == OfferStep.OFFER_HOME_PHOTOS || derived == OfferStep.OFFER_ACCOUNT_AGGREGATOR) {
             return derived;
         }
         OfferStep resolved = parseOffer(app.getJourneyStep())
@@ -370,6 +385,10 @@ public class JourneyService {
         // Held only until the letter is signed: a borrower who signed before this step existed walks on.
         if (!signed && !homePhotosComplete(app.getId())) {
             return OfferStep.OFFER_HOME_PHOTOS;
+        }
+        // Account Aggregator (flag bre-aa-enabled): held until connected or the attempts are used up.
+        if (!signed && accountAggregator.offerPending(app.getId())) {
+            return OfferStep.OFFER_ACCOUNT_AGGREGATOR;
         }
         if (!signed) {
             return OfferStep.OFFER_SANCTION_LETTER;
@@ -439,6 +458,9 @@ public class JourneyService {
         }
         if (blank(p.getSalaryAccountNumber()) || blank(p.getSalaryIfsc())) {
             return Step.BANK;
+        }
+        if (accountAggregator.enabled() && !accountAggregator.intakeSatisfied(app.getId())) {
+            return Step.ACCOUNT_AGGREGATOR;
         }
         Set<String> checks = verificationRepository.findByApplicationIdOrderByIdAsc(app.getId()).stream()
                 .map(ApplicationVerification::getCheckType)

@@ -78,6 +78,7 @@ public class ApplicationController {
     private final CreditBriefService creditBrief;
     private final AdminApplicationService adminApplications;
     private final JourneyService journey;
+    private final com.navix.loan.service.AccountAggregatorService accountAggregator;
     private final OfferService offer;
     private final com.navix.loan.service.MandateService mandateService;
     private final StaffDirectory staffDirectory;
@@ -385,6 +386,11 @@ public class ApplicationController {
         if (!verification.intakeCardsComplete(id)) {
             throw new BusinessException("KYC_INCOMPLETE",
                     "Upload both sides of your Aadhaar card and PAN card before submitting");
+        }
+        // Account Aggregator (flag bre-aa-enabled, default off): connected, or a statement uploaded instead.
+        if (accountAggregator.enabled() && !accountAggregator.intakeSatisfied(id)) {
+            throw new BusinessException("KYC_INCOMPLETE",
+                    "Connect your bank account (or upload your bank statement) before submitting");
         }
         // Duplicate-Aadhaar rule: the number is already on another customer's submitted application.
         // Rejected (permanently, with the earlier case referenced in the register) instead of submitted.

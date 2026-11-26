@@ -50,7 +50,7 @@ class ApplicationReadScopeTest {
     private final CustomerService customers = mock(CustomerService.class);
     private final ApplicationController controller = new ApplicationController(flow, review,
             mock(ApplicationVerificationService.class), mock(VerificationOutreachService.class),
-            mock(CreditBriefService.class), mock(AdminApplicationService.class), mock(JourneyService.class),
+            mock(CreditBriefService.class), mock(AdminApplicationService.class), mock(JourneyService.class), mock(com.navix.loan.service.AccountAggregatorService.class),
             mock(OfferService.class), mock(MandateService.class), mock(StaffDirectory.class),
             mock(ApplicationActorDirectory.class), mock(CollectionCaseDirectory.class),
             mock(LoanRepository.class), mock(ApplicationEventRepository.class),

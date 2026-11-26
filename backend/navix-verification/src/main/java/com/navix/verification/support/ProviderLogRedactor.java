@@ -61,7 +61,9 @@ final class ProviderLogRedactor {
             "password", "filepassword", "passcode", "secret", "clientsecret", "apikey", "apisecret",
             "fileurl", "signedurl", "presignedurl", "downloadurl", "authorization",
             // Signzy eSign: the webhook shared secret and the presigned KFS URL (see SignzyEsignAdapter).
-            "callbackurlauthorizationheader", "pdf");
+            "callbackurlauthorizationheader", "pdf",
+            // Digitap AA: signed S3 URL of the bank-statement report.
+            "sourcereport");
 
     private static final Pattern PAN = Pattern.compile("(?i)\\b[A-Z]{5}[0-9]{4}[A-Z]\\b");
     private static final Pattern MOBILE = Pattern.compile("(?<![0-9])(?:\\+?91[- ]?)?[6-9][0-9]{9}(?![0-9])");

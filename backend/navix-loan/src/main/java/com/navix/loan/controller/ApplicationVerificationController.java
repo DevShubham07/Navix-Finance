@@ -18,6 +18,9 @@ import com.navix.loan.dto.VerificationDtos.PresignUploadRequest;
 import com.navix.loan.dto.VerificationDtos.SalaryVerifyRequest;
 import com.navix.loan.dto.VerificationDtos.SelfieVerifyRequest;
 import com.navix.loan.dto.VerificationDtos.UploadedDocumentsRequest;
+import com.navix.loan.service.AccountAggregatorService;
+import com.navix.loan.service.AccountAggregatorService.AaLink;
+import com.navix.loan.service.AccountAggregatorService.AaView;
 import com.navix.loan.service.ApplicationFlowService;
 import com.navix.loan.service.ApplicationVerificationService;
 import com.navix.loan.service.ApplicationVerificationService.PresignedUpload;
@@ -47,6 +50,7 @@ public class ApplicationVerificationController {
     private final ApplicationVerificationService verification;
     private final ApplicationFlowService flow;
     private final PennyDropGuard pennyDropGuard;
+    private final AccountAggregatorService accountAggregator;
 
     @PostMapping("/pan")
     public ApiResponse<StepResult> pan(@PathVariable Long id, @Valid @RequestBody PanVerifyRequest req) {
@@ -265,6 +269,51 @@ public class ApplicationVerificationController {
         authorize(id);
         verification.saveUploadedDocuments(id, req.docType(), req.objectKeys(), req.filePassword());
         return ApiResponse.ok(null);
+    }
+
+    // ---- Account Aggregator (flag bre-aa-enabled, default off) ----
+
+    /** Plain read, no provider call. Borrower sees counters only; staff roles also get summary + pulls. */
+    @GetMapping("/aa")
+    public ApiResponse<AaView> aa(@PathVariable Long id) {
+        authorizeAa(id);
+        return ApiResponse.ok(accountAggregator.view(id));
+    }
+
+    /** Throttled provider poll; advances the consent and any open pull. */
+    @GetMapping("/aa/status")
+    public ApiResponse<AaView> aaStatus(@PathVariable Long id) {
+        authorizeAa(id);
+        return ApiResponse.ok(accountAggregator.status(id));
+    }
+
+    @PostMapping("/aa/init")
+    public ApiResponse<AaLink> aaInit(@PathVariable Long id, @Valid @RequestBody AaInitRequest req) {
+        authorize(id);
+        return ApiResponse.ok(accountAggregator.init(id, req.returnUrl()));
+    }
+
+    @PostMapping("/aa/statement-fallback")
+    public ApiResponse<AaView> aaStatementFallback(@PathVariable Long id) {
+        authorize(id);
+        return ApiResponse.ok(accountAggregator.statementFallback(id));
+    }
+
+    /** Staff only (role-checked in the service): on-demand periodic CT003 pull. */
+    @PostMapping("/aa/pull")
+    public ApiResponse<AaView> aaPull(@PathVariable Long id) {
+        flow.get(id); // 404 for an unknown application
+        return ApiResponse.ok(accountAggregator.pull(id));
+    }
+
+    /** The borrower who owns the file, or a role allowed to see/pull AA data. DSA and the rest are refused. */
+    private void authorizeAa(Long id) {
+        if (!AccountAggregatorService.STAFF_ROLES.contains(ActorContext.get().role())) {
+            authorize(id);
+        }
+    }
+
+    public record AaInitRequest(@jakarta.validation.constraints.NotBlank String returnUrl) {
     }
 
     /** A borrower reads a provider result without the staff-only fields (identity record, score, holder name). */

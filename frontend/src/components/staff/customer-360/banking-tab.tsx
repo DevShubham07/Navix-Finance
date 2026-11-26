@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Building2, FileSearch, IndianRupee, Loader2, TrendingUp } from "lucide-react";
+import { Building2, FileSearch, IndianRupee, Landmark, Loader2, TrendingUp } from "lucide-react";
 import { Badge, ConfirmDialog, EmptyState, Skeleton, toast } from "@/components/ui";
 import { Field, FieldGrid } from "@/components/ui/field-grid";
 import { DocCard } from "@/components/staff/doc-card";
@@ -11,7 +11,7 @@ import type { TabCtx } from "@/components/staff/customer-360/types";
 import { CrifAnalysisSection } from "@/components/staff/customer-360/crif-analysis-panel";
 import { PermissionGate, errMessage } from "@/components/staff/live-pipeline";
 import { bankAnalysisApi } from "@/lib/api/bank-analysis";
-import { paiseToINR } from "@/lib/api/applications";
+import { paiseToINR, staffApi } from "@/lib/api/applications";
 import { formatDate, formatDateTime } from "@/lib/utils";
 
 const VERDICT = {
@@ -19,6 +19,90 @@ const VERDICT = {
   REVIEW: { banner: "bg-warning-50 border-warning-800", badge: "warning" },
   REJECT: { banner: "bg-error-50 border-error-600", badge: "error" },
 } as const;
+
+/** Digitap Account Aggregator: consent summary + on-demand (billable) CT003 pulls. Hidden when AA is off/unused. */
+function AaSection({ applicationId }: { applicationId: number | null }) {
+  const qc = useQueryClient();
+  const [confirm, setConfirm] = React.useState(false);
+  const q = useQuery({
+    queryKey: ["aa", applicationId],
+    queryFn: () => staffApi.aaStatus(applicationId!),
+    enabled: applicationId != null,
+    retry: false,
+    refetchInterval: (x) => (x.state.data?.pulls.some((p) => p.status === "PENDING") ? 15_000 : false),
+  });
+  const pull = useMutation({
+    mutationFn: () => staffApi.aaPull(applicationId!),
+    onSettled: () => {
+      setConfirm(false);
+      void qc.invalidateQueries({ queryKey: ["aa", applicationId] });
+    },
+    onSuccess: () => toast.success("Pull requested. This page refreshes itself."),
+    onError: (e) => toast.error(errMessage(e)),
+  });
+  const v = q.data;
+  if (!v || v.status === "NONE") return null;
+  const sm = v.summary;
+  return (
+    <Section
+      title="Account Aggregator"
+      icon={Landmark}
+      pill={<Badge variant={v.status === "PASS" ? "success" : v.status === "FAIL" ? "error" : "warning"} size="sm">{v.status}</Badge>}
+      action={
+        <PermissionGate permission={["kyc:approve", "loan:approve", "collections:manage", "collections:interact"]}>
+          <button
+            type="button"
+            className="btn btn-sm btn-primary"
+            disabled={pull.isPending || v.pulls.some((p) => p.status === "PENDING")}
+            onClick={() => setConfirm(true)}
+          >
+            {pull.isPending ? <Loader2 size={14} className="animate-spin" /> : null}
+            Pull CT003 now
+          </button>
+        </PermissionGate>
+      }
+    >
+      <ConfirmDialog
+        open={confirm}
+        title="Pull the latest statement?"
+        body="Each pull is billable (max 5 per month per consent)."
+        confirmLabel="Pull CT003"
+        busy={pull.isPending}
+        onClose={() => setConfirm(false)}
+        onConfirm={() => pull.mutate()}
+      />
+      {sm ? (
+        <FieldGrid cols={3}>
+          <Field label="Holder">{sm.holderName}</Field>
+          <Field label="Bank">{sm.bankName}</Field>
+          <Field label="Account" mono>{sm.maskedAccount}</Field>
+          <Field label="Type">{sm.accountType}</Field>
+          <Field label="Period">{sm.statementStart && sm.statementEnd ? `${sm.statementStart} – ${sm.statementEnd}` : null}</Field>
+          <Field label="Fetch type">{sm.fetchType}</Field>
+        </FieldGrid>
+      ) : (
+        <p className="text-sm text-muted">{v.status === "REVIEW" ? "Borrower used the bank-statement fallback." : "Consent in progress."}</p>
+      )}
+      {v.pulls.length > 0 ? (
+        <div className="staff-table-scroll mt-3">
+          <table className="staff-data-table">
+            <thead><tr><th>Txn</th><th>Status</th><th>When</th><th>By</th></tr></thead>
+            <tbody>
+              {v.pulls.map((p) => (
+                <tr key={p.txnId}>
+                  <td className="font-mono">{p.txnId}</td>
+                  <td>{p.status}{p.code ? ` (${p.code})` : ""}</td>
+                  <td>{p.at ? formatDateTime(p.at) : "—"}</td>
+                  <td>{p.byName ?? "—"}{p.byRole ? ` · ${p.byRole}` : ""}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </Section>
+  );
+}
 
 export function BankingTab({ detail, customerId, applicationId }: TabCtx) {
   const [busy, setBusy] = React.useState<string | null>(null);
@@ -218,6 +302,8 @@ export function BankingTab({ detail, customerId, applicationId }: TabCtx) {
           </div>
         )}
       </Section>
+
+      <AaSection applicationId={applicationId} />
 
       {/* Until the analyser API is live, the CRIF report is the third-party read on employment. */}
       <CrifAnalysisSection detail={detail} applicationId={applicationId} />

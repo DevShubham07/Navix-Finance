@@ -19,6 +19,7 @@ export const OFFER_STEPS: Array<{ seg: string; step: string; label: string }> = 
   { seg: "selfie", step: "OFFER_SELFIE", label: "Take a selfie" },
   { seg: "address", step: "OFFER_ADDRESS", label: "Confirm your address" },
   { seg: "home-photos", step: "OFFER_HOME_PHOTOS", label: "Photos of your home" },
+  { seg: "account-aggregator", step: "OFFER_ACCOUNT_AGGREGATOR", label: "Bank data consent" },
   { seg: "sanction-letter", step: "OFFER_SANCTION_LETTER", label: "Agreement & signature" },
   { seg: "sanctioned", step: "OFFER_SANCTIONED", label: "Sanctioned" },
   { seg: "disbursal-account", step: "OFFER_DISBURSAL_ACCOUNT", label: "Where to send the money" },
@@ -48,9 +49,9 @@ export const OFFER_SEGMENTS = new Set(OFFER_STEPS.map((s) => s.seg));
  * `getServerSnapshot` makes every render produce a "new" value — an infinite update loop that
  * crashed `LoanLayout` and blanked every `/loan/*` route.
  */
-// The mandate step is flag-gated server-side, so the server's list is the only thing that may add it;
-// leaving it out here means it appears a moment late, never when it should not exist.
-const ALL_SEGMENTS: readonly string[] = OFFER_STEPS.filter((s) => s.seg !== "mandate").map((s) => s.seg);
+// The mandate and account-aggregator steps are flag-gated server-side, so the server's list is the only
+// thing that may add them; leaving them out here means they appear a moment late, never when they should not exist.
+const ALL_SEGMENTS: readonly string[] = OFFER_STEPS.filter((s) => s.seg !== "mandate" && s.seg !== "account-aggregator").map((s) => s.seg);
 
 let applicableSegments: string[] | null = null;
 

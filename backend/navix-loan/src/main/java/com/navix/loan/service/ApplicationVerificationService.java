@@ -820,7 +820,7 @@ public class ApplicationVerificationService {
 
     /** Lower-case key folders written by the system (see {@code buildApplicationKey} and the PDF generators). */
     private static final Set<String> RESERVED_KEY_FOLDERS =
-            Set.of("credit_brief", "bureau_report", "sanction_letter", "signed_agreement");
+            Set.of("credit_brief", "bureau_report", "sanction_letter", "signed_agreement", "aa_report");
 
     /**
      * Normalize a borrower-supplied document password (V56): trim, blank becomes null, and cap at the

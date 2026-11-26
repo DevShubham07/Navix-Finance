@@ -41,6 +41,8 @@ class JourneyServiceTest {
     private com.navix.loan.repository.ApplicationDocumentRepository documentRepository;
     @Mock
     private MandateService mandateService;
+    @Mock
+    private AccountAggregatorService accountAggregator;
 
     private JourneyService journey;
     private LoanApplication app;
@@ -48,7 +50,7 @@ class JourneyServiceTest {
     @BeforeEach
     void setUp() {
         journey = new JourneyService(applicationRepository, profileRepository, verificationRepository,
-                referenceRepository, documentRepository, mandateService);
+                referenceRepository, documentRepository, mandateService, accountAggregator);
         app = new LoanApplication();
         app.setId(APP);
         app.setCustomerId(7L);
@@ -497,6 +499,84 @@ class JourneyServiceTest {
 
     private void homePhotos() {
         docs(ApplicationVerificationService.HOME_PHOTO_DOC_TYPES.toArray(String[]::new));
+    }
+
+    // ---- Account Aggregator (flag bre-aa-enabled) ----
+
+    @Test
+    void aaOffLeavesTheIntakeJourneyUntouched() {
+        // The mock answers enabled() == false: the AA step is neither derived nor listed, and a pointer on
+        // BANK still resumes at PAYSLIPS with the same index/total as before the step existed.
+        through(JourneyService.Step.PAYSLIPS);
+        app.setJourneyStep("BANK");
+
+        JourneyService.JourneyView view = journey.current(APP);
+
+        assertThat(view.step()).isEqualTo("PAYSLIPS");
+        assertThat(view.steps()).doesNotContain("ACCOUNT_AGGREGATOR").hasSize(JourneyService.Step.values().length - 2);
+        assertThat(view.index()).isEqualTo(view.steps().indexOf("PAYSLIPS"));
+    }
+
+    @Test
+    void aaOnHoldsTheBorrowerAfterBankUntilConsentOrStatement() {
+        when(accountAggregator.enabled()).thenReturn(true);
+        through(JourneyService.Step.PAYSLIPS);
+        app.setJourneyStep("BANK");
+
+        assertThat(journey.current(APP).step()).isEqualTo("ACCOUNT_AGGREGATOR");
+        assertThat(journey.current(APP).steps()).contains("ACCOUNT_AGGREGATOR");
+
+        // A stale pointer already past the step cannot skip it.
+        app.setJourneyStep("PAYSLIPS");
+        assertThat(journey.current(APP).step()).isEqualTo("ACCOUNT_AGGREGATOR");
+
+        when(accountAggregator.intakeSatisfied(APP)).thenReturn(true);
+        app.setJourneyStep("BANK");
+        assertThat(journey.current(APP).step()).isEqualTo("PAYSLIPS");
+    }
+
+    private void offerReadyForLetter() {
+        app.setStatus(ApplicationStatus.SANCTIONED);
+        app.setAmountRequested(1_500_000L);
+        homePhotos();
+        when(verificationRepository.findByApplicationIdOrderByIdAsc(APP)).thenReturn(List.of(
+                check(ApplicationVerificationService.AADHAAR),
+                check(ApplicationVerificationService.SELFIE),
+                check(ApplicationVerificationService.ADDRESS)));
+        when(referenceRepository.findByApplicationIdOrderBySlotAsc(APP)).thenReturn(List.of(
+                new com.navix.loan.entity.ApplicationReference(),
+                new com.navix.loan.entity.ApplicationReference()));
+    }
+
+    @Test
+    void aaOffNeverRoutesTheOfferThroughAa() {
+        offerReadyForLetter();
+
+        JourneyService.JourneyView view = journey.current(APP);
+
+        assertThat(view.step()).isEqualTo("OFFER_SANCTION_LETTER");
+        assertThat(view.steps()).doesNotContain("OFFER_ACCOUNT_AGGREGATOR");
+    }
+
+    @Test
+    void aaOffersTheStepBeforeTheLetterOnlyWhilePending() {
+        offerReadyForLetter();
+        when(accountAggregator.offerApplicable(APP)).thenReturn(true);
+        when(accountAggregator.offerPending(APP)).thenReturn(true);
+        app.setJourneyStep("OFFER_SANCTION_LETTER"); // a pointer already on the letter cannot skip it
+
+        JourneyService.JourneyView view = journey.current(APP);
+        assertThat(view.step()).isEqualTo("OFFER_ACCOUNT_AGGREGATOR");
+        assertThat(view.route()).isEqualTo("/loan/account-aggregator");
+        assertThat(view.steps()).contains("OFFER_ACCOUNT_AGGREGATOR");
+
+        // Consent connected (or the attempts used up -> continue without): on to the letter.
+        when(accountAggregator.offerPending(APP)).thenReturn(false);
+        assertThat(journey.current(APP).step()).isEqualTo("OFFER_SANCTION_LETTER");
+
+        // PASS at intake: the step is not part of this borrower's journey at all.
+        when(accountAggregator.offerApplicable(APP)).thenReturn(false);
+        assertThat(journey.current(APP).steps()).doesNotContain("OFFER_ACCOUNT_AGGREGATOR");
     }
 
     private static ApplicationVerification check(String type) {

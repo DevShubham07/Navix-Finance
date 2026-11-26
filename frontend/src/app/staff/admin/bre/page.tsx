@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Ban, Eye, Gauge, Lock, ShieldAlert, DoorClosed, type LucideIcon } from "lucide-react";
+import { Ban, Eye, Gauge, Lock, ShieldAlert, DoorClosed, Landmark, type LucideIcon } from "lucide-react";
 import { ErrorState, Skeleton, toast } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage, useStaffMe, useCan, NoAccessNotice } from "@/components/staff/live-pipeline";
@@ -65,9 +65,17 @@ const GROUPS: {
     intro: "Stop new applications at the door. Changed in Settings — shown here for the full picture.",
     tone: { tab: "text-teal-700", bar: "bg-teal-500", stripe: "bg-teal-500", soft: "bg-teal-50 border-teal-200", text: "text-teal-900", chip: "bg-teal-100 text-teal-700", switchOn: "bg-teal-600" },
   },
+  {
+    group: "AA",
+    letter: "F",
+    label: "Account Aggregator",
+    Icon: Landmark,
+    intro: "Mandatory bank-data consent (Digitap AA) after the bank step. CT035 and Multi-AA need Digitap enablement before switching on.",
+    tone: { tab: "text-indigo-700", bar: "bg-indigo-500", stripe: "bg-indigo-500", soft: "bg-indigo-50 border-indigo-200", text: "text-indigo-900", chip: "bg-indigo-100 text-indigo-700", switchOn: "bg-indigo-600" },
+  },
 ];
 
-const UNIT: Record<BreThresholdView["unit"], string> = { days: "days", score: "pts", percent: "%" };
+const UNIT: Record<BreThresholdView["unit"], string> = { days: "days", score: "pts", percent: "%", count: "", months: "months" };
 
 /** The catalog's outcome text carries a "When off, …" sentence — the honest confirm copy for that rule. */
 const whenOff = (r: BreRuleView) => r.outcome.match(/When off, (.*)$/)?.[1] ?? "this rule is skipped entirely.";

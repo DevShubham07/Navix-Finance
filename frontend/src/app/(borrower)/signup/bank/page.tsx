@@ -2,17 +2,16 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Landmark, Phone, FileCheck2, UploadCloud, X } from "lucide-react";
+import { Landmark, Phone } from "lucide-react";
 import { Input, Combobox } from "@/components/ui";
 import { WizardActions } from "@/components/borrower/wizard-actions";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { useOnboarding, saveProfileSlice, completeStep, useSavedProfile } from "@/lib/onboarding";
 import { verificationApi } from "@/lib/api/applications";
 import { formatApiError } from "@/lib/api/errors";
-import { compressImage } from "@/lib/compress-image";
 import { INDIAN_BANKS } from "@/lib/indian-banks";
 import { normalizeMobile } from "@/lib/utils";
-import { DOC_UPLOAD_ACCEPT, checkDocumentFile } from "@/lib/upload-file-types";
+import { BankStatementUpload, uploadBankStatements } from "@/components/borrower/bank-statement-upload";
 
 const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
 
@@ -32,6 +31,13 @@ export default function SignupBankPage() {
   const [touched, setTouched] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string>();
+  // Account Aggregator on => the statement upload moves to the AA step's fallback. Until the view
+  // lands (or if it fails) behave exactly as before: statements required.
+  const [aaOn, setAaOn] = React.useState(false);
+  React.useEffect(() => {
+    if (appId == null) return;
+    verificationApi.aaView(appId).then((v) => setAaOn(v.enabled)).catch(() => {});
+  }, [appId]);
 
   React.useEffect(() => {
     if (!saved) return;
@@ -50,31 +56,8 @@ export default function SignupBankPage() {
   const ifscOk = IFSC_RE.test(ifsc);
   const mobileOk = /^[6-9]\d{9}$/.test(mobile);
   const hasStatements = statements.length > 0;
-  const formOk = bankOk && accountOk && ifscOk && mobileOk && hasStatements;
-
-  /** Appends every valid file from the picker/drop to the existing selection — one upload or many. */
-  const pickStatements = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const picked = Array.from(e.target.files ?? []);
-    e.target.value = ""; // allow re-picking the same file(s) after a removal
-    if (picked.length === 0) return;
-    const accepted: File[] = [];
-    for (const f of picked) {
-      const problem = checkDocumentFile(f);
-      if (problem) {
-        setError(problem);
-        continue;
-      }
-      accepted.push(f);
-    }
-    if (accepted.length > 0) {
-      setError(undefined);
-      setStatements((prev) => [...prev, ...accepted]);
-    }
-  };
-
-  const removeStatement = (i: number) => {
-    setStatements((prev) => prev.filter((_, idx) => idx !== i));
-  };
+  const needStatements = !aaOn;
+  const formOk = bankOk && accountOk && ifscOk && mobileOk && (hasStatements || !needStatements);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -92,24 +75,8 @@ export default function SignupBankPage() {
         salaryIfsc: ifsc,
         salaryAccountMobile: mobile,
       });
-      const keys: string[] = [];
-      for (const f of statements) {
-        const upload = await compressImage(f);
-        const contentType = upload.type || "application/octet-stream";
-        const { key, url } = await verificationApi.presignUpload(appId, {
-          docType: "BANK_STATEMENT",
-          fileName: upload.name,
-          contentType,
-        });
-        await verificationApi.putToPresignedUrl(url, upload, contentType);
-        keys.push(key);
-      }
-      await verificationApi.uploadedDocuments(appId, {
-        docType: "BANK_STATEMENT",
-        objectKeys: keys,
-        filePassword: statementPassword.trim() || undefined,
-      });
-      await completeStep(appId, "BANK", router, "/signup/payslips");
+      if (needStatements) await uploadBankStatements(appId, statements, statementPassword);
+      await completeStep(appId, "BANK", router, aaOn ? "/signup/account-aggregator" : "/signup/payslips");
     } catch (err) {
       setError(formatApiError(err, "Could not save — please try again."));
       setBusy(false);
@@ -162,73 +129,20 @@ export default function SignupBankPage() {
           error={touched && !mobileOk ? "Enter a valid 10-digit mobile number" : undefined}
         />
 
-        <div className="mt-4">
-          <label
-            className={`flex w-full cursor-pointer flex-col items-center gap-2 rounded border-2 border-dashed p-5 text-center transition ${
-              hasStatements ? "border-success-600 bg-success-50/50" : "border-line bg-grey-100 hover:border-navy"
-            }`}
-          >
-            <input
-              type="file"
-              accept={DOC_UPLOAD_ACCEPT}
-              multiple
-              className="sr-only"
-              onChange={pickStatements}
-            />
-            {hasStatements ? (
-              <>
-                <FileCheck2 size={24} className="text-success-600" />
-                <span className="text-sm font-semibold text-success-700">
-                  {statements.length} bank statement{statements.length === 1 ? "" : "s"} added
-                </span>
-                <span className="text-xs text-muted">Tap to add more</span>
-              </>
-            ) : (
-              <>
-                <UploadCloud size={24} className="text-navy" />
-                <span className="text-sm font-semibold text-navy">Bank statements (last 6 months)</span>
-                <span className="text-xs text-muted">PDF or photo (JPG, PNG, HEIC) up to 10 MB each — upload one or several</span>
-              </>
-            )}
-          </label>
-          {hasStatements ? (
-            <ul className="mt-2 space-y-1">
-              {statements.map((f, i) => (
-                <li
-                  key={`${f.name}-${f.lastModified}-${i}`}
-                  className="flex items-center justify-between gap-2 rounded border border-line bg-white px-3 py-1.5 text-xs"
-                >
-                  <span className="truncate text-ink">{f.name}</span>
-                  <button
-                    type="button"
-                    onClick={() => removeStatement(i)}
-                    className="flex-shrink-0 rounded p-0.5 text-muted hover:bg-grey-100 hover:text-error-700"
-                    aria-label={`Remove ${f.name}`}
-                  >
-                    <X size={14} />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          {touched && !hasStatements ? (
-            <p className="mt-2 text-sm text-error-600">Upload at least one bank statement to continue.</p>
-          ) : null}
-        </div>
-
-        {hasStatements ? (
-          <Input
-            label="PDF password (optional)"
-            value={statementPassword}
-            onChange={(e) => setStatementPassword(e.target.value)}
-            autoComplete="off"
-            helperText="If your statement is password-protected, enter the password so our team can open it."
+        {needStatements ? (
+          <BankStatementUpload
+            files={statements}
+            onFiles={setStatements}
+            password={statementPassword}
+            onPassword={setStatementPassword}
+            onError={setError}
+            showRequired={touched}
           />
         ) : null}
 
         {error ? <p className="mt-3 text-sm text-error-600">{error}</p> : null}
       </div>
-      <WizardActions backHref="/signup/email" submit loading={busy} disabled={busy || !hasStatements} />
+      <WizardActions backHref="/signup/email" submit loading={busy} disabled={busy || (needStatements && !hasStatements)} />
       <Reassurance />
     </form>
   );

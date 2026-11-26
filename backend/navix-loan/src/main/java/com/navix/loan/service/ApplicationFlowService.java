@@ -127,7 +127,9 @@ public class ApplicationFlowService {
             ApplicationVerificationService.AADHAAR,
             ApplicationVerificationService.SELFIE,
             ApplicationVerificationService.ADDRESS,
-            ApplicationVerificationService.EMPLOYMENT);
+            ApplicationVerificationService.EMPLOYMENT,
+            // Account Aggregator consent is the person's, so a reborrow reuses it (staff can keep pulling).
+            AccountAggregatorService.BANK_AA);
 
     /**
      * Application statuses that represent an already-disbursed, still-live loan. One advance at a time:

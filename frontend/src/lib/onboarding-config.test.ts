@@ -19,9 +19,9 @@ describe("onboarding step order", () => {
       "pan-card",
       "consent",
     ]);
-    // Mirrors JourneyService.Step on the backend — twelve screens, in this order.
+    // Mirrors JourneyService.Step on the backend — thirteen screens (the AA one is switch-gated), in this order.
     expect(ONBOARDING_STEPS.map((step) => step.step)).toEqual([
-      "START", "OTP", "SET_PASSWORD", "EMPLOYMENT", "EMPLOYER", "EMAIL", "BANK", "PAYSLIPS",
+      "START", "OTP", "SET_PASSWORD", "EMPLOYMENT", "EMPLOYER", "EMAIL", "BANK", "ACCOUNT_AGGREGATOR", "PAYSLIPS",
       "AADHAAR", "PAN_CARD", "CONSENT", "SUBMITTED",
     ]);
   });

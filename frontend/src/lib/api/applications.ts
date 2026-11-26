@@ -1589,6 +1589,23 @@ export const borrowerApi = {
   documents: (id: number) => bff<DocumentView[]>(`${BORROWER_BASE}/${id}/documents`, "GET"),
 };
 
+export interface AaView {
+  enabled: boolean;
+  status: "NONE" | "PENDING" | "PASS" | "REVIEW" | "FAIL";
+  attempts: number;
+  maxAttempts: number;
+  attemptsLeft: number;
+  fallbackAvailable: boolean;
+  completed: boolean;
+  /** Staff only. */
+  summary: null | {
+    holderName?: string; accountType?: string; maskedAccount?: string; bankName?: string;
+    statementStart?: string; statementEnd?: string; fetchType?: string; txnId?: string;
+  };
+  /** Staff only. */
+  pulls: Array<{ txnId: string; status: string; code?: string; at?: string; byName?: string; byRole?: string }>;
+}
+
 /** Server-side onboarding position — what makes a second device resume mid-flow (revamp.md C1). */
 export const journeyApi = {
   get: (id: number) => bff<JourneyView>(`${BORROWER_BASE}/${id}/journey`, "GET"),
@@ -1716,6 +1733,14 @@ export const verificationApi = {
   /** DigiLocker: poll consent progress (derived.completed / .failed / .status). */
   digilockerStatus: (id: number) =>
     bff<StepResult>(`${BORROWER_BASE}/${id}/verify/digilocker/status`, "GET"),
+
+  /** Account Aggregator (Digitap): view / start consent / poll / statement fallback. `enabled` is the BRE switch. */
+  aaView: (id: number) => bff<AaView>(`${BORROWER_BASE}/${id}/verify/aa`, "GET"),
+  aaInit: (id: number, returnUrl: string) =>
+    bff<{ url: string }>(`${BORROWER_BASE}/${id}/verify/aa/init`, "POST", { returnUrl }),
+  aaStatus: (id: number) => bff<AaView>(`${BORROWER_BASE}/${id}/verify/aa/status`, "GET"),
+  aaStatementFallback: (id: number) =>
+    bff<AaView>(`${BORROWER_BASE}/${id}/verify/aa/statement-fallback`, "POST"),
 
   /** DigiLocker: finalise once the consent flow reports completed. */
   digilockerComplete: (id: number) =>
@@ -2440,6 +2465,9 @@ export const staffApi = {
 
   /** The application's verification step results (PAN/email/address/salary/…). */
   verifications: (id: number) => bff<StepResult[]>(`${STAFF_BASE}/${id}/verifications`, "GET"),
+  /** Account Aggregator state (summary + pulls) and an on-demand, billable CT003 pull. */
+  aaStatus: (id: number) => bff<AaView>(`${STAFF_BASE}/${id}/verify/aa/status`, "GET"),
+  aaPull: (id: number) => bff<AaView>(`${STAFF_BASE}/${id}/verify/aa/pull`, "POST"),
   /** Required-step completion snapshot for the progress tracker (Phase 3.2). */
   verificationProgress: (id: number) =>
     bff<VerificationProgress>(`${STAFF_BASE}/${id}/verification-progress`, "GET"),
@@ -4119,12 +4147,12 @@ export const featureFlagsApi = {
 // BRE rules (ADMIN) — `/api/staff/bre-rules`
 // ---------------------------------------------------------------------------
 
-export type BreRuleGroup = "AUTO" | "ADVISORY" | "REVIEW" | "ALWAYS" | "GATE";
+export type BreRuleGroup = "AUTO" | "ADVISORY" | "REVIEW" | "ALWAYS" | "GATE" | "AA";
 
 export interface BreThresholdView {
   key: string;
   label: string;
-  unit: "days" | "score" | "percent";
+  unit: "days" | "score" | "percent" | "count" | "months";
   value: number;
   defaultValue: number;
   min: number;

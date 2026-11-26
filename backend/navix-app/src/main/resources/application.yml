@@ -147,6 +147,13 @@ navix:
     # testing that a placeholder (0.0.0.0) is rejected with 403 "IP not allowed" regardless of the
     # caller's real network IP. aws.md §5.1's static NAT egress IP — never changes.
     device-ip: ${NAVIX_STATIC_EGRESS_IP:3.109.169.131}
+  digitap-aa:
+    # Account Aggregator (bank-data): svc host, own client id/secret (SSM /navix/<env>/navix/digitap-aa/...).
+    # Dormant unless the `bre-aa-enabled` flag is on. No callback receiver: polling is the source of truth.
+    base-url: ${DIGITAP_AA_BASE_URL:https://svc.digitap.ai}
+    client-id: ${DIGITAP_AA_CLIENT_ID:}
+    client-secret: ${DIGITAP_AA_CLIENT_SECRET:}
+    callback-url: ${DIGITAP_AA_CALLBACK_URL:https://www.dhanboost.com/api/webhooks/digitap-aa}
   fintrix:
     # Bureau PRIMARY — POST /crif_combine (CRIF Highmark), ahead of Digitap Experian. Auth = Basic base64(clientId:clientSecret),
     # same scheme as Digitap. No sandbox — every call is live and billable (see FintrixCrifClient and

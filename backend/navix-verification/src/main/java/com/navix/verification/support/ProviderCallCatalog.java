@@ -47,6 +47,11 @@ public final class ProviderCallCatalog {
         ROUTES.put("/cv/v3/uan_basic/sync", new Route("UAN", "DIGITAP"));
         // On-demand collections lookup (Skip Tracer tab) — never fired by the lifecycle.
         ROUTES.put("/enrichment/misc/v1/skip-tracing-lite", new Route("SKIP_TRACE", "DIGITAP"));
+        // Account Aggregator (bank-data consent + statements) - its own provider label.
+        ROUTES.put("/bank-data/generateurl", new Route("AA_GENERATE_URL", "DIGITAP_AA"));
+        ROUTES.put("/bank-data/statuscheck", new Route("AA_STATUS", "DIGITAP_AA"));
+        ROUTES.put("/bank-data/retrievereport", new Route("AA_REPORT", "DIGITAP_AA"));
+        ROUTES.put("/bank-data/initiate_periodic_fetch", new Route("AA_PERIODIC_FETCH", "DIGITAP_AA"));
         // Signzy — the two bureaux stay distinguishable because the router tries Experian then CRIF.
         ROUTES.put("/api/v3/bureau/experian-lite", new Route("BUREAU", "SIGNZY_EXPERIAN"));
         ROUTES.put("/api/v3/bureau/crif", new Route("BUREAU", "SIGNZY_CRIF"));

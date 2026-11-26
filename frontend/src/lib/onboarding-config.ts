@@ -6,6 +6,8 @@ export const ONBOARDING_STEPS: Array<{ seg: string; step: string; label: string 
   { seg: "employer", step: "EMPLOYER", label: "Employer & salary" },
   { seg: "email", step: "EMAIL", label: "Email addresses" },
   { seg: "bank", step: "BANK", label: "Salary account" },
+  // Server-derived only when the `bre-aa-enabled` switch is on; the signup layout hides it otherwise.
+  { seg: "account-aggregator", step: "ACCOUNT_AGGREGATOR", label: "Bank data consent" },
   { seg: "payslips", step: "PAYSLIPS", label: "Salary slips" },
   { seg: "aadhaar", step: "AADHAAR", label: "Aadhaar card" },
   { seg: "pan-card", step: "PAN_CARD", label: "PAN card" },

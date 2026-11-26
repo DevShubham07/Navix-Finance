@@ -63,7 +63,7 @@ class MandateJourneyTest {
                 verification, flow, journeyMock, changeLogger, letterRenderer, storage, new LoanMath(),
                 mandateService, org.mockito.Mockito.mock(com.navix.common.featureflag.FeatureFlagService.class), verificationRepo);
         journey = new JourneyService(applicationRepo, profileRepo, verificationRepo, referenceRepo,
-                documentRepo, mandateService);
+                documentRepo, mandateService, org.mockito.Mockito.mock(AccountAggregatorService.class));
 
         app = new LoanApplication();
         app.setId(APP);

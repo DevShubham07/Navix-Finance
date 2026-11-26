@@ -50,7 +50,7 @@ class ApplicationStaffScopeTest {
     private final MandateService mandates = mock(MandateService.class);
     private final ApplicationController controller = new ApplicationController(flow, review,
             verification, mock(VerificationOutreachService.class),
-            mock(CreditBriefService.class), mock(AdminApplicationService.class), mock(JourneyService.class),
+            mock(CreditBriefService.class), mock(AdminApplicationService.class), mock(JourneyService.class), mock(com.navix.loan.service.AccountAggregatorService.class),
             mock(OfferService.class), mandates, mock(StaffDirectory.class),
             mock(ApplicationActorDirectory.class), mock(CollectionCaseDirectory.class),
             mock(LoanRepository.class), mock(ApplicationEventRepository.class),

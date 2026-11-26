@@ -4,12 +4,14 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
-import { ONBOARDING_STEPS as STEPS, useJourneyGuard } from "@/lib/onboarding";
+import { ONBOARDING_STEPS as ALL_STEPS, useJourneyGuard } from "@/lib/onboarding";
 import { readStoredAppId } from "@/lib/api/live-journey";
 
 export default function SignupLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const seg = pathname.split("/").filter(Boolean).pop() ?? "start";
+  // The AA step exists only while the admin switch is on; hide it from the counter otherwise.
+  const STEPS = ALL_STEPS.filter((s) => s.seg !== "account-aggregator" || seg === "account-aggregator");
   const found = STEPS.findIndex((s) => s.seg === seg);
   const idx = found >= 0 ? found : 0;
   const step = STEPS[idx] ?? STEPS[0];
