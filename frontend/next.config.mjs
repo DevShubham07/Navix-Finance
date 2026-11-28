@@ -41,8 +41,9 @@ const csp = [
   `connect-src 'self' ${gaConnect} ${s3} ${turnstile}`,
   "worker-src 'self' blob:",
   // The KYC selfie step embeds Signzy's hosted liveness journey, and the sanction-letter
-  // step embeds its short-lived S3 PDF URL. Both must be explicitly allowed in frames.
-  "frame-src 'self' https://*.signzy.app " + s3 + " " + turnstile,
+  // step embeds its short-lived S3 PDF URL. Both must be explicitly allowed in frames. blob: lets a
+  // staffer preview a picked PDF payment receipt (ProofFilePicker) before it is uploaded.
+  "frame-src 'self' blob: https://*.signzy.app " + s3 + " " + turnstile,
   "frame-ancestors 'self'",
   // The repay page posts a form to PayU's hosted checkout. A wildcard because Chrome also applies
   // form-action to redirects, and PayU redirects the POST to another host (test -> apitest).

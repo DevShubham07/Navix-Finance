@@ -197,7 +197,42 @@ export function RepaymentVerifyQueue() {
                   <td className="py-2.5 pr-3">{METHOD_LABEL[p.method] ?? p.method}</td>
                   <td className="py-2.5 pr-3 text-muted">{p.txnRef || "—"}</td>
                   <td className="py-2.5 pr-3">
-                    <PaymentProofLink url={p.proofUrl} className="text-xs" />
+                    <PaymentProofLink
+                      url={p.proofUrl}
+                      className="text-xs"
+                      footer={(close) => (
+                        <>
+                          <span className="mr-auto text-sm text-ink">
+                            {paiseToINR(p.amountPaise)} · loan #{p.loanId}
+                            {p.txnRef ? ` · ${p.txnRef}` : ""}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => verify.mutate(p, { onSuccess: close })}
+                            disabled={busy(p)}
+                            className="btn btn-gold btn-sm disabled:opacity-50"
+                          >
+                            {verify.isPending && verify.variables?.id === p.id ? (
+                              <Loader2 size={14} className="animate-spin" />
+                            ) : (
+                              <Check size={14} />
+                            )}{" "}
+                            Verify
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              close();
+                              setRejectTarget(p);
+                            }}
+                            disabled={busy(p)}
+                            className="btn btn-sm border-error-600 bg-error-600 text-white hover:bg-error-700 disabled:opacity-50"
+                          >
+                            <X size={14} /> Reject
+                          </button>
+                        </>
+                      )}
+                    />
                     {!p.proofUrl && <span className="text-xs text-muted">—</span>}
                   </td>
                   <td className="py-2.5 pr-3 text-muted">{p.paidOn ? formatDate(p.paidOn) : "—"}</td>

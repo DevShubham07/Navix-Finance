@@ -15,6 +15,7 @@ import { CallLogRow, Section } from "@/components/staff/detail-parts";
 import { errMessage } from "@/components/staff/live-pipeline";
 import { CasePaymentsCard, RecordPaymentCard, uploadPaymentProof } from "@/components/staff/collection-payments";
 import { PaymentProofLink } from "@/components/ui/payment-proof-link";
+import { ProofFilePicker } from "@/components/ui/proof-viewer";
 import { LoanSelector, todayISO, useSelectedLoanId } from "@/components/staff/customer-360/loan-card";
 import type { TabCtx } from "@/components/staff/customer-360/types";
 import { bucketOf, dpdDays, loanCycle, ordinal } from "@/lib/calc/loan-kpis";
@@ -216,7 +217,6 @@ function InteractionsSection({
   const [ptp, setPtp] = React.useState("");
   const [proof, setProof] = React.useState("");
   const [proofFile, setProofFile] = React.useState<File | null>(null);
-  const [fileKey, setFileKey] = React.useState(0);
   const isPromise = outcome === "PROMISE_TO_PAY";
   const isPaid = outcome === "PAID";
 
@@ -233,7 +233,6 @@ function InteractionsSection({
     onSuccess: () => {
       setProof("");
       setProofFile(null);
-      setFileKey((k) => k + 1);
       setPtp("");
       onLogged();
       toast.success("Interaction logged");
@@ -250,14 +249,7 @@ function InteractionsSection({
             {isPromise && <Input label="Promise-to-pay" type="date" value={ptp} onChange={(e) => setPtp(e.target.value)} className="!mb-0" />}
             {isPaid && !proofFile && <Input label="Proof ref" value={proof} onChange={(e) => setProof(e.target.value)} placeholder="UTR / receipt" className="!mb-0" />}
             {isPaid && (
-              <Input
-                key={fileKey}
-                label="or screenshot"
-                type="file"
-                accept="image/*,.pdf"
-                onChange={(e) => setProofFile(e.target.files?.[0] ?? null)}
-                className="!mb-0"
-              />
+              <ProofFilePicker label="or screenshot" file={proofFile} onChange={setProofFile} className="!mb-0 min-w-[16rem]" />
             )}
             <button type="button" onClick={() => log.mutate()} disabled={log.isPending} className="btn btn-sm btn-navy disabled:opacity-50">
               {log.isPending && <Loader2 size={13} className="animate-spin" />} Log

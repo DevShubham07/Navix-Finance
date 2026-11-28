@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, HandCoins, Loader2, ShieldCheck, XCircle } from "lucide-react";
 import { EmptyState, ErrorState, Input, Select, Skeleton, StatusBadge, toast } from "@/components/ui";
 import { PaymentProofLink } from "@/components/ui/payment-proof-link";
+import { ProofFilePicker, ProofThumbnail } from "@/components/ui/proof-viewer";
 import { errMessage, PermissionGate } from "@/components/staff/live-pipeline";
 import {
   collectionsApi,
@@ -75,8 +76,6 @@ export function RecordPaymentCard({ caseId, onRaised }: { caseId: string; onRais
   const [txnRef, setTxnRef] = React.useState("");
   const [proofRef, setProofRef] = React.useState("");
   const [proofFile, setProofFile] = React.useState<File | null>(null);
-  // Remounts the file input so a recorded payment clears the picked file.
-  const [fileKey, setFileKey] = React.useState(0);
   // Null while the box is empty, a lone ".", or zero — submit stays disabled until it is an amount.
   const rupees = parsePositiveRupees(amount);
 
@@ -95,7 +94,6 @@ export function RecordPaymentCard({ caseId, onRaised }: { caseId: string; onRais
       setTxnRef("");
       setProofRef("");
       setProofFile(null);
-      setFileKey((k) => k + 1);
       qc.invalidateQueries({ queryKey: ["collection-payments"] });
       onRaised?.();
       // Was a success line that never cleared; the payment itself stays visible (with its status)
@@ -137,13 +135,7 @@ export function RecordPaymentCard({ caseId, onRaised }: { caseId: string; onRais
           onChange={(e) => setTxnRef(e.target.value)}
           placeholder="UTR / UPI reference"
         />
-        <Input
-          key={fileKey}
-          label="Payment screenshot (optional)"
-          type="file"
-          accept="image/*,.pdf"
-          onChange={(e) => setProofFile(e.target.files?.[0] ?? null)}
-        />
+        <ProofFilePicker label="Payment screenshot (optional)" file={proofFile} onChange={setProofFile} />
         {!proofFile && (
           <Input
             label="Proof note (optional)"
@@ -259,6 +251,15 @@ export function CollectionPaymentApprovalQueue() {
           {approve.isPending ? <Loader2 size={13} className="animate-spin" /> : null} Approve
         </button>
       )}
+      proofActions={(p, close) => (
+        <button
+          onClick={() => approve.mutate(p.id, { onSuccess: close })}
+          disabled={approve.isPending}
+          className="btn btn-sm btn-navy disabled:opacity-50"
+        >
+          {approve.isPending ? <Loader2 size={13} className="animate-spin" /> : null} Approve
+        </button>
+      )}
     />
   );
 }
@@ -287,6 +288,15 @@ export function CollectionPaymentValidationQueue() {
         <ValidateActions
           payment={p}
           onDone={() => qc.invalidateQueries({ queryKey: ["collection-payments"] })}
+        />
+      )}
+      proofActions={(p, close) => (
+        <ValidateActions
+          payment={p}
+          onDone={() => {
+            close();
+            return qc.invalidateQueries({ queryKey: ["collection-payments"] });
+          }}
         />
       )}
     />
@@ -346,6 +356,7 @@ function QueueShell({
   empty,
   error,
   actions,
+  proofActions,
 }: {
   title: string;
   info: string;
@@ -354,6 +365,8 @@ function QueueShell({
   empty: string;
   error: unknown;
   actions: (p: CollectionPaymentView) => React.ReactNode;
+  /** Decision buttons repeated under the screenshot in the viewer, so the checker decides while looking at it. */
+  proofActions?: (p: CollectionPaymentView, close: () => void) => React.ReactNode;
 }) {
   return (
     <section>
@@ -377,7 +390,15 @@ function QueueShell({
               key={p.id}
               className="flex flex-col gap-3 rounded border border-line bg-white p-4 shadow-sm sm:flex-row sm:items-start sm:justify-between"
             >
-              <div className="text-sm">
+              <div className="flex gap-3 text-sm">
+                {p.proofUrl && (
+                  <ProofThumbnail
+                    src={p.proofUrl}
+                    title={`Payment screenshot · ${paiseToINR(p.amountPaise)} · loan #${p.loanId}${p.txnRef ? ` · ${p.txnRef}` : ""}`}
+                    footer={proofActions ? (close) => proofActions(p, close) : undefined}
+                  />
+                )}
+                <div>
                 <div className="font-semibold text-navy">
                   {paiseToINR(p.amountPaise)} · {kindLabel(p.kind)}
                 </div>
@@ -390,11 +411,16 @@ function QueueShell({
                 </div>
                 {p.proofUrl ? (
                   <div className="mt-1 text-xs">
-                    <PaymentProofLink url={p.proofUrl} />
+                    <PaymentProofLink
+                      url={p.proofUrl}
+                      label="View screenshot"
+                      footer={proofActions ? (close) => proofActions(p, close) : undefined}
+                    />
                   </div>
                 ) : (
                   p.proofRef && <div className="mt-1 text-xs text-ink">Proof: {p.proofRef}</div>
                 )}
+                </div>
               </div>
               {actions(p)}
             </li>
